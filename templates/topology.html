@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Monitor - Topology</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">
+                <span>🌐</span> Network Monitor
+            </a>
+            <ul class="navbar-menu">
+                <li><a href="/">Dashboard</a></li>
+                <li><a href="/topology" class="active">Topology</a></li>
+                <li><a href="/devices">Devices</a></li>
+                <li><a href="/history">History</a></li>
+                <li><a href="/sla">SLA</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
+                        <span id="theme-icon">☀️</span>
+                    </button>
+                </li>
+                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <h1 class="page-title">Network Topology</h1>
+            <p class="page-subtitle">Interactive network visualization</p>
+        </div>
+
+        <!-- Topology Controls -->
+        <div class="card mb-2">
+            <div class="card-header">
+                <h3 class="card-title">Topology View</h3>
+                <div class="flex gap-1">
+                    <button id="toggle-view-btn" class="btn btn-sm btn-success" onclick="toggleGroupedView()">
+                        📊 Zone View
+                    </button>
+                    <button class="btn btn-sm btn-success" onclick="showAddConnectionModal()">
+                        ➕ Add Connection
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="fitNetwork()">
+                        📐 Fit to Screen
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="refreshTopology()">
+                        🔄 Refresh
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="toggleFullscreen()">
+                        ⛶ Fullscreen
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Topology Network -->
+                <div id="topology-network" style="height: 65vh; min-height: 500px;"></div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="grid grid-4" style="gap: 0.5rem;">
+            <div class="card">
+                <div class="card-body text-center p-2">
+                    <div
+                        style="width: 20px; height: 20px; background: var(--success); border-radius: 50%; margin: 0 auto 0.25rem;">
+                    </div>
+                    <strong style="font-size: 0.9rem;">Online</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">Device is responding
+                    </p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body text-center p-2">
+                    <div
+                        style="width: 20px; height: 20px; background: var(--warning); border-radius: 50%; margin: 0 auto 0.25rem;">
+                    </div>
+                    <strong style="font-size: 0.9rem;">Slow</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">Response > 500ms
+                    </p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body text-center p-2">
+                    <div
+                        style="width: 20px; height: 20px; background: var(--danger); border-radius: 50%; margin: 0 auto 0.25rem;">
+                    </div>
+                    <strong style="font-size: 0.9rem;">Offline</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">Device not responding</p>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body text-center p-2">
+                    <div
+                        style="width: 20px; height: 20px; background: var(--text-muted); border-radius: 50%; margin: 0 auto 0.25rem;">
+                    </div>
+                    <strong style="font-size: 0.9rem;">Unknown</strong>
+                    <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">Not checked</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zone Legend (visible when Zone View is active) -->
+        <div id="zone-legend" style="margin-top: 1rem; display: none;">
+            <h4 style="margin-bottom: 0.5rem; color: var(--text-secondary);">📊 Zone Layout (Location Types)</h4>
+            <div class="grid grid-4" style="gap: 0.5rem;">
+                <div class="card" style="border-left: 4px solid #3b82f6;">
+                    <div class="card-body text-center p-2">
+                        <span style="font-size: 1.25rem;">☁️</span>
+                        <strong style="display: block; font-size: 0.9rem;">Cloud</strong>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">AWS, Azure</p>
+                    </div>
+                </div>
+                <div class="card" style="border-left: 4px solid #10b981;">
+                    <div class="card-body text-center p-2">
+                        <span style="font-size: 1.25rem;">🌐</span>
+                        <strong style="display: block; font-size: 0.9rem;">Internet</strong>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">External</p>
+                    </div>
+                </div>
+                <div class="card" style="border-left: 4px solid #f59e0b;">
+                    <div class="card-body text-center p-2">
+                        <span style="font-size: 1.25rem;">🏢</span>
+                        <strong style="display: block; font-size: 0.9rem;">Remote</strong>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">VPN, Branch</p>
+                    </div>
+                </div>
+                <div class="card" style="border-left: 4px solid #6366f1;">
+                    <div class="card-body text-center p-2">
+                        <span style="font-size: 1.25rem;">🏠</span>
+                        <strong style="display: block; font-size: 0.9rem;">On-Prem</strong>
+                        <p style="color: var(--text-muted); font-size: 0.75rem; margin: 0;">Local DC</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Connection Modal -->
+    <div id="connection-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Connection</h3>
+                <button class="modal-close" onclick="closeConnectionModal()">&times;</button>
+            </div>
+            <form id="connection-form" onsubmit="saveConnection(event)">
+                <div class="form-group">
+                    <label class="form-label" for="from-device">From Device *</label>
+                    <select id="from-device" class="form-select" required>
+                        <option value="">Select device...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="to-device">To Device *</label>
+                    <select id="to-device" class="form-select" required>
+                        <option value="">Select device...</option>
+                    </select>
+                </div>
+
+                <div class="flex gap-1 mt-2">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        💾 Add Connection
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeConnectionModal()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Vis.js Network -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Theme Toggle -->
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <!-- Topology Script -->
+    <script src="{{ url_for('static', filename='js/topology.js') }}"></script>
+</body>
+
+</html>

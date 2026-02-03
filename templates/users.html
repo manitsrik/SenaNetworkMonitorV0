@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Monitor - User Management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">
+                <span>🌐</span> Network Monitor
+            </a>
+            <ul class="navbar-menu">
+                <li><a href="/">Dashboard</a></li>
+                <li><a href="/topology">Topology</a></li>
+                <li><a href="/devices">Devices</a></li>
+                <li><a href="/history">History</a></li>
+                <li><a href="/sla">SLA</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li><a href="/users" class="active">Users</a></li>
+                <li>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
+                        <span id="theme-icon">☀️</span>
+                    </button>
+                </li>
+                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Page Header -->
+        <div class="page-header flex-between">
+            <div>
+                <h1 class="page-title">👥 User Management</h1>
+                <p class="page-subtitle">Manage users and role-based access control</p>
+            </div>
+            <button class="btn btn-primary" onclick="showAddUserModal()">
+                ➕ Add User
+            </button>
+        </div>
+
+        <!-- Alert Message -->
+        <div id="alert-message" class="alert" style="display: none;"></div>
+
+        <!-- Role Legend -->
+        <div class="card mb-2">
+            <div class="card-body" style="padding: 0.75rem;">
+                <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
+                    <span><span class="status-badge status-up">👑 Admin</span> Full access to all features</span>
+                    <span><span class="status-badge status-slow">🔧 Operator</span> Can manage devices, view all
+                        data</span>
+                    <span><span class="status-badge status-down">👁️ Viewer</span> Read-only access</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Users</h3>
+                <button class="btn btn-sm btn-secondary" onclick="loadUsers()">🔄 Refresh</button>
+            </div>
+            <div class="card-body" style="overflow-x: auto;">
+                <table class="table" id="users-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Email</th>
+                            <th style="text-align: center;">Role</th>
+                            <th style="text-align: center;">Status</th>
+                            <th>Last Login</th>
+                            <th style="text-align: center;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody">
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                                Loading users...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit User Modal -->
+    <div id="user-modal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3 id="modal-title">➕ Add User</h3>
+                <button class="modal-close" onclick="closeUserModal()">&times;</button>
+            </div>
+            <form id="user-form" onsubmit="saveUser(event)" style="padding: 1rem;">
+                <input type="hidden" id="edit-user-id">
+
+                <div class="form-group">
+                    <label class="form-label">Username *</label>
+                    <input type="text" id="user-username" class="form-input" required pattern="[a-zA-Z0-9_]+"
+                        title="Letters, numbers, and underscores only">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Password <span id="password-hint">(min 4 characters)</span></label>
+                    <input type="password" id="user-password" class="form-input" minlength="4">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Display Name</label>
+                    <input type="text" id="user-displayname" class="form-input" placeholder="Optional">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" id="user-email" class="form-input" placeholder="Optional">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Role *</label>
+                    <select id="user-role" class="form-input" required>
+                        <option value="viewer">👁️ Viewer (Read-only)</option>
+                        <option value="operator">🔧 Operator (Manage devices)</option>
+                        <option value="admin">👑 Admin (Full access)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="active-group" style="display: none;">
+                    <label class="form-label">
+                        <input type="checkbox" id="user-active" checked>
+                        Account Active
+                    </label>
+                </div>
+
+                <div class="flex gap-1" style="margin-top: 1rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">
+                        💾 Save
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeUserModal()">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Theme Toggle -->
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+
+    <!-- Users Script -->
+    <script>
+        // Load users on page load
+        document.addEventListener('DOMContentLoaded', loadUsers);
+
+        let usersData = [];
+
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                usersData = await response.json();
+                renderUsers();
+            } catch (error) {
+                console.error('Error loading users:', error);
+                document.getElementById('users-tbody').innerHTML = `
+                    <tr><td colspan="7" style="text-align: center; color: var(--danger); padding: 2rem;">
+                        Error loading users
+                    </td></tr>
+                `;
+            }
+        }
+
+        function renderUsers() {
+            const tbody = document.getElementById('users-tbody');
+
+            if (!usersData || usersData.length === 0) {
+                tbody.innerHTML = `
+                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                        No users found
+                    </td></tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = usersData.map(user => {
+                const roleClass = getRoleClass(user.role);
+                const roleIcon = getRoleIcon(user.role);
+                const statusClass = user.is_active ? 'status-up' : 'status-down';
+                const statusText = user.is_active ? 'Active' : 'Disabled';
+                const lastLogin = user.last_login
+                    ? new Date(user.last_login).toLocaleString('th-TH')
+                    : 'Never';
+
+                return `
+                    <tr>
+                        <td><strong>${user.username}</strong></td>
+                        <td>${user.display_name || '-'}</td>
+                        <td>${user.email || '-'}</td>
+                        <td style="text-align: center;">
+                            <span class="status-badge ${roleClass}">${roleIcon} ${user.role}</span>
+                        </td>
+                        <td style="text-align: center;">
+                            <span class="status-badge ${statusClass}">${statusText}</span>
+                        </td>
+                        <td style="font-size: 0.85rem; color: var(--text-muted);">${lastLogin}</td>
+                        <td style="text-align: center;">
+                            <button class="btn btn-sm btn-secondary" onclick="editUser(${user.id})" title="Edit">
+                                ✏️
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id}, '${user.username}')" title="Delete">
+                                🗑️
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function getRoleClass(role) {
+            switch (role) {
+                case 'admin': return 'status-up';
+                case 'operator': return 'status-slow';
+                default: return 'status-down';
+            }
+        }
+
+        function getRoleIcon(role) {
+            switch (role) {
+                case 'admin': return '👑';
+                case 'operator': return '🔧';
+                default: return '👁️';
+            }
+        }
+
+        function showAddUserModal() {
+            document.getElementById('modal-title').textContent = '➕ Add User';
+            document.getElementById('edit-user-id').value = '';
+            document.getElementById('user-form').reset();
+            document.getElementById('user-password').required = true;
+            document.getElementById('password-hint').textContent = '(min 4 characters) *';
+            document.getElementById('active-group').style.display = 'none';
+            document.getElementById('user-modal').classList.add('active');
+        }
+
+        function editUser(userId) {
+            const user = usersData.find(u => u.id === userId);
+            if (!user) return;
+
+            document.getElementById('modal-title').textContent = '✏️ Edit User';
+            document.getElementById('edit-user-id').value = userId;
+            document.getElementById('user-username').value = user.username;
+            document.getElementById('user-password').value = '';
+            document.getElementById('user-password').required = false;
+            document.getElementById('password-hint').textContent = '(leave empty to keep current)';
+            document.getElementById('user-displayname').value = user.display_name || '';
+            document.getElementById('user-email').value = user.email || '';
+            document.getElementById('user-role').value = user.role;
+            document.getElementById('user-active').checked = user.is_active;
+            document.getElementById('active-group').style.display = 'block';
+            document.getElementById('user-modal').classList.add('active');
+        }
+
+        function closeUserModal() {
+            document.getElementById('user-modal').classList.remove('active');
+        }
+
+        async function saveUser(event) {
+            event.preventDefault();
+
+            const userId = document.getElementById('edit-user-id').value;
+            const isEdit = !!userId;
+
+            const data = {
+                username: document.getElementById('user-username').value,
+                display_name: document.getElementById('user-displayname').value || null,
+                email: document.getElementById('user-email').value || null,
+                role: document.getElementById('user-role').value
+            };
+
+            const password = document.getElementById('user-password').value;
+            if (password) {
+                data.password = password;
+            }
+
+            if (isEdit) {
+                data.is_active = document.getElementById('user-active').checked;
+            }
+
+            try {
+                const response = await fetch(isEdit ? `/api/users/${userId}` : '/api/users', {
+                    method: isEdit ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    closeUserModal();
+                    loadUsers();
+                    showAlert(isEdit ? 'User updated!' : 'User created!', 'success');
+                } else {
+                    showAlert('Error: ' + (result.error || 'Unknown error'), 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving user:', error);
+                showAlert('Error saving user', 'danger');
+            }
+        }
+
+        async function deleteUser(userId, username) {
+            if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    loadUsers();
+                    showAlert('User deleted', 'success');
+                } else {
+                    showAlert('Error: ' + (result.error || 'Cannot delete user'), 'danger');
+                }
+            } catch (error) {
+                console.error('Error deleting user:', error);
+                showAlert('Error deleting user', 'danger');
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertDiv = document.getElementById('alert-message');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertDiv.style.display = 'block';
+
+            if (type === 'success') {
+                setTimeout(() => { alertDiv.style.display = 'none'; }, 3000);
+            }
+        }
+
+        // Handle modal click outside
+        document.addEventListener('click', (event) => {
+            const modal = document.getElementById('user-modal');
+            if (event.target === modal) {
+                closeUserModal();
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Monitor - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/" class="navbar-brand">
+                <span>🌐</span> Network Monitor
+            </a>
+            <ul class="navbar-menu">
+                <li><a href="/" class="active">Dashboard</a></li>
+                <li><a href="/topology">Topology</a></li>
+                <li><a href="/devices">Devices</a></li>
+                <li><a href="/history">History</a></li>
+                <li><a href="/sla">SLA</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
+                        <span id="theme-icon">☀️</span>
+                    </button>
+                </li>
+                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <h1 class="page-title">Dashboard</h1>
+            <p class="page-subtitle">Real-time network monitoring overview</p>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="grid grid-5 mb-2">
+            <div class="stat-card">
+                <div class="stat-value" id="total-devices">0</div>
+                <div class="stat-label">Total Devices</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="devices-up" style="color: var(--success);">0</div>
+                <div class="stat-label">Devices Up</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="devices-slow" style="color: var(--warning);">0</div>
+                <div class="stat-label">Devices Slow</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="devices-down" style="color: var(--danger);">0</div>
+                <div class="stat-label">Devices Down</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uptime-percentage">0%</div>
+                <div class="stat-label">Uptime</div>
+            </div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="grid grid-2">
+            <!-- Device Status List -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Device Status</h3>
+                    <button class="btn btn-sm btn-primary" onclick="refreshStatus()">
+                        <span id="refresh-icon">🔄</span> Refresh
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="device-list">
+
+                        <p class="text-center" style="color: var(--text-muted); padding: 2rem;">
+                            No devices configured. <a href="/devices" style="color: var(--primary);">Add devices</a> to
+                            start monitoring.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Response Time Charts by Type -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">Average Response Time by Type</h3>
+                    <span class="status-badge status-up" id="avg-response-badge">
+                        <span id="avg-response-time">0 ms</span>
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div id="charts-container" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <!-- Charts will be dynamically created here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card mt-2">
+            <div class="card-header">
+                <h3 class="card-title">Recent Activity</h3>
+                <span class="status-badge status-up">
+                    <span class="spinner" style="width: 12px; height: 12px; border-width: 2px;"></span>
+                    Live
+                </span>
+            </div>
+            <div class="card-body">
+                <div id="activity-log" style="max-height: 300px; overflow-y: auto;">
+                    <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
+                        Waiting for activity...
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Theme Toggle -->
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <!-- Dashboard Script -->
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+
+</html>

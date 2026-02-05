@@ -122,8 +122,12 @@ class TelegramBot:
             text = message.get('text', '').strip()
             chat_id = str(message.get('chat', {}).get('id', ''))
             
+            # Get authorized chat IDs (split by comma)
+            settings = self._get_settings()
+            authorized_ids = [id.strip() for id in settings.get('telegram_chat_id', '').split(',') if id.strip()]
+            
             # Only respond to messages from authorized chat
-            if chat_id != self.chat_id:
+            if chat_id not in authorized_ids:
                 return
             
             if text:

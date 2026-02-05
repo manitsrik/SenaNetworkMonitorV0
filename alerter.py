@@ -146,35 +146,55 @@ This is an automated message from Network Monitor.
         Returns: dict with 'success' and 'error' (if failed)
         """
         bot_token = self._get_setting('telegram_bot_token', '').strip()
-        chat_id = self._get_setting('telegram_chat_id', '').strip()
+        chat_id_str = self._get_setting('telegram_chat_id', '').strip()
         
-        if not bot_token or not chat_id:
+        if not bot_token or not chat_id_str:
             return {'success': False, 'error': 'Telegram settings incomplete (need Bot Token and Chat ID)'}
         
-        try:
-            url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
-            
-            # Format message with emoji
-            formatted_message = f"🔔 *Network Monitor Alert*\n\n{message}\n\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            data = {
-                'chat_id': chat_id,
-                'text': formatted_message,
-                'parse_mode': 'Markdown'
-            }
-            
-            response = requests.post(url, data=data, timeout=10)
-            result = response.json()
-            
-            if response.status_code == 200 and result.get('ok'):
-                return {'success': True}
-            elif response.status_code == 401:
-                return {'success': False, 'error': 'Invalid Telegram Bot Token'}
-            elif response.status_code == 400:
-                error_desc = result.get('description', 'Bad request')
-                return {'success': False, 'error': f'Telegram error: {error_desc}'}
-            else:
-                return {'success': False, 'error': f'Telegram API error: {response.status_code}'}
+        # Support multiple chat IDs
+        chat_ids = [id.strip() for id in chat_id_str.split(',') if id.strip()]
+        
+        if not chat_ids:
+             return {'success': False, 'error': 'No valid Telegram Chat IDs found'}
+             
+        success_count = 0
+        errors = []
+        
+        for chat_id in chat_ids:
+            try:
+                url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+                
+                # Format message with emoji
+                formatted_message = f"🔔 *Network Monitor Alert*\n\n{message}\n\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                
+                data = {
+                    'chat_id': chat_id,
+                    'text': formatted_message,
+                    'parse_mode': 'Markdown'
+                }
+                
+                response = requests.post(url, data=data, timeout=10)
+                result = response.json()
+                
+                if response.status_code == 200 and result.get('ok'):
+                    success_count += 1
+                elif response.status_code == 401:
+                    errors.append(f"Invalid Token for {chat_id}")
+                else:
+                    error_desc = result.get('description', 'Bad request')
+                    errors.append(f"Error for {chat_id}: {error_desc}")
+                    
+            except requests.exceptions.Timeout:
+                errors.append(f"Timeout for {chat_id}")
+            except Exception as e:
+                errors.append(f"Error for {chat_id}: {str(e)}")
+        
+        if success_count > 0:
+            if len(errors) > 0:
+                return {'success': True, 'warning': f"Sent to {success_count}/{len(chat_ids)}, Errors: {'; '.join(errors)}"}
+            return {'success': True}
+        else:
+            return {'success': False, 'error': f"All attempts failed: {'; '.join(errors)}"}
                 
         except requests.exceptions.Timeout:
             return {'success': False, 'error': 'Telegram timeout'}

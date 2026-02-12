@@ -314,7 +314,8 @@ def add_topology_connection():
     
     result = db.add_topology_connection(
         device_id=data['device_id'],
-        connected_to=data['connected_to']
+        connected_to=data['connected_to'],
+        view_type=data.get('view_type', 'standard')
     )
     
     if result['success']:
@@ -324,7 +325,8 @@ def add_topology_connection():
             'connection': {
                 'id': result['id'],
                 'device_id': data['device_id'],
-                'connected_to': data['connected_to']
+                'connected_to': data['connected_to'],
+                'view_type': data.get('view_type', 'standard')
             }
         }, namespace='/')
         return jsonify(result), 201
@@ -786,4 +788,4 @@ if __name__ == '__main__':
     print(f"Monitoring interval: {Config.PING_INTERVAL} seconds")
     print("=" * 60)
     
-    socketio.run(app, debug=False, host='0.0.0.0', port=5000, use_reloader=False)
+    socketio.run(app, debug=False, host='0.0.0.0', port=5000, use_reloader=False, allow_unsafe_werkzeug=True)

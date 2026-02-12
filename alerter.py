@@ -195,11 +195,6 @@ This is an automated message from Network Monitor.
             return {'success': True}
         else:
             return {'success': False, 'error': f"All attempts failed: {'; '.join(errors)}"}
-                
-        except requests.exceptions.Timeout:
-            return {'success': False, 'error': 'Telegram timeout'}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
     
     def should_alert(self, device_id, event_type):
         """

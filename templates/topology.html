@@ -51,6 +51,9 @@
                     <button id="toggle-view-btn" class="btn btn-sm btn-success" onclick="toggleGroupedView()">
                         📊 Zone View
                     </button>
+                    <button id="toggle-wireless-btn" class="btn btn-sm btn-info" onclick="toggleWirelessView()">
+                        📶 Wireless View
+                    </button>
                     <button class="btn btn-sm btn-success" onclick="showAddConnectionModal()">
                         ➕ Add Connection
                     </button>
@@ -190,7 +193,7 @@
     <!-- Theme Toggle -->
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <!-- Topology Script -->
-    <script src="{{ url_for('static', filename='js/topology.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/topology.js') }}?v=2.0"></script>
 </body>
 
 </html>

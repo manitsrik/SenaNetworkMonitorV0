@@ -1,282 +1,506 @@
-// Dashboard JavaScript - Separate Charts Version
-// Handles dashboard statistics, device status, and individual response time charts per device type
+// Dashboard JavaScript - Redesigned Version
+// Handles dashboard with Mini Topology, Response Time Chart, and Active Alerts
 
 // Initialize Socket.IO connection
 const socket = io();
 
-// Store charts for each device type
-let charts = {};
-const MAX_DATA_POINTS = 20;
+// Chart instance
+let responseChart = null;
 
-// Store device group states (expanded/collapsed)
-let deviceGroupStates = {};
+// Vis.js network instance for mini topology
+let miniNetwork = null;
+let miniNodes = new vis.DataSet([]);
+let miniEdges = new vis.DataSet([]);
+let topologyLoaded = false; // Track if topology was initially loaded
 
-// Device type colors
-const deviceTypeColors = {
-    'switch': {
-        border: 'rgb(16, 185, 129)',      // green
-        background: 'rgba(16, 185, 129, 0.1)'
-    },
-    'firewall': {
-        border: 'rgb(239, 68, 68)',       // red
-        background: 'rgba(239, 68, 68, 0.1)'
-    },
-    'server': {
-        border: 'rgb(99, 102, 241)',      // indigo
-        background: 'rgba(99, 102, 241, 0.1)'
-    },
-    'router': {
-        border: 'rgb(245, 158, 11)',      // amber
-        background: 'rgba(245, 158, 11, 0.1)'
-    },
-    'website': {
-        border: 'rgb(139, 92, 246)',      // purple
-        background: 'rgba(139, 92, 246, 0.1)'
-    },
-    'wireless': {
-        border: 'rgb(236, 72, 153)',      // pink
-        background: 'rgba(236, 72, 153, 0.1)'
-    },
-    'vmware': {
-        border: 'rgb(34, 197, 94)',       // emerald green (VMware green)
-        background: 'rgba(34, 197, 94, 0.1)'
-    },
-    'ippbx': {
-        border: 'rgb(59, 130, 246)',      // blue
-        background: 'rgba(59, 130, 246, 0.1)'
-    },
-    'vpnrouter': {
-        border: 'rgb(168, 85, 247)',      // purple
-        background: 'rgba(168, 85, 247, 0.1)'
-    },
-    'dns': {
-        border: 'rgb(14, 165, 233)',      // sky blue
-        background: 'rgba(14, 165, 233, 0.1)'
-    },
-    'other': {
-        border: 'rgb(148, 163, 184)',     // gray
-        background: 'rgba(148, 163, 184, 0.1)'
-    }
-};
+// Chart data
+const MAX_DATA_POINTS = 60;
+let chartLabels = [];
+let chartData = [];
+
+// Activity log
+let activityLog = [];
+const MAX_ACTIVITY_ITEMS = 20;
 
 // Device type metadata
 const typeMetadata = {
-    'switch': { icon: '🔀', name: 'Switches' },
-    'firewall': { icon: '🛡️', name: 'Firewalls' },
-    'server': { icon: '🖥️', name: 'Servers' },
-    'router': { icon: '🌐', name: 'Routers' },
-    'wireless': { icon: '📶', name: 'Wireless' },
-    'website': { icon: '🌐', name: 'Websites' },
-    'vmware': { icon: '🖴', name: 'VMware Servers' },
-    'ippbx': { icon: '☎️', name: 'IP-PBX' },
-    'vpnrouter': { icon: '🔒', name: 'VPN-Router Sites' },
-    'dns': { icon: '🔍', name: 'DNS Servers' },
-    'other': { icon: '⚙️', name: 'Other' }
+    'switch': { icon: '🔀', name: 'Switches', color: '#10b981' },
+    'firewall': { icon: '🛡️', name: 'Firewalls', color: '#ef4444' },
+    'server': { icon: '🖥️', name: 'Servers', color: '#6366f1' },
+    'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
+    'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
+    'website': { icon: '🌐', name: 'Websites', color: '#8b5cf6' },
+    'vmware': { icon: '🖴', name: 'VMware', color: '#22c55e' },
+    'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
+    'vpnrouter': { icon: '🔒', name: 'VPN Router', color: '#a855f7' },
+    'dns': { icon: '🔍', name: 'DNS', color: '#0ea5e9' },
+    'other': { icon: '⚙️', name: 'Other', color: '#94a3b8' }
 };
-
-// Chart data storage
-let chartData = {};
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
+    initMiniTopology();
+    initResponseChart();
     loadInitialData();
     setupSocketListeners();
 });
 
-// Load initial data
+// ============================================
+// Data Loading
+// ============================================
+
 async function loadInitialData() {
     try {
         // Load devices
         const devicesResponse = await fetch('/api/devices');
         const devices = await devicesResponse.json();
 
-        // Initialize charts based on device types
-        initializeCharts(devices);
-        updateDeviceList(devices);
-
         // Load statistics
         const statsResponse = await fetch('/api/statistics');
         const stats = await statsResponse.json();
+
+        // Load topology
+        const topoResponse = await fetch('/api/topology');
+        const topology = await topoResponse.json();
+
+        // Update all components
         updateStatistics(stats);
+        updateDeviceTypeStats(devices);
+        updateMiniTopology(topology.devices, topology.connections);
+        updateSlowDevices(devices);
+        updateActiveAlerts(devices);
+        updateSystemStatus(stats);
+
     } catch (error) {
         console.error('Error loading initial data:', error);
     }
 }
 
-// Initialize charts for each device type
-function initializeCharts(devices) {
-    const container = document.getElementById('charts-container');
-    container.innerHTML = '';
+// ============================================
+// Statistics Cards
+// ============================================
 
-    // Get unique device types
-    const deviceTypes = [...new Set(devices.map(d => d.device_type || 'other'))];
+function updateStatistics(stats) {
+    document.getElementById('total-devices').textContent = stats.total_devices || 0;
+    document.getElementById('devices-up').textContent = stats.devices_up || 0;
+    document.getElementById('devices-slow').textContent = stats.devices_slow || 0;
+    document.getElementById('devices-down').textContent = stats.devices_down || 0;
+    document.getElementById('uptime-percentage').textContent = (stats.uptime_percentage || 0) + '%';
+    document.getElementById('avg-response-time').textContent = stats.average_response_time || 0;
 
-    deviceTypes.forEach(type => {
-        const meta = typeMetadata[type] || typeMetadata['other'];
-        const colors = deviceTypeColors[type] || deviceTypeColors['other'];
-
-        // Create chart container
-        const chartDiv = document.createElement('div');
-        chartDiv.style.cssText = `
-            background: var(--bg-secondary);
-            padding: 0.75rem;
-            border-radius: var(--radius-md);
-            border-left: 3px solid ${colors.border};
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-        `;
-
-        // Add hover effect
-        chartDiv.addEventListener('mouseenter', () => {
-            chartDiv.style.transform = 'translateY(-2px)';
-            chartDiv.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';
-        });
-        chartDiv.addEventListener('mouseleave', () => {
-            chartDiv.style.transform = 'translateY(0)';
-            chartDiv.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-        });
-
-        chartDiv.innerHTML = `
-            <div style="margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: space-between;">
-                <h4 style="margin: 0; color: var(--text-primary); font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; font-weight: 600;">
-                    <span style="font-size: 1rem;">${meta.icon}</span>
-                    ${meta.name}
-                </h4>
-            </div>
-            <div style="height: 60px; position: relative;">
-                <canvas id="chart-${type}"></canvas>
-            </div>
-        `;
-
-        container.appendChild(chartDiv);
-
-        // Initialize chart data
-        chartData[type] = {
-            labels: [],
-            data: []
-        };
-
-        // Create chart
-        const ctx = document.getElementById(`chart-${type}`).getContext('2d');
-        charts[type] = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: meta.name,
-                    data: [],
-                    borderColor: colors.border,
-                    backgroundColor: colors.background,
-                    tension: 0.4,
-                    fill: true,
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    pointHoverRadius: 5
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                        titleColor: '#f1f5f9',
-                        bodyColor: '#cbd5e1',
-                        borderColor: 'rgba(148, 163, 184, 0.2)',
-                        borderWidth: 1,
-                        padding: 8,
-                        displayColors: false,
-                        callbacks: {
-                            label: function (context) {
-                                return context.parsed.y.toFixed(2) + ' ms';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
-                        },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: {
-                                size: 10
-                            },
-                            callback: function (value) {
-                                return value + ' ms';
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        },
-                        ticks: {
-                            color: '#94a3b8',
-                            font: {
-                                size: 9
-                            },
-                            maxRotation: 0,
-                            autoSkip: true,
-                            maxTicksLimit: 5
-                        }
-                    }
-                }
-            }
-        });
-    });
+    // Update chart with new data point
+    addChartDataPoint(stats.average_response_time || 0);
 }
 
-// Update charts with new data
-function updateCharts(devices) {
-    const now = new Date();
-    const timeLabel = now.toLocaleTimeString('th-TH', {
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+function updateSystemStatus(stats) {
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.getElementById('system-status-text');
+
+    if (stats.devices_down > 0) {
+        statusDot.className = 'status-dot status-dot-down';
+        statusText.textContent = `${stats.devices_down} Device${stats.devices_down > 1 ? 's' : ''} Down`;
+    } else if (stats.devices_slow > 0) {
+        statusDot.className = 'status-dot status-dot-up';
+        statusText.textContent = `${stats.devices_slow} Slow Response`;
+    } else {
+        statusDot.className = 'status-dot status-dot-up';
+        statusText.textContent = 'All Systems Normal';
+    }
+}
+
+// ============================================
+// Device Type Statistics
+// ============================================
+
+function updateDeviceTypeStats(devices) {
+    const container = document.getElementById('device-type-stats');
 
     // Group devices by type
     const devicesByType = {};
     devices.forEach(device => {
         const type = device.device_type || 'other';
         if (!devicesByType[type]) {
-            devicesByType[type] = [];
+            devicesByType[type] = { total: 0, up: 0, down: 0, slow: 0 };
         }
-        devicesByType[type].push(device);
+        devicesByType[type].total++;
+        if (device.status === 'up') {
+            if (device.response_time && parseFloat(device.response_time) > 500) {
+                devicesByType[type].slow++;
+            } else {
+                devicesByType[type].up++;
+            }
+        } else {
+            devicesByType[type].down++;
+        }
     });
 
-    // Update each chart
-    Object.keys(charts).forEach(type => {
-        const typeDevices = devicesByType[type] || [];
-        const onlineDevices = typeDevices.filter(d => d.status === 'up' && d.response_time);
+    // Generate HTML
+    let html = '';
+    Object.keys(devicesByType).sort().forEach(type => {
+        const meta = typeMetadata[type] || typeMetadata['other'];
+        const stats = devicesByType[type];
+        const upPercent = stats.total > 0 ? Math.round((stats.up / stats.total) * 100) : 0;
 
-        let avgResponseTime = 0;
-        if (onlineDevices.length > 0) {
-            const totalResponseTime = onlineDevices.reduce((sum, d) => sum + parseFloat(d.response_time), 0);
-            avgResponseTime = totalResponseTime / onlineDevices.length;
+        let statusColor = '#10b981'; // green
+        if (stats.down > 0) statusColor = '#ef4444'; // red
+        else if (stats.slow > 0) statusColor = '#f59e0b'; // yellow
+
+        html += `
+            <div class="device-type-item" style="border-left-color: ${meta.color};">
+                <div class="device-type-icon">${meta.icon}</div>
+                <div class="device-type-info">
+                    <div class="device-type-name">${meta.name}</div>
+                    <div class="device-type-count">${stats.total} devices</div>
+                </div>
+                <div class="device-type-status" style="color: ${statusColor};">
+                    ${stats.up}/${stats.total}
+                </div>
+            </div>
+        `;
+    });
+
+    if (html === '') {
+        html = '<p class="text-muted text-center" style="grid-column: span 2; padding: 2rem;">No devices configured</p>';
+    }
+
+    container.innerHTML = html;
+}
+
+// ============================================
+// Mini Topology
+// ============================================
+
+function initMiniTopology() {
+    const container = document.getElementById('mini-topology');
+
+    const options = {
+        nodes: {
+            shape: 'dot',
+            size: 8,
+            font: {
+                size: 9,
+                color: getTextColor()
+            },
+            borderWidth: 1,
+            shadow: false
+        },
+        edges: {
+            width: 1.5,
+            color: {
+                color: 'rgba(148, 163, 184, 0.6)',
+                highlight: '#6366f1'
+            },
+            smooth: {
+                type: 'dynamic',
+                roundness: 0.5
+            }
+        },
+        physics: {
+            enabled: true,
+            solver: 'forceAtlas2Based',
+            forceAtlas2Based: {
+                gravitationalConstant: -25,
+                centralGravity: 0.08,
+                springLength: 30,
+                springConstant: 0.1
+            },
+            stabilization: {
+                enabled: true,
+                iterations: 250,
+                updateInterval: 25,
+                fit: true
+            }
+        },
+        layout: {
+            randomSeed: 2,
+            improvedLayout: true
+        },
+        interaction: {
+            dragNodes: false,
+            zoomView: false,
+            dragView: false,
+            hover: true
         }
+    };
 
-        // Update chart data
-        const chart = charts[type];
-        chart.data.labels.push(timeLabel);
-        chart.data.datasets[0].data.push(avgResponseTime);
+    miniNetwork = new vis.Network(container, { nodes: miniNodes, edges: miniEdges }, options);
 
-        // Keep only last MAX_DATA_POINTS
-        if (chart.data.labels.length > MAX_DATA_POINTS) {
-            chart.data.labels.shift();
-            chart.data.datasets[0].data.shift();
+    // Stop physics and fit all nodes in view after stabilization
+    miniNetwork.on('stabilizationIterationsDone', function () {
+        miniNetwork.setOptions({ physics: { enabled: false } });
+        // Fit all nodes with maximum padding
+        miniNetwork.fit({
+            animation: false,
+            maxZoomLevel: 0.6
+        });
+        // Scale down to ensure nodes don't touch edges
+        const currentScale = miniNetwork.getScale();
+        miniNetwork.moveTo({
+            scale: currentScale * 0.50,
+            animation: false
+        });
+    });
+
+    // Click to go to topology page
+    miniNetwork.on('click', function (params) {
+        if (params.nodes.length > 0) {
+            window.location.href = '/topology';
         }
-
-        chart.update('none'); // Update without animation for better performance
     });
 }
 
-// Setup Socket.IO listeners
+function getTextColor() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    return theme === 'light' ? '#0f172a' : '#f1f5f9';
+}
+
+function updateMiniTopology(devices, connections) {
+    // If topology already loaded, just update node colors
+    if (topologyLoaded && miniNodes.length > 0) {
+        updateTopologyNodeColors(devices);
+        return;
+    }
+
+    // Clear existing
+    miniNodes.clear();
+    miniEdges.clear();
+
+    // Add nodes
+    devices.forEach(device => {
+        const color = getNodeColor(device.status, device.response_time);
+        const meta = typeMetadata[device.device_type] || typeMetadata['other'];
+
+        miniNodes.add({
+            id: device.id,
+            label: device.name.length > 12 ? device.name.substring(0, 12) + '...' : device.name,
+            color: {
+                background: color,
+                border: color,
+                highlight: { background: color, border: '#ffffff' }
+            },
+            title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}\n${device.response_time ? device.response_time + ' ms' : ''}`
+        });
+    });
+
+    // Add edges
+    connections.forEach(conn => {
+        miniEdges.add({
+            id: conn.id,
+            from: conn.device_id,
+            to: conn.connected_to
+        });
+    });
+
+    topologyLoaded = true;
+}
+
+// Update only node colors without rebuilding the network
+function updateTopologyNodeColors(devices) {
+    devices.forEach(device => {
+        const color = getNodeColor(device.status, device.response_time);
+        try {
+            miniNodes.update({
+                id: device.id,
+                color: {
+                    background: color,
+                    border: color,
+                    highlight: { background: color, border: '#ffffff' }
+                },
+                title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}\n${device.response_time ? device.response_time + ' ms' : ''}`
+            });
+        } catch (e) {
+            // Node doesn't exist, will be added on next full refresh
+        }
+    });
+}
+
+function getNodeColor(status, responseTime) {
+    if (status === 'down') return '#ef4444'; // Red
+    if (status === 'up' && responseTime && parseFloat(responseTime) > 500) return '#f59e0b'; // Yellow/Orange for slow
+    if (status === 'up') return '#10b981'; // Green
+    if (status === 'slow') return '#f59e0b'; // Yellow/Orange
+    return '#f59e0b'; // Default to yellow for unknown status
+}
+
+// ============================================
+// Response Time Chart
+// ============================================
+
+function initResponseChart() {
+    const ctx = document.getElementById('response-chart').getContext('2d');
+
+    responseChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Avg Response Time',
+                data: [],
+                borderColor: '#6366f1',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                tension: 0.4,
+                fill: true,
+                borderWidth: 2,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f1f5f9',
+                    bodyColor: '#cbd5e1',
+                    padding: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function (context) {
+                            return context.parsed.y.toFixed(2) + ' ms';
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(148, 163, 184, 0.1)' },
+                    ticks: {
+                        color: '#94a3b8',
+                        font: { size: 10 },
+                        callback: value => value + ' ms'
+                    }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        color: '#94a3b8',
+                        font: { size: 9 },
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: 6
+                    }
+                }
+            }
+        }
+    });
+}
+
+function addChartDataPoint(value) {
+    const now = new Date();
+    const timeLabel = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+    chartLabels.push(timeLabel);
+    chartData.push(value);
+
+    if (chartLabels.length > MAX_DATA_POINTS) {
+        chartLabels.shift();
+        chartData.shift();
+    }
+
+    responseChart.data.labels = chartLabels;
+    responseChart.data.datasets[0].data = chartData;
+    responseChart.update('none');
+}
+
+// ============================================
+// Slow Devices List
+// ============================================
+
+function updateSlowDevices(devices) {
+    const container = document.getElementById('slow-devices-list');
+
+    // Filter and sort by response time
+    const slowDevices = devices
+        .filter(d => d.status === 'up' && d.response_time && parseFloat(d.response_time) > 100)
+        .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
+        .slice(0, 5);
+
+    if (slowDevices.length === 0) {
+        container.innerHTML = '<p class="text-muted" style="font-size: 0.875rem;">No slow devices</p>';
+        return;
+    }
+
+    container.innerHTML = slowDevices.map(device => `
+        <div class="slow-device-item">
+            <span class="slow-device-name">${device.name}</span>
+            <span class="slow-device-time">${device.response_time} ms</span>
+        </div>
+    `).join('');
+}
+
+// ============================================
+// Active Alerts
+// ============================================
+
+function updateActiveAlerts(devices) {
+    const tbody = document.getElementById('alerts-tbody');
+    const noAlertsMsg = document.getElementById('no-alerts-msg');
+    const alertCountBadge = document.getElementById('alert-count-badge');
+    const alertCount = document.getElementById('alert-count');
+
+    // Get devices that are down or slow
+    const alertDevices = devices.filter(d =>
+        d.status === 'down' ||
+        (d.status === 'up' && d.response_time && parseFloat(d.response_time) > 500)
+    );
+
+    alertCount.textContent = alertDevices.length;
+
+    if (alertDevices.length === 0) {
+        tbody.innerHTML = '';
+        noAlertsMsg.style.display = 'block';
+        alertCountBadge.className = 'status-badge status-up';
+        return;
+    }
+
+    noAlertsMsg.style.display = 'none';
+    alertCountBadge.className = 'status-badge status-down';
+
+    tbody.innerHTML = alertDevices.map(device => {
+        let severity, severityClass;
+        if (device.status === 'down') {
+            severity = 'Critical';
+            severityClass = 'severity-critical';
+        } else {
+            severity = 'Warning';
+            severityClass = 'severity-warning';
+        }
+
+        const timeAgo = device.last_check ? formatTimeAgo(device.last_check) : 'N/A';
+
+        return `
+            <tr>
+                <td><span class="severity-badge ${severityClass}">⚠️ ${severity}</span></td>
+                <td>${device.name}</td>
+                <td>${timeAgo}</td>
+                <td><span class="status-badge status-${device.status}">${device.status.toUpperCase()}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function formatTimeAgo(dateStr) {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+
+    return date.toLocaleDateString('th-TH');
+}
+
+// ============================================
+// Socket.IO Listeners
+// ============================================
+
 function setupSocketListeners() {
     socket.on('connect', () => {
         console.log('Connected to server');
@@ -285,232 +509,40 @@ function setupSocketListeners() {
 
     socket.on('status_update', (device) => {
         console.log('Status update:', device);
-        updateSingleDevice(device);
+        addActivityLog(device);
+
+        // Reload data to update all components
+        loadInitialData();
     });
 
     socket.on('statistics_update', (stats) => {
         console.log('Statistics update:', stats);
         updateStatistics(stats);
-
-        // Reload devices to update charts
-        fetch('/api/devices')
-            .then(response => response.json())
-            .then(devices => updateCharts(devices))
-            .catch(error => console.error('Error updating charts:', error));
+        updateSystemStatus(stats);
     });
 }
 
-// Update statistics cards
-function updateStatistics(stats) {
-    document.getElementById('total-devices').textContent = stats.total_devices;
-    document.getElementById('devices-up').textContent = stats.devices_up;
-    document.getElementById('devices-slow').textContent = stats.devices_slow || 0;
-    document.getElementById('devices-down').textContent = stats.devices_down;
-    document.getElementById('uptime-percentage').textContent = stats.uptime_percentage + '%';
-    document.getElementById('avg-response-time').textContent = stats.average_response_time + ' ms';
-}
-
-// Update device list - grouped by type
-function updateDeviceList(devices) {
-    const deviceList = document.getElementById('device-list');
-
-    if (devices.length === 0) {
-        deviceList.innerHTML = `
-            <p class="text-center" style="color: var(--text-muted); padding: 2rem;">
-                No devices configured. <a href="/devices" style="color: var(--primary);">Add devices</a> to start monitoring.
-            </p>
-        `;
-        return;
-    }
-
-    // Save current states before updating
-    const currentStates = {};
-    Object.keys(deviceGroupStates).forEach(type => {
-        const element = document.getElementById(`device-group-${type}`);
-        if (element) {
-            currentStates[type] = element.style.display !== 'none';
-        }
-    });
-
-    // Group devices by type
-    const devicesByType = {};
-    devices.forEach(device => {
-        const type = device.device_type || 'other';
-        if (!devicesByType[type]) {
-            devicesByType[type] = [];
-        }
-        devicesByType[type].push(device);
-    });
-
-    // Device type metadata
-    const typeMetadata = {
-        'switch': { icon: '🔀', name: 'Switches', color: '#10b981' },
-        'firewall': { icon: '🛡️', name: 'Firewalls', color: '#ef4444' },
-        'server': { icon: '🖥️', name: 'Servers', color: '#6366f1' },
-        'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
-        'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
-        'website': { icon: '🌐', name: 'Websites', color: '#8b5cf6' },
-        'vmware': { icon: '🖴', name: 'VMware Servers', color: '#22c55e' },
-        'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
-        'vpnrouter': { icon: '🔒', name: 'VPN-Router Sites', color: '#a855f7' },
-        'dns': { icon: '🔍', name: 'DNS Servers', color: '#0ea5e9' },
-        'other': { icon: '⚙️', name: 'Other Devices', color: '#94a3b8' }
-    };
-
-    // Build grouped HTML
-    let html = '';
-    Object.keys(devicesByType).sort().forEach(type => {
-        const meta = typeMetadata[type] || typeMetadata['other'];
-        const typeDevices = devicesByType[type];
-        const upCount = typeDevices.filter(d => d.status === 'up').length;
-        const totalCount = typeDevices.length;
-
-        html += `
-            <div class="device-group fade-in" style="margin-bottom: 1.5rem;">
-                <div class="device-group-header" onclick="toggleDeviceGroup('${type}')" style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    padding: 0.75rem 1rem;
-                    background: var(--bg-secondary);
-                    border-radius: var(--radius-md);
-                    cursor: pointer;
-                    border-left: 3px solid ${meta.color};
-                    margin-bottom: 0.5rem;
-                    transition: all 0.3s ease;
-                ">
-                    <div style="display: flex; align-items: center; gap: 0.75rem;">
-                        <span style="font-size: 1.5rem;">${meta.icon}</span>
-                        <div>
-                            <h4 style="margin: 0; color: var(--text-primary); font-size: 1rem;">${meta.name}</h4>
-                            <p style="margin: 0; color: var(--text-muted); font-size: 0.875rem;">${totalCount} device${totalCount > 1 ? 's' : ''}</p>
-                        </div>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                        <span style="color: var(--success); font-weight: 600;">${upCount}/${totalCount} UP</span>
-                        <span id="toggle-icon-${type}" style="font-size: 1.25rem; transition: transform 0.3s ease;">▶</span>
-                    </div>
-                </div>
-                <div id="device-group-${type}" class="device-group-content" style="
-                    display: none;
-                    padding-left: 1rem;
-                ">
-        `;
-
-        typeDevices.forEach(device => {
-            // Determine status class based on response time
-            let statusClass = device.status || 'unknown';
-            let statusText = device.status || 'unknown';
-
-            // If device is up but response time > 500ms, show warning
-            if (device.status === 'up' && device.response_time && parseFloat(device.response_time) > 500) {
-                statusClass = 'warning';
-                statusText = 'SLOW';
-            }
-
-            html += `
-                <div class="device-item" style="margin-bottom: 0.5rem;">
-                    <div class="device-info">
-                        <h4>${meta.icon} ${device.name}</h4>
-                        <p>${device.ip_address}</p>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 1rem;">
-                        ${device.response_time ? `<span style="color: var(--text-muted); font-size: 0.875rem;">${device.response_time} ms</span>` : ''}
-                        <span class="status-badge status-${statusClass}">
-                            ${statusText}
-                        </span>
-                    </div>
-                </div>
-            `;
-        });
-
-        html += `
-                </div>
-            </div>
-        `;
-    });
-
-    deviceList.innerHTML = html;
-
-    // Restore states after updating HTML
-    Object.keys(currentStates).forEach(type => {
-        if (currentStates[type]) {
-            const content = document.getElementById(`device-group-${type}`);
-            const icon = document.getElementById(`toggle-icon-${type}`);
-            if (content && icon) {
-                content.style.display = 'block';
-                icon.textContent = '▼';
-                icon.style.transform = 'rotate(0deg)';
-                deviceGroupStates[type] = true;
-            }
-        } else {
-            deviceGroupStates[type] = false;
-        }
-    });
-}
-
-// Toggle device group visibility
-function toggleDeviceGroup(type) {
-    const content = document.getElementById(`device-group-${type}`);
-    const icon = document.getElementById(`toggle-icon-${type}`);
-
-    if (content.style.display === 'none') {
-        content.style.display = 'block';
-        icon.style.transform = 'rotate(0deg)';
-        icon.textContent = '▼';
-        deviceGroupStates[type] = true; // Save state
-    } else {
-        content.style.display = 'none';
-        icon.style.transform = 'rotate(-90deg)';
-        icon.textContent = '▶';
-        deviceGroupStates[type] = false; // Save state
-    }
-}
-
-// Update single device status
-function updateSingleDevice(device) {
-    // Reload device list
-    fetch('/api/devices')
-        .then(response => response.json())
-        .then(devices => updateDeviceList(devices))
-        .catch(error => console.error('Error updating device list:', error));
-}
-
-// Refresh status
-function refreshStatus() {
-    const icon = document.getElementById('refresh-icon');
-    icon.style.transform = 'rotate(360deg)';
-    icon.style.transition = 'transform 0.5s ease';
-
-    socket.emit('request_status');
-
-    setTimeout(() => {
-        icon.style.transform = 'rotate(0deg)';
-    }, 500);
-}
-
-// Activity log
-let activityLog = [];
-const MAX_ACTIVITY_ITEMS = 50;
-
-socket.on('status_update', (device) => {
-    addActivityLog(device);
-});
+// ============================================
+// Activity Log
+// ============================================
 
 function addActivityLog(device) {
     const now = new Date();
     const timeStr = now.toLocaleTimeString('th-TH');
 
-    let statusIcon, statusText;
+    let statusIcon, statusText, statusClass;
     if (device.status === 'up') {
         statusIcon = '✅';
         statusText = 'UP';
+        statusClass = 'activity-item-up';
     } else if (device.status === 'slow') {
         statusIcon = '⚠️';
         statusText = 'SLOW';
+        statusClass = 'activity-item-slow';
     } else {
         statusIcon = '❌';
         statusText = 'DOWN';
+        statusClass = 'activity-item-down';
     }
 
     activityLog.unshift({
@@ -519,6 +551,7 @@ function addActivityLog(device) {
         status: device.status,
         icon: statusIcon,
         text: statusText,
+        class: statusClass,
         responseTime: device.response_time
     });
 
@@ -526,15 +559,15 @@ function addActivityLog(device) {
         activityLog.pop();
     }
 
-    updateActivityLog();
+    updateActivityLogUI();
 }
 
-function updateActivityLog() {
+function updateActivityLogUI() {
     const logContainer = document.getElementById('activity-log');
 
     if (activityLog.length === 0) {
         logContainer.innerHTML = `
-            <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
+            <p class="text-center text-muted" style="padding: 1rem;">
                 Waiting for activity...
             </p>
         `;
@@ -542,13 +575,7 @@ function updateActivityLog() {
     }
 
     logContainer.innerHTML = activityLog.map(item => `
-        <div class="activity-item fade-in" style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem;
-            border-bottom: 1px solid var(--border-color);
-        ">
+        <div class="activity-item ${item.class}">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
                 <span style="font-size: 1.25rem;">${item.icon}</span>
                 <div>
@@ -564,4 +591,23 @@ function updateActivityLog() {
             </div>
         </div>
     `).join('');
+}
+
+// ============================================
+// Theme Support
+// ============================================
+
+// Update topology colors when theme changes
+const originalToggleTheme = window.toggleTheme;
+if (typeof originalToggleTheme === 'function') {
+    window.toggleTheme = function () {
+        originalToggleTheme();
+        setTimeout(() => {
+            if (miniNetwork) {
+                miniNodes.forEach(node => {
+                    miniNodes.update({ id: node.id, font: { color: getTextColor() } });
+                });
+            }
+        }, 100);
+    };
 }

@@ -11,7 +11,7 @@ class Config:
     DATABASE_PATH = 'network_monitor.db'
     
     # Monitoring settings
-    PING_INTERVAL = 10  # seconds between ping checks
+    PING_INTERVAL = 30  # seconds between ping checks
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
     

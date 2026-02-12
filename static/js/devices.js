@@ -790,6 +790,9 @@ async function loadGraphHistory(deviceId) {
 // Create or update the response time chart
 function createResponseTimeChart() {
     const ctx = document.getElementById('response-time-chart').getContext('2d');
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const textColor = theme === 'light' ? '#64748b' : 'rgba(255, 255, 255, 0.7)';
+    const gridColor = theme === 'light' ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)';
 
     // Destroy existing chart if exists
     if (responseTimeChart) {
@@ -853,7 +856,8 @@ function createResponseTimeChart() {
                             label: {
                                 display: true,
                                 content: 'Slow Threshold',
-                                position: 'end'
+                                position: 'end',
+                                color: textColor
                             }
                         }
                     }
@@ -865,16 +869,16 @@ function createResponseTimeChart() {
                     title: {
                         display: true,
                         text: 'Time',
-                        color: 'rgba(255, 255, 255, 0.7)'
+                        color: textColor
                     },
                     ticks: {
-                        color: 'rgba(255, 255, 255, 0.7)',
+                        color: textColor,
                         maxRotation: 45,
                         minRotation: 45,
                         maxTicksLimit: 10
                     },
                     grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                        color: gridColor
                     }
                 },
                 y: {
@@ -882,13 +886,13 @@ function createResponseTimeChart() {
                     title: {
                         display: true,
                         text: 'Response Time (ms)',
-                        color: 'rgba(255, 255, 255, 0.7)'
+                        color: textColor
                     },
                     ticks: {
-                        color: 'rgba(255, 255, 255, 0.7)'
+                        color: textColor
                     },
                     grid: {
-                        color: 'rgba(255, 255, 255, 0.1)'
+                        color: gridColor
                     },
                     min: 0
                 }

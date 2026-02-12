@@ -6,9 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTheme();
 });
 
-// Initialize theme from localStorage or default to dark
+// Initialize theme from localStorage or default to light
 function initializeTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
+    const savedTheme = localStorage.getItem('theme') || 'light';
     setTheme(savedTheme);
 }
 

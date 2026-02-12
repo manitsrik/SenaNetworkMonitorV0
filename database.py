@@ -240,6 +240,14 @@ class Database:
         if 'failure_count' not in columns:
             cursor.execute("ALTER TABLE devices ADD COLUMN failure_count INTEGER DEFAULT 0")
             print("[OK] Added failure_count column to devices table")
+            
+        # Check if view_type column exists in topology table
+        cursor.execute("PRAGMA table_info(topology)")
+        topology_columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'view_type' not in topology_columns:
+            cursor.execute("ALTER TABLE topology ADD COLUMN view_type TEXT DEFAULT 'standard'")
+            print("[OK] Added view_type column to topology table")
         
         # Migrate unique constraint from ip_address to (ip_address, monitor_type)
         self._migrate_unique_constraint(cursor)
@@ -495,26 +503,29 @@ class Database:
         conn.close()
         return topology
     
-    def add_topology_connection(self, device_id, connected_to):
+
+
+    def add_topology_connection(self, device_id, connected_to, view_type='standard'):
         """Add a topology connection"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # Check if connection already exists
+        # Check if connection already exists in this view
         cursor.execute('''
             SELECT id FROM topology 
-            WHERE (device_id = ? AND connected_to = ?) 
-               OR (device_id = ? AND connected_to = ?)
-        ''', (device_id, connected_to, connected_to, device_id))
+            WHERE ((device_id = ? AND connected_to = ?) 
+               OR (device_id = ? AND connected_to = ?))
+               AND (view_type = ? OR view_type IS NULL)
+        ''', (device_id, connected_to, connected_to, device_id, view_type))
         
         if cursor.fetchone():
             conn.close()
-            return {'success': False, 'error': 'Connection already exists'}
+            return {'success': False, 'error': 'Connection already exists in this view'}
         
         cursor.execute('''
-            INSERT INTO topology (device_id, connected_to)
-            VALUES (?, ?)
-        ''', (device_id, connected_to))
+            INSERT INTO topology (device_id, connected_to, view_type)
+            VALUES (?, ?, ?)
+        ''', (device_id, connected_to, view_type))
         conn.commit()
         connection_id = cursor.lastrowid
         conn.close()

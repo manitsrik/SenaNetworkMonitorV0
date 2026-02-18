@@ -54,7 +54,7 @@
                     <button id="toggle-wireless-btn" class="btn btn-sm btn-info" onclick="toggleWirelessView()">
                         📶 Wireless View
                     </button>
-                    <button class="btn btn-sm btn-success" onclick="showAddConnectionModal()">
+                    <button class="btn btn-sm btn-success" onclick="toggleConnectMode()">
                         ➕ Add Connection
                     </button>
                     <button class="btn btn-sm btn-secondary" onclick="fitNetwork()">
@@ -69,6 +69,11 @@
                 </div>
             </div>
             <div class="card-body">
+                <!-- Connect Mode Indicator -->
+                <div id="connect-mode-indicator" class="connect-mode-banner" style="display: none;">
+                    🔗 <strong>Connect Mode:</strong> Click a node and drag to another node to create a connection.
+                    Press <kbd>ESC</kbd> to cancel.
+                </div>
                 <!-- Topology Network -->
                 <div id="topology-network" style="height: 65vh; min-height: 500px;"></div>
             </div>
@@ -193,7 +198,7 @@
     <!-- Theme Toggle -->
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <!-- Topology Script -->
-    <script src="{{ url_for('static', filename='js/topology.js') }}?v=2.0"></script>
+    <script src="{{ url_for('static', filename='js/topology.js') }}?v=5.8"></script>
 </body>
 
 </html>

@@ -13,10 +13,8 @@ let miniNodes = new vis.DataSet([]);
 let miniEdges = new vis.DataSet([]);
 let topologyLoaded = false; // Track if topology was initially loaded
 
-// Chart data
-const MAX_DATA_POINTS = 60;
-let chartLabels = [];
-let chartData = [];
+// Gauge Chart Configuration
+const GAUGE_MAX = 500; // Max value for gauge (ms)
 
 // Activity log
 let activityLog = [];
@@ -88,8 +86,8 @@ function updateStatistics(stats) {
     document.getElementById('uptime-percentage').textContent = (stats.uptime_percentage || 0) + '%';
     document.getElementById('avg-response-time').textContent = stats.average_response_time || 0;
 
-    // Update chart with new data point
-    addChartDataPoint(stats.average_response_time || 0);
+    // Update gauge with new data
+    updateGaugeValue(stats.average_response_time || 0);
 }
 
 function updateSystemStatus(stats) {
@@ -282,8 +280,29 @@ function updateMiniTopology(devices, connections) {
         });
     });
 
-    // Add edges
+    // Create Map for unique edges (key: minId-maxId)
+    // Prioritize 'standard' view
+    const uniqueEdges = new Map();
+
     connections.forEach(conn => {
+        // Create a unique key for the pair of devices regardless of direction
+        const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
+        const key = `${ids[0]}-${ids[1]}`;
+
+        if (!uniqueEdges.has(key)) {
+            uniqueEdges.set(key, conn);
+        } else {
+            // If already exists, check if current is 'standard' and existing is NOT 'standard'
+            // If so, replace it. Otherwise keep existing.
+            const existing = uniqueEdges.get(key);
+            if (conn.view_type === 'standard' && existing.view_type !== 'standard') {
+                uniqueEdges.set(key, conn);
+            }
+        }
+    });
+
+    // Add edges from unique map
+    uniqueEdges.forEach(conn => {
         miniEdges.add({
             id: conn.id,
             from: conn.device_id,
@@ -323,86 +342,124 @@ function getNodeColor(status, responseTime) {
 }
 
 // ============================================
-// Response Time Chart
+// Response Time Gauge Chart
 // ============================================
 
 function initResponseChart() {
     const ctx = document.getElementById('response-chart').getContext('2d');
 
+    // Gauge Needle Plugin
+    const gaugeNeedle = {
+        id: 'gaugeNeedle',
+        afterDatasetDraw(chart, args, options) {
+            const { ctx, config, data, chartArea: { top, bottom, left, right, width, height } } = chart;
+
+            ctx.save();
+
+            const needleValue = data.datasets[0].needleValue || 0;
+            const dataTotal = data.datasets[0].data.reduce((a, b) => a + b, 0);
+
+            // Calculate angle
+            // Semi-circle is -PI to 0 (top-based) or PI to 2PI. 
+            // Chart.js doughnut starts at 'rotation', goes for 'circumference'.
+            // Here rotation: -90 (top), circumference: 180 (half circle).
+            // Value ratio = needleValue / GAUGE_MAX
+
+            let angle = Math.PI + (needleValue / GAUGE_MAX) * Math.PI;
+            if (needleValue > GAUGE_MAX) angle = 2 * Math.PI; // Cap at max
+
+            const cx = width / 2;
+            const cy = chart.chartArea.bottom - 10; // Adjust center Y slightly up
+
+            // Draw Needle
+            ctx.translate(cx, cy);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -2);
+            ctx.lineTo(height - (ctx.canvas.offsetHeight * 0.2), 0); // Needle length
+            ctx.lineTo(0, 2);
+            ctx.fillStyle = '#475569';
+            ctx.fill();
+
+            // Draw Center Dot
+            ctx.rotate(-angle); // Reset rotation
+            ctx.translate(-cx, -cy); // Reset translation
+            ctx.beginPath();
+            ctx.arc(cx, cy, 5, 0, 10);
+            ctx.fillStyle = '#475569';
+            ctx.fill();
+            ctx.restore();
+
+            // Draw Value Text
+            ctx.save();
+            ctx.font = 'bold 30px Inter, sans-serif';
+            ctx.fillStyle = getGaugeColor(needleValue);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(needleValue.toFixed(2), cx, cy - 20);
+
+            ctx.font = '14px Inter, sans-serif';
+            ctx.fillStyle = '#94a3b8'; // muted text
+            ctx.fillText('ms', cx, cy + 5);
+            ctx.restore();
+        }
+    };
+
     responseChart = new Chart(ctx, {
-        type: 'line',
+        type: 'doughnut',
         data: {
-            labels: [],
+            labels: ['Value', 'Remaining'],
             datasets: [{
-                label: 'Avg Response Time',
-                data: [],
-                borderColor: '#6366f1',
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                tension: 0.4,
-                fill: true,
-                borderWidth: 2,
-                pointRadius: 3,
-                pointHoverRadius: 5
+                data: [0, GAUGE_MAX],
+                backgroundColor: ['#10b981', '#e2e8f0'], // Initial Green / Gray
+                borderWidth: 0,
+                needleValue: 0
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            rotation: -90,
+            circumference: 180,
+            cutout: '75%',
             plugins: {
                 legend: { display: false },
-                tooltip: {
-                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#cbd5e1',
-                    padding: 8,
-                    displayColors: false,
-                    callbacks: {
-                        label: function (context) {
-                            return context.parsed.y.toFixed(2) + ' ms';
-                        }
-                    }
-                }
+                tooltip: { enabled: false } // Disable tooltip for gauge
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: { color: 'rgba(148, 163, 184, 0.1)' },
-                    ticks: {
-                        color: '#94a3b8',
-                        font: { size: 10 },
-                        callback: value => value + ' ms'
-                    }
-                },
-                x: {
-                    grid: { display: false },
-                    ticks: {
-                        color: '#94a3b8',
-                        font: { size: 9 },
-                        maxRotation: 0,
-                        autoSkip: true,
-                        maxTicksLimit: 6
-                    }
+            layout: {
+                padding: {
+                    bottom: 20
                 }
             }
-        }
+        },
+        plugins: [gaugeNeedle]
     });
 }
 
-function addChartDataPoint(value) {
-    const now = new Date();
-    const timeLabel = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+function updateGaugeValue(value) {
+    if (!responseChart) return;
 
-    chartLabels.push(timeLabel);
-    chartData.push(value);
+    value = parseFloat(value);
 
-    if (chartLabels.length > MAX_DATA_POINTS) {
-        chartLabels.shift();
-        chartData.shift();
-    }
+    // Update data: [value, max-value]
+    // If value > max, render full gauge
+    let renderValue = value > GAUGE_MAX ? GAUGE_MAX : value;
+    let remaining = GAUGE_MAX - renderValue;
 
-    responseChart.data.labels = chartLabels;
-    responseChart.data.datasets[0].data = chartData;
-    responseChart.update('none');
+    responseChart.data.datasets[0].data = [renderValue, remaining];
+    responseChart.data.datasets[0].needleValue = value; // Store actual value for needle
+    responseChart.data.datasets[0].backgroundColor = [
+        getGaugeColor(value),
+        '#e2e8f0' // Gray background
+    ];
+
+    responseChart.update();
+}
+
+function getGaugeColor(value) {
+    if (value < 100) return '#10b981'; // Green (Fast)
+    if (value < 300) return '#f59e0b'; // Orange (Moderate)
+    return '#ef4444'; // Red (Slow)
 }
 
 // ============================================

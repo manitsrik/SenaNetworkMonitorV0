@@ -691,6 +691,47 @@ tr:hover {
     border-radius: var(--radius-lg);
 }
 
+/* Connect Mode Banner */
+.connect-mode-banner {
+    padding: 0.625rem 1rem;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(139, 92, 246, 0.08));
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-left: 4px solid var(--primary);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    margin-bottom: var(--spacing-sm);
+    animation: connectPulse 2s ease-in-out infinite;
+}
+
+.connect-mode-banner kbd {
+    display: inline-block;
+    padding: 0.125rem 0.425rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-family: 'Inter', monospace;
+    font-size: 0.8rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes connectPulse {
+
+    0%,
+    100% {
+        border-left-color: var(--primary);
+    }
+
+    50% {
+        border-left-color: #8b5cf6;
+    }
+}
+
+/* Hide vis.js default manipulation toolbar - we use custom UI */
+.vis-manipulation {
+    display: none !important;
+}
+
 /* Fullscreen support */
 .card:fullscreen {
     display: flex;
@@ -1001,7 +1042,7 @@ tr:hover {
 
 /* Mini Topology */
 #mini-topology {
-    height: 400px;
+    height: 500px;
     background: var(--bg-secondary);
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);

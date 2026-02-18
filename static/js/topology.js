@@ -1,4 +1,4 @@
-﻿// Topology JavaScript
+// Topology JavaScript
 // Handles network topology visualization using Vis.js
 
 // Initialize Socket.IO connection
@@ -12,6 +12,7 @@ let allDevices = []; // Store all devices for modal
 let allConnections = []; // Store all connections
 let isGroupedView = false; // Toggle for grouped/free view
 let isWirelessView = false; // Toggle for wireless view
+let isConnectMode = false; // Toggle for drag-to-connect mode
 
 // Location type zones base configuration
 const locationTypeZonesBase = {
@@ -23,13 +24,29 @@ const locationTypeZonesBase = {
 
 // Dynamic zone dimensions (calculated based on device count)
 let dynamicZones = {};
+let onPremiseSubZones = {}; // Sub-zones within On-Premise grouped by device_type
+
+// Sub-zone colors for device types within On-Premise
+const subZoneColors = {
+    'switch': { color: 'rgba(59, 130, 246, 0.12)', borderColor: '#3b82f6', label: '🔀 Switch' },
+    'firewall': { color: 'rgba(239, 68, 68, 0.12)', borderColor: '#ef4444', label: '🛡️ Firewall' },
+    'server': { color: 'rgba(16, 185, 129, 0.12)', borderColor: '#10b981', label: '🖥️ Server' },
+    'router': { color: 'rgba(245, 158, 11, 0.12)', borderColor: '#f59e0b', label: '🌐 Router' },
+    'wireless': { color: 'rgba(139, 92, 246, 0.12)', borderColor: '#8b5cf6', label: '📶 Wireless' },
+    'website': { color: 'rgba(236, 72, 153, 0.12)', borderColor: '#ec4899', label: '🌐 Website' },
+    'vmware': { color: 'rgba(34, 197, 94, 0.12)', borderColor: '#22c55e', label: '🖴 VMware' },
+    'ippbx': { color: 'rgba(168, 85, 247, 0.12)', borderColor: '#a855f7', label: '☎️ IP PBX' },
+    'vpnrouter': { color: 'rgba(20, 184, 166, 0.12)', borderColor: '#14b8a6', label: '🔒 VPN Router' },
+    'dns': { color: 'rgba(249, 115, 22, 0.12)', borderColor: '#f97316', label: '🔍 DNS' },
+    'other': { color: 'rgba(107, 114, 128, 0.12)', borderColor: '#6b7280', label: '⚙️ Other' }
+};
 
 // Zone sizing constants
-const MIN_ZONE_WIDTH = 400;
-const MIN_ZONE_HEIGHT = 350;
-const DEVICE_SPACING_X = 350; // Increased spacing for better distribution
-const DEVICE_SPACING_Y = 250; // Increased spacing for better distribution
-const ZONE_PADDING = 80;
+const MIN_ZONE_WIDTH = 500;
+const MIN_ZONE_HEIGHT = 400;
+const DEVICE_SPACING_X = 500; // Spacing to accommodate 50px font labels
+const DEVICE_SPACING_Y = 400; // Vertical spacing for 50px font labels
+const ZONE_PADDING = 100;
 const ZONE_GAP = 30;
 
 // Initialize topology
@@ -106,13 +123,18 @@ function initializeNetwork() {
     const options = {
         nodes: {
             shape: 'dot',
-            size: 100,
+            size: 70,
             font: {
-                size: 150,
+                multi: true,
+                size: 100,
                 face: 'Inter, sans-serif',
-                mod: 'bold',
-                vadjust: -30,
-                color: getTextColor()
+                mod: '',
+                vadjust: -5,
+                color: getTextColor(),
+                bold: {
+                    size: 250,
+                    vadjust: 0
+                }
             },
             borderWidth: 2,
             shadow: {
@@ -126,15 +148,15 @@ function initializeNetwork() {
                 label: {
                     enabled: true,
                     min: 14,
-                    max: 150,
+                    max: 220,
                     drawThreshold: 2
                 }
             }
         },
         edges: {
-            width: 3,
+            width: 4,
             color: {
-                color: 'rgba(71, 85, 105, 0.8)',
+                color: 'rgba(71, 85, 105, 1)',
                 highlight: '#6366f1',
                 hover: '#818cf8'
             },
@@ -148,16 +170,16 @@ function initializeNetwork() {
             enabled: true,
             solver: 'forceAtlas2Based',
             forceAtlas2Based: {
-                gravitationalConstant: -3000,
-                centralGravity: 0.003,
-                springLength: 350,
-                springConstant: 0.02,
+                gravitationalConstant: -4000,
+                centralGravity: 0.01,
+                springLength: 400,
+                springConstant: 0.015,
                 avoidOverlap: 1.0,
                 damping: 0.4
             },
             stabilization: {
                 enabled: true,
-                iterations: 800,
+                iterations: 1200,
                 updateInterval: 25,
                 fit: true
             }
@@ -172,9 +194,6 @@ function initializeNetwork() {
             zoomView: true,
             dragView: true,
             dragNodes: true
-        },
-        manipulation: {
-            enabled: false
         }
     };
 
@@ -195,19 +214,20 @@ function initializeNetwork() {
     network.on('beforeDrawing', (ctx) => {
         if (isGroupedView) {
             drawZoneBackgrounds(ctx);
-            constrainOnPremiseNodes();
         }
     });
 
-    // Also constrain after drawing for better physics containment
-    network.on('afterDrawing', () => {
-        if (isGroupedView) {
-            constrainOnPremiseNodes();
+    // Draw drag connection line
+    network.on('afterDrawing', (ctx) => {
+        if (isConnectMode && isDraggingConnection && dragSourceNode) {
+            drawConnectionLine(ctx);
         }
     });
 
     // Event listeners
     network.on('click', (params) => {
+        if (isConnectMode) return; // Ignore clicks in connect mode
+
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
             showNodeInfo(nodeId);
@@ -217,17 +237,24 @@ function initializeNetwork() {
         }
     });
 
+    // Setup native canvas pointer events for drag-to-connect
+    setupConnectModeEvents(container);
+
     // Hover to enlarge font
     network.on('hoverNode', (params) => {
         const nodeId = params.node;
         nodes.update({
             id: nodeId,
-            size: isGroupedView ? 35 : 110,
+            size: isGroupedView ? 30 : 80,
             font: {
-                size: isGroupedView ? 30 : 160,
+                multi: true,
+                size: isGroupedView ? 75 : 110,
                 face: 'Inter, sans-serif',
-                mod: isGroupedView ? '' : 'bold',
-                color: getTextColor()
+                mod: isGroupedView ? '' : '',
+                color: getTextColor(),
+                bold: {
+                    size: isGroupedView ? 80 : 270
+                }
             }
         });
     });
@@ -237,12 +264,16 @@ function initializeNetwork() {
         const nodeId = params.node;
         nodes.update({
             id: nodeId,
-            size: isGroupedView ? 25 : 100,
+            size: isGroupedView ? 25 : 70,
             font: {
-                size: isGroupedView ? 20 : 150,
+                multi: true,
+                size: isGroupedView ? 60 : 100,
                 face: 'Inter, sans-serif',
-                mod: isGroupedView ? '' : 'bold',
-                color: getTextColor()
+                mod: isGroupedView ? '' : '',
+                color: getTextColor(),
+                bold: {
+                    size: isGroupedView ? 70 : 250
+                }
             }
         });
     });
@@ -284,10 +315,50 @@ function drawZoneBackgrounds(ctx) {
 
         // Draw zone label at top-left corner with device count
         ctx.fillStyle = zone.borderColor;
-        ctx.font = 'bold 18px Inter, sans-serif';
+        ctx.font = 'bold 80px Inter, sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(`${zone.label} (${zone.deviceCount})`, x + 15, y + 12);
+
+        // Draw sub-zones within On-Premise
+        if (zoneKey === 'on-premise' && Object.keys(onPremiseSubZones).length > 0) {
+            Object.keys(onPremiseSubZones).forEach(typeKey => {
+                const sub = onPremiseSubZones[typeKey];
+                const subColors = subZoneColors[typeKey] || subZoneColors['other'];
+                const sx = sub.x - sub.width / 2;
+                const sy = sub.y - sub.height / 2;
+
+                // Draw sub-zone background
+                ctx.fillStyle = subColors.color;
+                ctx.beginPath();
+                const sr = 10;
+                ctx.moveTo(sx + sr, sy);
+                ctx.lineTo(sx + sub.width - sr, sy);
+                ctx.quadraticCurveTo(sx + sub.width, sy, sx + sub.width, sy + sr);
+                ctx.lineTo(sx + sub.width, sy + sub.height - sr);
+                ctx.quadraticCurveTo(sx + sub.width, sy + sub.height, sx + sub.width - sr, sy + sub.height);
+                ctx.lineTo(sx + sr, sy + sub.height);
+                ctx.quadraticCurveTo(sx, sy + sub.height, sx, sy + sub.height - sr);
+                ctx.lineTo(sx, sy + sr);
+                ctx.quadraticCurveTo(sx, sy, sx + sr, sy);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw sub-zone border
+                ctx.strokeStyle = subColors.borderColor;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([8, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Draw sub-zone label
+                ctx.fillStyle = subColors.borderColor;
+                ctx.font = 'bold 70px Inter, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText(`${subColors.label} (${sub.deviceCount})`, sx + 10, sy + 8);
+            });
+        }
     });
 }
 
@@ -300,7 +371,12 @@ function calculateDynamicZones(groupedDevices) {
     zoneKeys.forEach(key => {
         const devices = groupedDevices[key] || [];
         const deviceCount = devices.length;
-        const devicesPerRow = Math.max(1, Math.min(deviceCount, 6)); // Max 6 devices per row
+        // set max 5 per row for Cloud, Internet, Remote
+        let maxPerRow = 8;
+        if (['cloud', 'internet', 'remote'].includes(key)) {
+            maxPerRow = 5;
+        }
+        const devicesPerRow = Math.max(1, Math.min(deviceCount, maxPerRow));
         const rows = Math.ceil(deviceCount / devicesPerRow);
 
         const width = Math.max(MIN_ZONE_WIDTH, devicesPerRow * DEVICE_SPACING_X + ZONE_PADDING * 2);
@@ -315,51 +391,102 @@ function calculateDynamicZones(groupedDevices) {
         };
     });
 
-    // Give ON-PREMISE grid layout sizing
+    // Give ON-PREMISE sizing based on sub-zone layout
     if (zoneSizes['on-premise'].deviceCount > 0) {
-        const onPremCount = zoneSizes['on-premise'].deviceCount;
-        // Increase columns to spread out more (max 8 per row)
-        const onPremPerRows = Math.max(1, Math.min(onPremCount, 8));
-        const onPremRows = Math.ceil(onPremCount / onPremPerRows);
+        // Calculate sub-zone sizes first, then size on-premise to fit them
+        const onPremDevices = groupedDevices['on-premise'] || [];
+        const typeGroups = {};
+        onPremDevices.forEach(d => {
+            const t = (d.device_type || 'other').toLowerCase();
+            if (!typeGroups[t]) typeGroups[t] = [];
+            typeGroups[t].push(d);
+        });
 
-        const onPremWidth = Math.max(MIN_ZONE_WIDTH, onPremPerRows * DEVICE_SPACING_X + ZONE_PADDING * 2);
-        const onPremHeight = Math.max(MIN_ZONE_HEIGHT, onPremRows * DEVICE_SPACING_Y + ZONE_PADDING * 2 + 40);
+        const typeKeys = Object.keys(typeGroups).sort();
+        const subZoneSizes = {};
+        const SUB_SPACING_X = 500;
+        const SUB_SPACING_Y = 450;
+        const SUB_PADDING = 400;
+        const SUB_LABEL_HEIGHT = 80;
 
-        zoneSizes['on-premise'].width = onPremWidth;
-        zoneSizes['on-premise'].height = onPremHeight;
-        zoneSizes['on-premise'].devicesPerRow = onPremPerRows;
+        typeKeys.forEach(tk => {
+            const count = typeGroups[tk].length;
+            const perRow = Math.max(1, Math.min(count, 4)); // max 4 per row for all sub-zones
+            const rows = Math.ceil(count / perRow);
+
+            let w = Math.max(500, perRow * SUB_SPACING_X + SUB_PADDING * 2);
+            // Force wireless frame to be wider (as if 8 cols) but keep 4 cols layout
+            if (tk === 'wireless') {
+                w = Math.max(500, 8 * SUB_SPACING_X + SUB_PADDING * 2);
+            }
+
+            const h = Math.max(400, rows * SUB_SPACING_Y + SUB_PADDING + SUB_LABEL_HEIGHT);
+            subZoneSizes[tk] = { width: w, height: h, deviceCount: count, devicesPerRow: perRow, rows: rows };
+        });
+
+        // Arrange sub-zones in a grid (3 columns)
+        const subCols = Math.min(typeKeys.length, 3);
+        const subRows = Math.ceil(typeKeys.length / subCols);
+        const SUB_GAP = 80;
+        const ONPREM_INNER_PADDING = 150; // top padding for on-premise label
+
+        // Find max width per column and max height per row
+        const colWidths = [];
+        const rowHeights = [];
+        for (let c = 0; c < subCols; c++) colWidths.push(0);
+        for (let r = 0; r < subRows; r++) rowHeights.push(0);
+
+        typeKeys.forEach((tk, i) => {
+            const col = i % subCols;
+            const row = Math.floor(i / subCols);
+            colWidths[col] = Math.max(colWidths[col], subZoneSizes[tk].width);
+            rowHeights[row] = Math.max(rowHeights[row], subZoneSizes[tk].height);
+        });
+
+        const totalSubWidth = colWidths.reduce((a, b) => a + b, 0) + (subCols - 1) * SUB_GAP + SUB_PADDING * 2;
+        const totalSubHeight = rowHeights.reduce((a, b) => a + b, 0) + (subRows - 1) * SUB_GAP + ONPREM_INNER_PADDING + SUB_PADDING;
+
+        zoneSizes['on-premise'].width = Math.max(MIN_ZONE_WIDTH, totalSubWidth);
+        zoneSizes['on-premise'].height = Math.max(MIN_ZONE_HEIGHT, totalSubHeight);
+        zoneSizes['on-premise'].devicesPerRow = 6;
+        zoneSizes['on-premise']._subZoneLayout = {
+            typeKeys, subZoneSizes, colWidths, rowHeights, subCols, subRows,
+            SUB_GAP, ONPREM_INNER_PADDING, SUB_PADDING, typeGroups
+        };
     }
 
-    // Use uniform width for all zones (max width across all zones)
-    const uniformWidth = Math.max(
-        zoneSizes['cloud'].width,
-        zoneSizes['internet'].width,
-        zoneSizes['remote'].width,
-        zoneSizes['on-premise'].width
-    );
-    zoneKeys.forEach(key => { zoneSizes[key].width = uniformWidth; });
+    // Use independent column widths instead of uniform width
+    // Left column: cloud (top-left) + remote (bottom-left)
+    // Right column: internet (top-right) + on-premise (bottom-right)
+    const leftColWidth = Math.max(zoneSizes['cloud'].width, zoneSizes['remote'].width);
+    const rightColWidth = Math.max(zoneSizes['internet'].width, zoneSizes['on-premise'].width);
+
+    zoneSizes['cloud'].width = leftColWidth;
+    zoneSizes['remote'].width = leftColWidth;
+    zoneSizes['internet'].width = rightColWidth;
+    zoneSizes['on-premise'].width = rightColWidth;
 
     // Calculate row heights (max height in each row)
     const topRowHeight = Math.max(zoneSizes['cloud'].height, zoneSizes['internet'].height);
     const bottomRowHeight = Math.max(zoneSizes['remote'].height, zoneSizes['on-premise'].height);
 
-    const totalWidth = uniformWidth * 2 + ZONE_GAP;
+    const totalWidth = leftColWidth + rightColWidth + ZONE_GAP;
     const totalHeight = topRowHeight + bottomRowHeight + ZONE_GAP;
 
-    // Position zones in 2x2 grid with uniform width
-    zoneSizes['cloud'].x = -totalWidth / 2 + uniformWidth / 2;
+    // Position zones in 2x2 grid with independent column widths
+    zoneSizes['cloud'].x = -totalWidth / 2 + leftColWidth / 2;
     zoneSizes['cloud'].y = -totalHeight / 2 + topRowHeight / 2;
     zoneSizes['cloud'].height = topRowHeight;
 
-    zoneSizes['internet'].x = totalWidth / 2 - uniformWidth / 2;
+    zoneSizes['internet'].x = totalWidth / 2 - rightColWidth / 2;
     zoneSizes['internet'].y = -totalHeight / 2 + topRowHeight / 2;
     zoneSizes['internet'].height = topRowHeight;
 
-    zoneSizes['remote'].x = -totalWidth / 2 + uniformWidth / 2;
+    zoneSizes['remote'].x = -totalWidth / 2 + leftColWidth / 2;
     zoneSizes['remote'].y = totalHeight / 2 - bottomRowHeight / 2;
     zoneSizes['remote'].height = bottomRowHeight;
 
-    zoneSizes['on-premise'].x = totalWidth / 2 - uniformWidth / 2;
+    zoneSizes['on-premise'].x = totalWidth / 2 - rightColWidth / 2;
     zoneSizes['on-premise'].y = totalHeight / 2 - bottomRowHeight / 2;
     zoneSizes['on-premise'].height = bottomRowHeight;
 
@@ -417,6 +544,46 @@ function updateTopology(devices, connections) {
     // Calculate dynamic zone sizes based on device count
     if (isGroupedView) {
         dynamicZones = calculateDynamicZones(groupedDevices);
+
+        // Calculate sub-zone positions within On-Premise
+        onPremiseSubZones = {};
+        const opZone = dynamicZones['on-premise'];
+        if (opZone && opZone._subZoneLayout) {
+            const layout = opZone._subZoneLayout;
+            const opLeft = opZone.x - opZone.width / 2;
+            const opTop = opZone.y - opZone.height / 2;
+
+            // Calculate starting position for sub-zones grid
+            const totalGridWidth = layout.colWidths.reduce((a, b) => a + b, 0) + (layout.subCols - 1) * layout.SUB_GAP;
+            const gridStartX = opZone.x - totalGridWidth / 2;
+            const gridStartY = opTop + layout.ONPREM_INNER_PADDING;
+
+            layout.typeKeys.forEach((tk, i) => {
+                const col = i % layout.subCols;
+                const row = Math.floor(i / layout.subCols);
+
+                // Calculate x position based on column widths
+                let xPos = gridStartX;
+                for (let c = 0; c < col; c++) xPos += layout.colWidths[c] + layout.SUB_GAP;
+                xPos += layout.colWidths[col] / 2;
+
+                // Calculate y position based on row heights
+                let yPos = gridStartY;
+                for (let r = 0; r < row; r++) yPos += layout.rowHeights[r] + layout.SUB_GAP;
+                yPos += layout.rowHeights[row] / 2;
+
+                const subSize = layout.subZoneSizes[tk];
+                onPremiseSubZones[tk] = {
+                    x: xPos,
+                    y: yPos,
+                    width: layout.colWidths[col],
+                    height: layout.rowHeights[row],
+                    deviceCount: subSize.deviceCount,
+                    devicesPerRow: subSize.devicesPerRow,
+                    devices: layout.typeGroups[tk]
+                };
+            });
+        }
     }
 
     // Add devices as nodes
@@ -431,9 +598,15 @@ function updateTopology(devices, connections) {
         const locTypeLabel = getLocationTypeLabel(locType);
 
         // Calculate position if grouped view
+        // Scale node size based on zone device count for zone view
+        // Smaller zones get larger nodes for visibility
+        let zoneNodeSize = 25;
+        let zoneFontSize = 65;
+        let zoneBoldSize = 70;
+
         let nodeOptions = {
             id: device.id,
-            label: `${icon}\n${device.name}`,
+            label: `<b>${icon}</b>\n${device.name}`,
             title: `${icon} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nLocation: ${device.location || 'N/A'}\nZone: ${locTypeLabel}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
             status: device.status, // Store status for edge coloring
             color: {
@@ -444,105 +617,113 @@ function updateTopology(devices, connections) {
                     border: '#ffffff'
                 }
             },
-            size: isGroupedView ? 25 : 100,
+            size: isGroupedView ? zoneNodeSize : 70,
             font: {
-                size: isGroupedView ? 20 : 150,
+                multi: true,
+                size: isGroupedView ? zoneFontSize : 100,
                 face: 'Inter, sans-serif',
-                mod: isGroupedView ? '' : 'bold',
-                vadjust: isGroupedView ? 0 : -30,
-                color: getTextColor()
+                mod: isGroupedView ? '' : '',
+                vadjust: isGroupedView ? 0 : -5,
+                color: getTextColor(),
+                bold: {
+                    size: isGroupedView ? zoneBoldSize : 250,
+                    vadjust: 0
+                }
             }
         };
 
-        // Calculate fixed position if grouped view is enabled (2x2 grid with dynamic sizing)
+        // Calculate fixed position if grouped view is enabled
         if (isGroupedView) {
-            const zone = dynamicZones[locType] || dynamicZones['on-premise'];
-            const devicesInZone = groupedDevices[locType] || [];
-            const index = devicesInZone.indexOf(device);
+            // Check if this is an on-premise device with sub-zones
+            if (locType === 'on-premise' && onPremiseSubZones[deviceType]) {
+                const subZone = onPremiseSubZones[deviceType];
+                const devicesInSub = subZone.devices;
+                const index = devicesInSub.indexOf(device);
 
-            // Unified grid layout logic for ALL zones including On-Premise
-            const devicesPerRow = zone.devicesPerRow || Math.ceil(Math.sqrt(devicesInZone.length));
-            const row = Math.floor(index / devicesPerRow);
-            const col = index % devicesPerRow;
-            const totalRows = Math.ceil(devicesInZone.length / devicesPerRow);
+                const subPerRow = subZone.devicesPerRow;
+                const row = Math.floor(index / subPerRow);
+                const col = index % subPerRow;
+                const totalRows = Math.ceil(devicesInSub.length / subPerRow);
 
-            // Explicit large spacing
-            const spacingX = 400;
-            const spacingY = 300;
+                // Position within sub-zone
+                const subLabelH = 80;
+                const subPad = 400;
+                const availW = subZone.width - subPad * 2;
+                const availH = subZone.height - subLabelH - subPad;
+                const spX = subPerRow > 1 ? availW / (subPerRow - 1) : 0;
+                const spY = totalRows > 1 ? Math.min(availH / (totalRows - 1), 250) : 0;
 
-            const gridWidth = (devicesPerRow - 1) * spacingX;
-            const gridHeight = (totalRows - 1) * spacingY;
+                const gW = (subPerRow - 1) * spX;
+                const subTop = subZone.y - subZone.height / 2;
+                const xOff = subZone.x + (col * spX) - gW / 2;
+                const yOff = subTop + subLabelH + subPad / 2 + (row * spY);
 
-            // Center the grid within the zone
-            const xOffset = zone.x + (col * spacingX) - gridWidth / 2;
-            const yOffset = zone.y + (row * spacingY) - gridHeight / 2 + 30; // +30 for label offset
+                nodeOptions.x = xOff;
+                nodeOptions.y = yOff;
+                nodeOptions.fixed = { x: true, y: true };
+            } else {
+                // Standard zone positioning for non-on-premise zones
+                const zone = dynamicZones[locType] || dynamicZones['on-premise'];
+                const devicesInZone = groupedDevices[locType] || [];
+                const index = devicesInZone.indexOf(device);
 
-            nodeOptions.x = xOffset;
-            nodeOptions.y = yOffset;
-            nodeOptions.fixed = { x: true, y: true };
+                const devicesPerRow = zone.devicesPerRow || Math.ceil(Math.sqrt(devicesInZone.length));
+                const row = Math.floor(index / devicesPerRow);
+                const col = index % devicesPerRow;
+                const totalRows = Math.ceil(devicesInZone.length / devicesPerRow);
+
+                const labelHeight = 50;
+                const padding = 400;
+                const availableWidth = zone.width - padding * 2;
+                const availableHeight = zone.height - labelHeight - padding;
+                const spacingX = devicesPerRow > 1 ? availableWidth / (devicesPerRow - 1) : 0;
+                const maxSpacingY = 300;
+                const spacingY = totalRows > 1 ? Math.min(availableHeight / (totalRows - 1), maxSpacingY) : 0;
+
+                const gridWidth = (devicesPerRow - 1) * spacingX;
+
+                const zoneTop = zone.y - zone.height / 2;
+                const xOffset = zone.x + (col * spacingX) - gridWidth / 2;
+                const yOffset = zoneTop + labelHeight + padding / 2 + (row * spacingY);
+
+                nodeOptions.x = xOffset;
+                nodeOptions.y = yOffset;
+                nodeOptions.fixed = { x: true, y: true };
+            }
         }
         nodes.add(nodeOptions);
     });
 
-    // Add connections as edges with varied routing to avoid overlap
-    const edgePairCount = {};
-    const nodeEdgeCount = {};
+    // Add connections as edges (only in Free View, hidden in Zone View)
+    if (!isGroupedView) {
+        const edgePairCount = {};
+        const nodeEdgeCount = {};
 
-    displayConnections.forEach(conn => {
-        const pairKey = [Math.min(conn.device_id, conn.connected_to), Math.max(conn.device_id, conn.connected_to)].join('-');
-        if (!edgePairCount[pairKey]) edgePairCount[pairKey] = 0;
-        edgePairCount[pairKey]++;
+        displayConnections.forEach(conn => {
+            const pairKey = [Math.min(conn.device_id, conn.connected_to), Math.max(conn.device_id, conn.connected_to)].join('-');
+            if (!edgePairCount[pairKey]) edgePairCount[pairKey] = 0;
+            edgePairCount[pairKey]++;
 
-        nodeEdgeCount[conn.device_id] = (nodeEdgeCount[conn.device_id] || 0) + 1;
-        nodeEdgeCount[conn.connected_to] = (nodeEdgeCount[conn.connected_to] || 0) + 1;
+            nodeEdgeCount[conn.device_id] = (nodeEdgeCount[conn.device_id] || 0) + 1;
+            nodeEdgeCount[conn.connected_to] = (nodeEdgeCount[conn.connected_to] || 0) + 1;
 
-        const edgeIndex = edgePairCount[pairKey];
+            const edgeIndex = edgePairCount[pairKey];
 
-        let smoothOptions;
-        if (isGroupedView) {
-            // Zone view: use varied curve types and roundness to separate lines
-            const types = ['curvedCW', 'curvedCCW', 'cubicBezier'];
-            const typeIndex = (conn.id || edgeIndex) % types.length;
-            const baseRoundness = 0.15 + (edgeIndex * 0.12);
-            const variation = ((conn.device_id * 7 + conn.connected_to * 13) % 20) / 100;
-            smoothOptions = {
-                type: types[typeIndex],
-                roundness: Math.min(baseRoundness + variation, 0.8)
+            const smoothOptions = {
+                type: 'continuous',
+                roundness: 0.15
             };
-        } else {
-            // Free view: dynamic routing (reverted)
-            const direction = edgeIndex % 2 === 0 ? 1 : -1;
-            const roundness = 0.2 + (Math.floor((edgeIndex - 1) / 2) * 0.15) * direction;
-            smoothOptions = {
-                type: 'curvedCW',
-                roundness: roundness
-            };
-        }
 
-        // Check for cross-zone edges involving On-Premise
-        let edgePhysics = true;
-        if (isGroupedView) {
-            const fromDev = deviceMap[conn.device_id];
-            const toDev = deviceMap[conn.connected_to];
-            if (fromDev && toDev) {
-                const loc1 = fromDev.location_type || 'on-premise';
-                const loc2 = toDev.location_type || 'on-premise';
-                if ((loc1 === 'on-premise' && loc2 !== 'on-premise') ||
-                    (loc1 !== 'on-premise' && loc2 === 'on-premise')) {
-                    edgePhysics = false;
-                }
-            }
-        }
-
-        edges.add({
-            id: conn.id,
-            from: conn.device_id,
-            to: conn.connected_to,
-            title: 'Click to delete connection',
-            physics: edgePhysics,
-            smooth: smoothOptions
+            edges.add({
+                id: conn.id,
+                from: conn.device_id,
+                to: conn.connected_to,
+                title: 'Click to delete connection',
+                physics: true,
+                smooth: smoothOptions
+            });
         });
-    });
+    }
 
     // Handle physics based on view mode
     if (isGroupedView) {
@@ -574,16 +755,16 @@ function updateTopology(devices, connections) {
                 enabled: true,
                 solver: 'forceAtlas2Based',
                 forceAtlas2Based: {
-                    gravitationalConstant: -3000,
-                    centralGravity: 0.003,
-                    springLength: 350,
-                    springConstant: 0.02,
+                    gravitationalConstant: -4000,
+                    centralGravity: 0.01,
+                    springLength: 400,
+                    springConstant: 0.015,
                     avoidOverlap: 1.0,
                     damping: 0.4
                 },
                 stabilization: {
                     enabled: true,
-                    iterations: 800,
+                    iterations: 1200,
                     updateInterval: 25,
                     fit: true
                 }
@@ -719,7 +900,7 @@ function updateNodeStatus(device) {
 
         nodes.update({
             id: device.id,
-            label: `${icon}\n${device.name}`,
+            label: `<b>${icon}</b>\n${device.name}`,
             title: `${icon} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
             color: {
                 background: color,
@@ -757,7 +938,12 @@ function showAddConnectionModal() {
     fromSelect.innerHTML = '<option value="">Select device...</option>';
     toSelect.innerHTML = '<option value="">Select device...</option>';
 
-    allDevices.forEach(device => {
+    // Filter devices: show only wireless devices when in Wireless View
+    const devicesToShow = isWirelessView
+        ? allDevices.filter(d => (d.device_type || '').toLowerCase() === 'wireless')
+        : allDevices;
+
+    devicesToShow.forEach(device => {
         fromSelect.innerHTML += `<option value="${device.id}">${device.name} (${device.ip_address})</option>`;
         toSelect.innerHTML += `<option value="${device.id}">${device.name} (${device.ip_address})</option>`;
     });
@@ -831,6 +1017,191 @@ async function deleteConnection(connectionId) {
         alert('Error deleting connection. Please try again.');
     }
 }
+
+// --- Drag-to-Connect Mode (Native Canvas Pointer Events) ---
+
+let isDraggingConnection = false;
+let dragSourceNode = null;
+let dragCurrentMousePos = null;
+
+// Setup native canvas pointer events for connect mode
+function setupConnectModeEvents(container) {
+    const canvas = container.getElementsByTagName('canvas')[0];
+    if (!canvas) {
+        console.error('Canvas not found for connect mode events');
+        return;
+    }
+    console.log('[ConnectMode] Canvas found, attaching pointer events');
+
+    canvas.addEventListener('pointerdown', (e) => {
+        if (!isConnectMode) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const domPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const nodeId = network.getNodeAt(domPos);
+        console.log('[ConnectMode] pointerdown at', domPos, 'nodeId:', nodeId);
+
+        if (nodeId !== undefined) {
+            isDraggingConnection = true;
+            dragSourceNode = nodeId;
+            canvas.setPointerCapture(e.pointerId); // Capture pointer for reliable tracking
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('[ConnectMode] Drag started from node:', nodeId);
+        }
+    }, true); // Use capture phase to intercept before vis.js
+
+    canvas.addEventListener('pointermove', (e) => {
+        if (!isConnectMode || !isDraggingConnection) return;
+
+        // Convert DOM coordinates to canvas (world) coordinates
+        const rect = canvas.getBoundingClientRect();
+        const domPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        dragCurrentMousePos = network.DOMtoCanvas(domPos);
+        network.redraw(); // Trigger afterDrawing to draw the line
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+
+    canvas.addEventListener('pointerup', (e) => {
+        if (!isConnectMode || !isDraggingConnection) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const domPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const targetNodeId = network.getNodeAt(domPos);
+        console.log('[ConnectMode] pointerup at', domPos, 'targetNode:', targetNodeId, 'sourceNode:', dragSourceNode);
+
+        if (targetNodeId !== undefined && targetNodeId !== dragSourceNode) {
+            console.log('[ConnectMode] Creating connection:', dragSourceNode, '->', targetNodeId);
+            handleDragConnect({ from: dragSourceNode, to: targetNodeId });
+        }
+
+        // Release pointer capture
+        canvas.releasePointerCapture(e.pointerId);
+
+        // Reset drag state
+        isDraggingConnection = false;
+        dragSourceNode = null;
+        dragCurrentMousePos = null;
+        network.redraw(); // Clear the line
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+}
+
+// Toggle connect mode on/off
+function toggleConnectMode() {
+    isConnectMode = !isConnectMode;
+
+    const btn = document.querySelector('[onclick="toggleConnectMode()"]');
+    const indicator = document.getElementById('connect-mode-indicator');
+
+    if (isConnectMode) {
+        // Update button style
+        if (btn) {
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-danger');
+            btn.innerHTML = '✋ Cancel Connect';
+        }
+        // Show indicator
+        if (indicator) indicator.style.display = 'block';
+
+        // Disable dragNodes and dragView so mouse events don't move nodes/canvas
+        network.setOptions({ interaction: { dragNodes: false, dragView: false } });
+
+    } else {
+        // Reset button style
+        if (btn) {
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-success');
+            btn.innerHTML = '➕ Add Connection';
+        }
+        // Hide indicator
+        if (indicator) indicator.style.display = 'none';
+
+        // Re-enable dragNodes and dragView
+        network.setOptions({ interaction: { dragNodes: true, dragView: true } });
+
+        isDraggingConnection = false;
+        dragSourceNode = null;
+        dragCurrentMousePos = null;
+        network.redraw();
+    }
+}
+
+// Draw the temporary connection line
+function drawConnectionLine(ctx) {
+    if (!dragSourceNode || !dragCurrentMousePos) return;
+
+    const startPos = network.getPositions([dragSourceNode])[dragSourceNode];
+    if (!startPos) return;
+
+    ctx.beginPath();
+    ctx.moveTo(startPos.x, startPos.y);
+    ctx.lineTo(dragCurrentMousePos.x, dragCurrentMousePos.y);
+
+    ctx.strokeStyle = '#ef4444'; // Red line
+    ctx.lineWidth = 6;
+    ctx.setLineDash([14, 8]); // Dashed line
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset dash
+}
+
+// Handle the drag-connect edge creation
+async function handleDragConnect(edgeData) {
+    const fromId = edgeData.from;
+    const toId = edgeData.to;
+
+    // Validate: can't connect to self
+    if (fromId === toId) {
+        alert('Cannot connect a device to itself!');
+        return;
+    }
+
+    // Validate: in wireless view, both devices must be wireless
+    if (isWirelessView) {
+        const fromDevice = allDevices.find(d => d.id === fromId);
+        const toDevice = allDevices.find(d => d.id === toId);
+        const fromIsWireless = fromDevice && (fromDevice.device_type || '').toLowerCase() === 'wireless';
+        const toIsWireless = toDevice && (toDevice.device_type || '').toLowerCase() === 'wireless';
+
+        if (!fromIsWireless || !toIsWireless) {
+            alert('In Wireless View, only wireless devices can be connected!');
+            return;
+        }
+    }
+
+    // Save via API
+    try {
+        const response = await fetch('/api/topology/connection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                device_id: fromId,
+                connected_to: toId,
+                view_type: isWirelessView ? 'wireless' : 'standard'
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            loadTopologyData();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to add connection'));
+        }
+    } catch (error) {
+        console.error('Error adding connection:', error);
+        alert('Error adding connection. Please try again.');
+    }
+}
+
+// ESC key to exit connect mode
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isConnectMode) {
+        toggleConnectMode();
+    }
+});
 
 // Fit network to screen
 function fitNetwork() {

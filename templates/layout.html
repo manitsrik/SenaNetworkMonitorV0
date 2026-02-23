@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Network Monitor{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=c3_sidebar_fix">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+    <div class="app-wrapper">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-network-wired"></i>
+                <span>NetMonitor</span>
+            </div>
+
+            <div class="sidebar-menu">
+                <div class="menu-label">Main</div>
+                <!-- Dashboard Group -->
+                <div class="nav-group">
+                    <div class="nav-link-toggle {% if active_page == 'dashboard' or active_page == 'dashboard_view' %}active expanded{% endif %}"
+                        onclick="toggleSubmenu('dashboard-submenu', this)">
+                        <div class="nav-link-content">
+                            <i class="fa-solid fa-gauge-high"></i>
+                            <span>Dashboard</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-right nav-chevron"></i>
+                    </div>
+                    <div class="submenu {% if active_page == 'dashboard' or active_page == 'dashboard_view' %}show{% endif %}"
+                        id="dashboard-submenu">
+                        <a href="/" class="submenu-item {% if active_page == 'dashboard' %}active{% endif %}">
+                            <span>Main Status</span>
+                        </a>
+                        <!-- Dynamic dashboards will be inserted here -->
+                    </div>
+                </div>
+                <!-- Topology Group -->
+                <div class="nav-group">
+                    <div class="nav-link-toggle {% if active_page == 'topology' or active_page == 'sub_topology' %}active expanded{% endif %}"
+                        onclick="toggleSubmenu('topology-submenu', this)">
+                        <div class="nav-link-content">
+                            <i class="fa-solid fa-sitemap"></i>
+                            <span>Topology</span>
+                        </div>
+                        <i class="fa-solid fa-chevron-right nav-chevron"></i>
+                    </div>
+                    <div class="submenu {% if active_page == 'topology' or active_page == 'sub_topology' %}show{% endif %}"
+                        id="topology-submenu">
+                        <a href="/topology" class="submenu-item {% if active_page == 'topology' %}active{% endif %}">
+                            <span>Main Topology</span>
+                        </a>
+                        <a href="/sub-topology/new" class="submenu-item"
+                            style="color: var(--primary); font-size: 0.8rem;">
+                            <span>+ New Sub-Topology</span>
+                        </a>
+                        <!-- Dynamic sub-topologies will be inserted here -->
+                    </div>
+                </div>
+
+                <div class="menu-label">Resources</div>
+                <a href="/devices" class="nav-item {% if active_page == 'devices' %}active{% endif %}">
+                    <i class="fa-solid fa-server"></i>
+                    <span>Devices</span>
+                </a>
+                <a href="/dashboards" class="nav-item {% if active_page == 'dashboards' %}active{% endif %}">
+                    <i class="fa-solid fa-table-columns"></i>
+                    <span>Dashboards</span>
+                </a>
+
+                <div class="menu-label">Analysis</div>
+                <a href="/history" class="nav-item {% if active_page == 'history' %}active{% endif %}">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>History</span>
+                </a>
+                <a href="/sla" class="nav-item {% if active_page == 'sla' %}active{% endif %}">
+                    <i class="fa-solid fa-file-contract"></i>
+                    <span>SLA Reports</span>
+                </a>
+
+                <div class="menu-label">System</div>
+                <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>Settings</span>
+                </a>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <i class="fa-solid fa-circle-user"></i>
+                    <span>Admin</span>
+                </div>
+                <a href="/logout" class="logout-btn" title="Logout">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                </a>
+            </div>
+        </nav>
+
+        <!-- Main Content Wrapper -->
+        <div class="main-wrapper">
+            <!-- Top Header -->
+            <header class="top-header">
+                <div class="header-left">
+                    <button id="sidebar-toggle" class="btn-icon">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <h2 class="page-title-header">{% block page_title %}Dashboard{% endblock %}</h2>
+                </div>
+
+                <div class="header-right">
+                    <div class="status-indicator" id="system-status-header">
+                        <span class="status-dot status-dot-up"></span>
+                        <span class="status-text">System Normal</span>
+                    </div>
+
+                    <div class="theme-switch-wrapper">
+                        <label class="theme-switch" for="checkbox">
+                            <input type="checkbox" id="checkbox" onclick="toggleTheme()" />
+                            <div class="slider round">
+                                <i class="fa-solid fa-sun sun-icon"></i>
+                                <i class="fa-solid fa-moon moon-icon"></i>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <main class="content-area">
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        // Sidebar Toggle Logic
+        document.getElementById('sidebar-toggle').addEventListener('click', function () {
+            document.querySelector('.app-wrapper').classList.toggle('sidebar-collapsed');
+        });
+
+        // Submenu Toggle Logic
+        function toggleSubmenu(id, element) {
+            const submenu = document.getElementById(id);
+            if (submenu) {
+                submenu.classList.toggle('show');
+                element.classList.toggle('expanded');
+            }
+        }
+
+        // Fetch and Populate Dashboards in Sidebar
+        document.addEventListener('DOMContentLoaded', function () {
+            fetch('/api/dashboards')
+                .then(response => response.json())
+                .then(dashboards => {
+                    const submenu = document.getElementById('dashboard-submenu');
+                    // Get current URL to mark active
+                    const currentPath = window.location.pathname;
+
+                    dashboards.forEach(dashboard => {
+                        const link = document.createElement('a');
+                        link.href = `/dashboard/${dashboard.id}`;
+                        link.className = 'submenu-item';
+                        if (currentPath === `/dashboard/${dashboard.id}`) {
+                            link.classList.add('active');
+                        }
+
+                        // Icon based on name?
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = dashboard.name;
+                        link.appendChild(nameSpan);
+
+                        submenu.appendChild(link);
+                    });
+                })
+                .catch(error => console.error('Error fetching dashboards for sidebar:', error));
+
+            // Fetch and Populate Sub-Topologies in Sidebar
+            fetch('/api/sub-topologies')
+                .then(response => response.json())
+                .then(subTopos => {
+                    const submenu = document.getElementById('topology-submenu');
+                    const currentPath = window.location.pathname;
+
+                    subTopos.forEach(st => {
+                        const link = document.createElement('a');
+                        link.href = `/sub-topology/${st.id}`;
+                        link.className = 'submenu-item';
+                        if (currentPath === `/sub-topology/${st.id}`) {
+                            link.classList.add('active');
+                        }
+                        const nameSpan = document.createElement('span');
+                        nameSpan.textContent = st.name;
+                        link.appendChild(nameSpan);
+                        submenu.appendChild(link);
+                    });
+                })
+                .catch(error => console.error('Error fetching sub-topologies for sidebar:', error));
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

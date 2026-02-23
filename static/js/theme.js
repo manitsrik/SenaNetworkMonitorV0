@@ -26,8 +26,14 @@ function toggleTheme() {
     setTheme(newTheme);
 }
 
-// Update theme toggle button icon
+// Update theme toggle button icon / checkbox state
 function updateThemeIcon(theme) {
+    const themeCheckbox = document.getElementById('checkbox');
+    if (themeCheckbox) {
+        themeCheckbox.checked = (theme === 'dark');
+    }
+
+    // Fallback for old icon (if present on other pages)
     const themeIcon = document.getElementById('theme-icon');
     if (themeIcon) {
         themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';

@@ -1,0 +1,217 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - Sub-Topology{% endblock %}
+
+{% block page_title %}Sub-Topology{% endblock %}
+
+{% set active_page = 'sub_topology' %}
+
+{% block head %}
+<!-- Vis.js Network -->
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+    /* Override content-area for sub-topology page */
+    .content-area {
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Card styling: edge-to-edge, no effects (matching topology.html) */
+    .container-fluid>.card {
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .container-fluid>.card:hover {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+
+    .container-fluid>.card>.card-header {
+        padding: 0.5rem 1rem;
+        border-radius: 0;
+    }
+
+    .container-fluid>.card>.card-body {
+        padding: 0;
+    }
+
+    .sub-topo-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .sub-topo-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .sub-topo-desc {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+
+    /* Direct height calculation: viewport - header(64px) - card-header(~50px) - legend(~30px) */
+    #sub-topo-network {
+        width: 100% !important;
+        height: calc(100vh - 120px) !important;
+        border: none !important;
+        border-radius: 0 !important;
+    }
+
+    /* Compact legend bar (copied from topology.html) */
+    .topology-legend-bar {
+        display: flex;
+        gap: 1.5rem;
+        padding: 0.4rem 1rem;
+        border-top: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        align-items: center;
+        font-size: 0.8rem;
+    }
+
+    /* Fullscreen overrides */
+    .card:fullscreen,
+    .card:-webkit-full-screen,
+    .card:-moz-full-screen {
+        display: flex !important;
+        flex-direction: column !important;
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        background-color: var(--bg-secondary) !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        border-radius: 0 !important;
+        z-index: 99999 !important;
+        overflow: hidden !important;
+    }
+
+    .card:fullscreen>.card-header,
+    .card:-webkit-full-screen>.card-header,
+    .card:-moz-full-screen>.card-header {
+        flex-shrink: 0 !important;
+        border-radius: 0 !important;
+        padding: 0.75rem 1rem !important;
+    }
+
+    .card:fullscreen>.card-body,
+    .card:-webkit-full-screen>.card-body,
+    .card:-moz-full-screen>.card-body {
+        flex: 1 1 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        padding: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        position: relative !important;
+    }
+
+    .card:fullscreen #sub-topo-network,
+    .card:-webkit-full-screen #sub-topo-network,
+    .card:-moz-full-screen #sub-topo-network {
+        flex: 1 1 0 !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        width: 100% !important;
+    }
+
+    .device-stats-row {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .device-stat-badge {
+        padding: 0.25rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .badge-online {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .badge-slow {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+
+    .badge-offline {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .badge-total {
+        background: rgba(99, 102, 241, 0.15);
+        color: #6366f1;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Control Card -->
+    <div class="card" id="topo-card">
+        <div class="card-header">
+            <div>
+                <h3 class="card-title sub-topo-title" id="sub-topo-title">Loading...</h3>
+                <span class="sub-topo-desc" id="sub-topo-desc"></span>
+            </div>
+            <div class="flex gap-1" style="flex-wrap: wrap;">
+                <div class="device-stats-row" id="device-stats"></div>
+                <button class="btn btn-sm btn-secondary" onclick="fitSubTopoNetwork()">📐 Fit</button>
+                <button class="btn btn-sm btn-primary" onclick="refreshSubTopo()">🔄 Refresh</button>
+                <button class="btn btn-sm btn-info" onclick="toggleSubTopoFullscreen()">⛶ Fullscreen</button>
+                <button class="btn btn-sm btn-warning" onclick="editSubTopo()">✏️ Edit</button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSubTopo()">🗑️ Delete</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="sub-topo-network"></div>
+        </div>
+    </div>
+
+    <!-- Legend bar (compact matching topology.html) -->
+    <div class="topology-legend-bar">
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <div style="width: 12px; height: 12px; background: var(--success); border-radius: 50%;"></div>
+            <span>Online</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <div style="width: 12px; height: 12px; background: var(--warning); border-radius: 50%;"></div>
+            <span>Slow</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <div style="width: 12px; height: 12px; background: var(--danger); border-radius: 50%;"></div>
+            <span>Offline</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.35rem;">
+            <div style="width: 12px; height: 12px; background: var(--text-muted); border-radius: 50%;"></div>
+            <span>Unknown</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const SUB_TOPO_ID = {{ sub_topo_id }};
+</script>
+<script src="{{ url_for('static', filename='js/sub_topology_view.js') }}?v=2.1"></script>
+{% endblock %}

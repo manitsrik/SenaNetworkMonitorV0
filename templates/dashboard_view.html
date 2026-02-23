@@ -1,0 +1,201 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - Network Monitor{% endblock %}
+
+{% block page_title %}<span id="dashboard-title">Loading...</span>{% endblock %}
+
+{% set active_page = 'dashboards' %}
+
+{% block head %}
+<style>
+    .grid-canvas {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1.5rem;
+        min-height: 500px;
+    }
+
+    .grid-widget {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        min-height: 200px;
+    }
+
+    .widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .widget-title {
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: var(--text-primary);
+    }
+
+    .widget-content {
+        flex-grow: 1;
+        position: relative;
+    }
+
+    /* Widget Types Sizes */
+    .w-col-3 {
+        grid-column: span 3;
+    }
+
+    .w-col-4 {
+        grid-column: span 4;
+    }
+
+    .w-col-6 {
+        grid-column: span 6;
+    }
+
+    .w-col-8 {
+        grid-column: span 8;
+    }
+
+    .w-col-12 {
+        grid-column: span 12;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="header-actions"
+    style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: start;">
+    <div>
+        <!-- Title is in header now, just description here if needed -->
+        <p id="dashboard-desc" class="text-muted"></p>
+    </div>
+    <div class="text-muted" style="font-size: 0.875rem;">
+        <span class="status-dot online"></span> Live
+    </div>
+</div>
+
+<div id="grid-canvas" class="grid-canvas">
+    <!-- Widgets will be loaded here -->
+</div>
+
+<!-- Hidden Input for logic -->
+<input type="hidden" id="dashboard-id" value="{{ dashboard_id }}">
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<!-- Use the new shared renderer -->
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=3"></script>
+<script>
+    let currentDashboard = null;
+    let currentData = { devices: [], stats: {}, connections: [] };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const dashboardId = document.getElementById('dashboard-id').value;
+        if (!dashboardId) return;
+
+        try {
+            // Load dashboard config
+            const response = await fetch(`/api/dashboards/${dashboardId}`);
+            currentDashboard = await response.json();
+
+            const titleElem = document.getElementById('dashboard-title');
+            if (titleElem) titleElem.textContent = currentDashboard.name;
+
+            // Also update header title if using layout block
+            const headerTitle = document.querySelector('.page-title-header');
+            if (headerTitle) headerTitle.textContent = currentDashboard.name;
+
+            document.getElementById('dashboard-desc').textContent = currentDashboard.description || '';
+
+            // Initial data load
+            await loadData();
+            render();
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            document.getElementById('grid-canvas').innerHTML = `<div class="alert alert-danger">
+                    <h4>Error loading dashboard</h4>
+                    <pre>${error.message}</pre>
+                </div>`;
+        }
+    });
+
+    async function loadData() {
+        try {
+            const [devices, stats, topology] = await Promise.all([
+                fetch('/api/devices').then(r => r.json()),
+                fetch('/api/statistics').then(r => r.json()),
+                fetch('/api/topology').then(r => r.json())
+            ]);
+            currentData = { devices, stats, connections: topology.connections };
+        } catch (e) {
+            console.error("Error fetching data:", e);
+        }
+    }
+
+    function render() {
+        if (!currentDashboard) return;
+        const container = document.getElementById('grid-canvas');
+
+        // Check if renderer is ready
+        if (typeof window.DashboardRenderer === 'undefined' && typeof DashboardRenderer === 'undefined') {
+            console.warn('DashboardRenderer not loaded yet. Retrying...');
+
+            // Dynamic fallback if stuck
+            if (!window.dynamicLoadTried) {
+                window.dynamicLoadTried = true;
+                const script = document.createElement('script');
+                script.src = '/static/js/renderer_lib.js?v=dynamic_view';
+                script.onload = () => {
+                    console.log('renderer_lib.js loaded dynamically in view');
+                    render();
+                };
+                script.onerror = (e) => {
+                    console.error('Failed to dynamic load renderer_lib.js', e);
+                    container.innerHTML = '<div class="alert alert-danger">Failed to load Dashboard Renderer library. Please refresh correctly.</div>';
+                };
+                document.body.appendChild(script);
+                return;
+            }
+
+            setTimeout(render, 500);
+            return;
+        }
+
+        const Renderer = window.DashboardRenderer || DashboardRenderer;
+        try {
+            Renderer.renderDashboard(container, currentDashboard.layout_config, currentData, false);
+        } catch (e) {
+            console.error('Error in renderDashboard:', e);
+            container.innerHTML = `<div class="alert alert-danger">Error rendering dashboard: ${e.message}</div>`;
+        }
+    }
+
+    // Setup Socket.IO for live updates
+    const socket = io();
+    socket.on('connect', () => {
+        console.log('Connected to server');
+    });
+
+    socket.on('status_update', (data) => {
+        // Re-fetch data and render
+        loadData().then(render);
+    });
+
+    socket.on('statistics_update', (stats) => {
+        currentData.stats = stats;
+        render();
+    });
+
+    socket.on('topology_updated', () => {
+        loadData().then(render);
+    });
+
+</script>
+{% endblock %}

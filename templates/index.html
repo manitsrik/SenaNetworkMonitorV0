@@ -1,166 +1,156 @@
-<!DOCTYPE html>
-<html lang="th">
+{% extends "layout.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Monitor - Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+{% block title %}Network Monitor - Dashboard{% endblock %}
 
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="navbar-content">
-            <a href="/" class="navbar-brand">
-                <span>🌐</span> Network Monitor
-            </a>
-            <div class="navbar-status">
-                <span class="status-indicator" id="system-status">
-                    <span class="status-dot status-dot-up"></span>
-                    <span id="system-status-text">All Systems Normal</span>
+{% block page_title %}Dashboard{% endblock %}
+
+{% set active_page = 'dashboard' %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Statistics Cards - Top Row -->
+    <div class="stats-row">
+        <div class="stat-card stat-card-uptime">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+                <div class="stat-value" id="uptime-percentage">0%</div>
+                <div class="stat-label">Network Uptime</div>
+            </div>
+        </div>
+        <div class="stat-card stat-card-online">
+            <div class="stat-icon">🖥️</div>
+            <div class="stat-content">
+                <div class="stat-value"><span id="devices-up">0</span>/<span id="total-devices">0</span></div>
+                <div class="stat-label">Devices Online</div>
+            </div>
+        </div>
+        <div class="stat-card stat-card-latency">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-content">
+                <div class="stat-value"><span id="avg-response-time">0</span><small>ms</small></div>
+                <div class="stat-label">Avg Latency</div>
+            </div>
+        </div>
+        <div class="stat-card stat-card-slow">
+            <div class="stat-icon">⚠️</div>
+            <div class="stat-content">
+                <div class="stat-value" id="devices-slow">0</div>
+                <div class="stat-label">Slow Devices</div>
+            </div>
+        </div>
+        <div class="stat-card stat-card-alerts">
+            <div class="stat-icon">🔔</div>
+            <div class="stat-content">
+                <div class="stat-value" id="devices-down">0</div>
+                <div class="stat-label">Active Alerts</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Grid - Top Row (3 Columns) -->
+    <div class="dashboard-grid">
+        <!-- Column 1: Response Time -->
+        <div class="dashboard-card chart-card">
+            <div class="card-header">
+                <h3 class="card-title">⏱️ Current Response Time</h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="response-chart"></canvas>
+                </div>
+                <div class="top-devices">
+                    <h4>Top Slow Devices</h4>
+                    <div id="slow-devices-list">
+                        <p class="text-muted">No slow devices</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: Mini Topology -->
+        <div class="dashboard-card topology-card">
+            <div class="card-header">
+                <h3 class="card-title">🗺️ Network Topology</h3>
+                <a href="/topology" class="btn btn-sm btn-secondary">Full View →</a>
+            </div>
+            <div class="card-body">
+                <div id="mini-topology"></div>
+            </div>
+        </div>
+
+        <!-- Column 3: Device Status -->
+        <div class="dashboard-card performance-card">
+            <div class="card-header">
+                <h3 class="card-title">📊 Device Status by Type</h3>
+            </div>
+            <div class="card-body">
+                <div id="device-type-stats" class="device-type-grid">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Middle Row: Response Time by Device Type & Active Alerts -->
+    <div class="dashboard-grid" style="grid-template-columns: 2fr 1fr; margin-bottom: 1.5rem;">
+        <div class="dashboard-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h3 class="card-title">📊 Average Response Time by Device Type</h3>
+                <div class="btn-group btn-group-sm" role="group" aria-label="Time Range">
+                    <button type="button" class="btn btn-outline-secondary active"
+                        onclick="updateTrendRange(1, this)">1m</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="updateTrendRange(5, this)">5m</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="updateTrendRange(15, this)">15m</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="updateTrendRange(30, this)">30m</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                        onclick="updateTrendRange(60, this)">1h</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="device-type-response-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Alerts (Moved from Bottom) -->
+        <div class="dashboard-card alerts-card" style="grid-column: auto;">
+            <div class="card-header">
+                <h3 class="card-title">🚨 Active Alerts</h3>
+                <span class="status-badge status-down" id="alert-count-badge">
+                    <span id="alert-count">0</span> alerts
                 </span>
             </div>
-            <ul class="navbar-menu">
-                <li><a href="/" class="active">Dashboard</a></li>
-                <li><a href="/topology">Topology</a></li>
-                <li><a href="/devices">Devices</a></li>
-                <li><a href="/history">History</a></li>
-                <li><a href="/sla">SLA</a></li>
-                <li><a href="/settings">Settings</a></li>
-                <li>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
-                        <span id="theme-icon">☀️</span>
-                    </button>
-                </li>
-                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
-            </ul>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="dashboard-container">
-        <!-- Statistics Cards - Top Row -->
-        <div class="stats-row">
-            <div class="stat-card stat-card-uptime">
-                <div class="stat-icon">✅</div>
-                <div class="stat-content">
-                    <div class="stat-value" id="uptime-percentage">0%</div>
-                    <div class="stat-label">Network Uptime</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-online">
-                <div class="stat-icon">🖥️</div>
-                <div class="stat-content">
-                    <div class="stat-value"><span id="devices-up">0</span>/<span id="total-devices">0</span></div>
-                    <div class="stat-label">Devices Online</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-latency">
-                <div class="stat-icon">⚡</div>
-                <div class="stat-content">
-                    <div class="stat-value"><span id="avg-response-time">0</span><small>ms</small></div>
-                    <div class="stat-label">Avg Latency</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-slow">
-                <div class="stat-icon">⚠️</div>
-                <div class="stat-content">
-                    <div class="stat-value" id="devices-slow">0</div>
-                    <div class="stat-label">Slow Devices</div>
-                </div>
-            </div>
-            <div class="stat-card stat-card-alerts">
-                <div class="stat-icon">🔔</div>
-                <div class="stat-content">
-                    <div class="stat-value" id="devices-down">0</div>
-                    <div class="stat-label">Active Alerts</div>
+            <div class="card-body">
+                <div id="alerts-table-container">
+                    <table class="alerts-table">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Device</th>
+                                <th>Time</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts-tbody">
+                            <!-- Will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                    <p id="no-alerts-msg" class="text-center text-muted" style="padding: 2rem;">
+                        ✅ No active alerts - All systems operational
+                    </p>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Main Dashboard Grid -->
-        <div class="dashboard-grid">
-            <!-- Left Column: Mini Topology -->
-            <div class="dashboard-card topology-card">
-                <div class="card-header">
-                    <h3 class="card-title">🗺️ Network Topology</h3>
-                    <a href="/topology" class="btn btn-sm btn-secondary">Full View →</a>
-                </div>
-                <div class="card-body">
-                    <div id="mini-topology"></div>
-                </div>
-            </div>
-
-            <!-- Right Column: Server Performance -->
-            <div class="dashboard-card performance-card">
-                <div class="card-header">
-                    <h3 class="card-title">📊 Device Status by Type</h3>
-                </div>
-                <div class="card-body">
-                    <div id="device-type-stats" class="device-type-grid">
-                        <!-- Will be populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Bottom Row -->
-        <div class="dashboard-grid">
-            <!-- Left: Network Traffic / Response Time Chart -->
-            <div class="dashboard-card chart-card">
-                <div class="card-header">
-                    <h3 class="card-title">⏱️ Current Response Time</h3>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="response-chart"></canvas>
-                    </div>
-                    <div class="top-devices">
-                        <h4>Top Slow Devices</h4>
-                        <div id="slow-devices-list">
-                            <p class="text-muted">No slow devices</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right: Active Alerts -->
-            <div class="dashboard-card alerts-card">
-                <div class="card-header">
-                    <h3 class="card-title">🚨 Active Alerts</h3>
-                    <span class="status-badge status-down" id="alert-count-badge">
-                        <span id="alert-count">0</span> alerts
-                    </span>
-                </div>
-                <div class="card-body">
-                    <div id="alerts-table-container">
-                        <table class="alerts-table">
-                            <thead>
-                                <tr>
-                                    <th>Severity</th>
-                                    <th>Device</th>
-                                    <th>Time</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="alerts-tbody">
-                                <!-- Will be populated by JavaScript -->
-                            </tbody>
-                        </table>
-                        <p id="no-alerts-msg" class="text-center text-muted" style="padding: 2rem;">
-                            ✅ No active alerts - All systems operational
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Activity -->
-        <div class="dashboard-card activity-card">
+    <!-- Bottom Row: Recent Activity -->
+    <div class="dashboard-grid">
+        <!-- Recent Activity (Full Width) -->
+        <div class="dashboard-card activity-card" style="grid-column: span 12;">
             <div class="card-header">
                 <h3 class="card-title">📋 Recent Activity</h3>
                 <span class="status-badge status-up">
@@ -177,17 +167,14 @@
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Vis.js Network for Mini Topology -->
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <!-- Theme Toggle -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <!-- Dashboard Script -->
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
-</body>
-
-</html>
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- Vis.js Network for Mini Topology -->
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<!-- Dashboard Script -->
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

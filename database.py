@@ -12,8 +12,9 @@ class Database:
     
     def get_connection(self):
         """Get database connection"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute('PRAGMA journal_mode=WAL')
         return conn
     
     def init_db(self):
@@ -119,6 +120,59 @@ class Database:
                 last_login TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Dashboards table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS dashboards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                layout_config TEXT,
+                created_by INTEGER,
+                is_public INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        ''')
+        
+        # Sub-topologies table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sub_topologies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            )
+        ''')
+        
+        # Devices belonging to a sub-topology
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sub_topology_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sub_topology_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                FOREIGN KEY (sub_topology_id) REFERENCES sub_topologies(id) ON DELETE CASCADE,
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
+                UNIQUE(sub_topology_id, device_id)
+            )
+        ''')
+        
+        # Custom connections within a sub-topology
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sub_topology_connections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sub_topology_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                connected_to INTEGER NOT NULL,
+                FOREIGN KEY (sub_topology_id) REFERENCES sub_topologies(id) ON DELETE CASCADE,
+                FOREIGN KEY (device_id) REFERENCES devices(id),
+                FOREIGN KEY (connected_to) REFERENCES devices(id)
             )
         ''')
         
@@ -251,6 +305,22 @@ class Database:
         
         # Migrate unique constraint from ip_address to (ip_address, monitor_type)
         self._migrate_unique_constraint(cursor)
+        
+        # Add background_image column to sub_topologies table
+        cursor.execute("PRAGMA table_info(sub_topologies)")
+        sub_topo_columns = [column[1] for column in cursor.fetchall()]
+        if 'background_image' not in sub_topo_columns:
+            cursor.execute("ALTER TABLE sub_topologies ADD COLUMN background_image TEXT")
+            print("[OK] Added background_image column to sub_topologies table")
+        if 'background_zoom' not in sub_topo_columns:
+            cursor.execute("ALTER TABLE sub_topologies ADD COLUMN background_zoom INTEGER DEFAULT 100")
+            print("[OK] Added background_zoom column to sub_topologies table")
+        if 'node_positions' not in sub_topo_columns:
+            cursor.execute("ALTER TABLE sub_topologies ADD COLUMN node_positions TEXT")
+            print("[OK] Added node_positions column to sub_topologies table")
+        if 'background_opacity' not in sub_topo_columns:
+            cursor.execute("ALTER TABLE sub_topologies ADD COLUMN background_opacity INTEGER DEFAULT 100")
+            print("[OK] Added background_opacity column to sub_topologies table")
     
     def _migrate_unique_constraint(self, cursor):
         """Migrate the unique constraint from ip_address to (ip_address, monitor_type)"""
@@ -422,6 +492,10 @@ class Database:
         cursor.execute('DELETE FROM topology WHERE device_id = ? OR connected_to = ?', 
                       (device_id, device_id))
         cursor.execute('DELETE FROM status_history WHERE device_id = ?', (device_id,))
+        # Clean up sub-topology references
+        cursor.execute('DELETE FROM sub_topology_devices WHERE device_id = ?', (device_id,))
+        cursor.execute('DELETE FROM sub_topology_connections WHERE device_id = ? OR connected_to = ?',
+                      (device_id, device_id))
         conn.commit()
         conn.close()
         return {'success': True}
@@ -673,6 +747,48 @@ class Database:
         conn.close()
         return stats
     
+    
+    def get_device_type_trends(self, minutes=180):
+        """Get average response time trends by device type"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Calculate start time
+        start_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        
+        # Determine grouping interval based on requested duration
+        if minutes <= 10:
+            # Group by 30-second intervals for short durations (Ping interval is ~30s)
+            # We use sqlite's strftime with seconds, but we need to bin them
+            # Simplest way: Group by HH:MM and (SS/30) ? 
+            # Or just return raw checked_at and average in python? 
+            # Let's try to group by 30s in SQL:
+            # unixepoch / 30 
+            time_group = "CAST(strftime('%s', h.checked_at) / 30 AS INTEGER)"
+            # For display, we can just take the min(checked_at) of the group
+            time_select = "datetime(MIN(h.checked_at))" 
+        else:
+            # Group by minute
+            time_group = "strftime('%Y-%m-%d %H:%M', h.checked_at)"
+            time_select = "strftime('%Y-%m-%d %H:%M', h.checked_at)"
+
+        query = f'''
+            SELECT 
+                d.device_type,
+                {time_select} as timestamp,
+                AVG(h.response_time) as avg_response_time
+            FROM status_history h
+            JOIN devices d ON h.device_id = d.id
+            WHERE h.checked_at >= ? AND h.response_time IS NOT NULL AND h.status IN ('up', 'slow')
+            GROUP BY d.device_type, {time_group}
+            ORDER BY timestamp ASC
+        '''
+        
+        cursor.execute(query, (start_time,))
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
     # =========================================================================
     # Alert Settings Methods
     # =========================================================================
@@ -1132,3 +1248,236 @@ class Database:
         conn.close()
         
         return {'success': deleted}
+
+    # =========================================================================
+    # Dashboard Methods
+    # =========================================================================
+    
+    def create_dashboard(self, name, layout_config, description=None, created_by=None, is_public=0):
+        """Create a new dashboard"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO dashboards (name, layout_config, description, created_by, is_public)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (name, layout_config, description, created_by, is_public))
+        
+        dashboard_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return {'success': True, 'id': dashboard_id}
+    
+    def get_dashboards(self, user_id=None):
+        """Get all dashboards visible to a user"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        if user_id:
+            cursor.execute('''
+                SELECT d.*, u.username as creator_name 
+                FROM dashboards d
+                LEFT JOIN users u ON d.created_by = u.id
+                WHERE d.is_public = 1 OR d.created_by = ?
+                ORDER BY d.created_at DESC
+            ''', (user_id,))
+        else:
+            cursor.execute('''
+                SELECT d.*, u.username as creator_name 
+                FROM dashboards d
+                LEFT JOIN users u ON d.created_by = u.id
+                ORDER BY d.created_at DESC
+            ''')
+            
+        dashboards = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return dashboards
+    
+    def get_dashboard(self, dashboard_id):
+        """Get a specific dashboard"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT d.*, u.username as creator_name 
+            FROM dashboards d
+            LEFT JOIN users u ON d.created_by = u.id
+            WHERE d.id = ?
+        ''', (dashboard_id,))
+        
+        result = cursor.fetchone()
+        conn.close()
+        return dict(result) if result else None
+    
+    def update_dashboard(self, dashboard_id, name=None, layout_config=None, description=None, is_public=None):
+        """Update a dashboard"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        updates = []
+        params = []
+        
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        
+        if layout_config is not None:
+            updates.append('layout_config = ?')
+            params.append(layout_config)
+            
+        if description is not None:
+            updates.append('description = ?')
+            params.append(description)
+            
+        if is_public is not None:
+            updates.append('is_public = ?')
+            params.append(is_public)
+            
+        updates.append('updated_at = ?')
+        params.append(datetime.now().isoformat())
+        
+        if updates:
+            params.append(dashboard_id)
+            cursor.execute(f'''
+                UPDATE dashboards 
+                SET {', '.join(updates)}
+                WHERE id = ?
+            ''', params)
+            conn.commit()
+            
+        conn.close()
+        return {'success': True}
+    
+    def delete_dashboard(self, dashboard_id):
+        """Delete a dashboard"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM dashboards WHERE id = ?', (dashboard_id,))
+        conn.commit()
+        conn.close()
+        return {'success': True}
+
+    # =========================================================================
+    # Sub-Topology Methods
+    # =========================================================================
+
+    def create_sub_topology(self, name, description=None, created_by=None, background_image=None, background_zoom=100, node_positions=None, background_opacity=100):
+        """Create a new sub-topology"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity))
+        sub_topo_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return {'success': True, 'id': sub_topo_id}
+
+    def get_all_sub_topologies(self):
+        """Get all sub-topologies"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM sub_topologies ORDER BY name')
+        result = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return result
+
+    def get_sub_topology(self, sub_topo_id):
+        """Get a sub-topology with its devices and connections"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Get sub-topology info
+        cursor.execute('SELECT * FROM sub_topologies WHERE id = ?', (sub_topo_id,))
+        sub_topo = cursor.fetchone()
+        if not sub_topo:
+            conn.close()
+            return None
+        
+        result = dict(sub_topo)
+        
+        # Get device IDs
+        cursor.execute('''
+            SELECT d.* FROM devices d
+            JOIN sub_topology_devices std ON d.id = std.device_id
+            WHERE std.sub_topology_id = ?
+            ORDER BY d.name
+        ''', (sub_topo_id,))
+        result['devices'] = [dict(row) for row in cursor.fetchall()]
+        
+        # Get connections
+        cursor.execute('''
+            SELECT * FROM sub_topology_connections
+            WHERE sub_topology_id = ?
+        ''', (sub_topo_id,))
+        result['connections'] = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        return result
+
+    def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, background_opacity=None):
+        """Update a sub-topology"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Update name/description/background
+        updates = []
+        params = []
+        if name is not None:
+            updates.append('name = ?')
+            params.append(name)
+        if description is not None:
+            updates.append('description = ?')
+            params.append(description)
+        if background_image is not None:
+            updates.append('background_image = ?')
+            params.append(background_image)
+        if background_zoom is not None:
+            updates.append('background_zoom = ?')
+            params.append(background_zoom)
+        if node_positions is not None:
+            updates.append('node_positions = ?')
+            params.append(node_positions)
+        if background_opacity is not None:
+            updates.append('background_opacity = ?')
+            params.append(background_opacity)
+        updates.append('updated_at = ?')
+        params.append(datetime.now().isoformat())
+        
+        if updates:
+            params.append(sub_topo_id)
+            cursor.execute(f"UPDATE sub_topologies SET {', '.join(updates)} WHERE id = ?", params)
+        
+        # Replace devices
+        if device_ids is not None:
+            cursor.execute('DELETE FROM sub_topology_devices WHERE sub_topology_id = ?', (sub_topo_id,))
+            for did in device_ids:
+                cursor.execute('''
+                    INSERT INTO sub_topology_devices (sub_topology_id, device_id)
+                    VALUES (?, ?)
+                ''', (sub_topo_id, did))
+        
+        # Replace connections
+        if connections is not None:
+            cursor.execute('DELETE FROM sub_topology_connections WHERE sub_topology_id = ?', (sub_topo_id,))
+            for conn_item in connections:
+                cursor.execute('''
+                    INSERT INTO sub_topology_connections (sub_topology_id, device_id, connected_to)
+                    VALUES (?, ?, ?)
+                ''', (sub_topo_id, conn_item['device_id'], conn_item['connected_to']))
+        
+        conn.commit()
+        conn.close()
+        return {'success': True}
+
+    def delete_sub_topology(self, sub_topo_id):
+        """Delete a sub-topology and its related data"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM sub_topology_connections WHERE sub_topology_id = ?', (sub_topo_id,))
+        cursor.execute('DELETE FROM sub_topology_devices WHERE sub_topology_id = ?', (sub_topo_id,))
+        cursor.execute('DELETE FROM sub_topologies WHERE id = ?', (sub_topo_id,))
+        conn.commit()
+        conn.close()
+        return {'success': True}

@@ -1,0 +1,170 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - Dashboards{% endblock %}
+
+{% block page_title %}Dashboards{% endblock %}
+
+{% set active_page = 'dashboards' %}
+
+{% block head %}
+<style>
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .dashboard-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dashboard-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border-color: var(--primary);
+    }
+
+    .dashboard-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+    }
+
+    .dashboard-desc {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 1.5rem;
+        flex-grow: 1;
+    }
+
+    .dashboard-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: auto;
+        border-top: 1px solid var(--border-color);
+        padding-top: 1rem;
+    }
+
+    .dashboard-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .btn-icon {
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        color: var(--text-muted);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    .btn-icon:hover {
+        color: var(--primary);
+        background-color: var(--bg-tertiary);
+    }
+
+    .btn-icon.delete:hover {
+        color: var(--danger);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="flex-between mb-2">
+        <div>
+            <p class="text-muted">Manage and view custom dashboards</p>
+        </div>
+        {% if session.get('role') == 'admin' %}
+        <a href="/dashboard/new" class="btn btn-primary">
+            <span>+</span> Create Dashboard
+        </a>
+        {% endif %}
+    </div>
+
+    <div id="dashboard-list" class="dashboard-grid">
+        <!-- Dashboards will be loaded here -->
+        <div class="loading-state card w-col-12 text-center p-2">
+            <div class="spinner"></div>
+            Is Loading...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', loadDashboards);
+
+    async function loadDashboards() {
+        try {
+            const response = await fetch('/api/dashboards');
+            const dashboards = await response.json();
+
+            const container = document.getElementById('dashboard-list');
+
+            if (dashboards.length === 0) {
+                container.innerHTML = `
+                        <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                            <p class="text-muted">No dashboards found</p>
+                        </div>
+                    `;
+                return;
+            }
+
+            const currentUserId = {{ session.get('user_id')
+        }};
+    const isAdmin = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+
+    container.innerHTML = dashboards.map(d => `
+                    <div class="dashboard-card">
+                        <div class="dashboard-title">${d.name}</div>
+                        <div class="dashboard-desc">${d.description || 'No description'}</div>
+                        <div class="dashboard-meta">
+                            <span class="text-muted" style="font-size: 0.75rem;">
+                                ${d.is_public ? '🌐 Public' : '🔒 Private'} • By ${d.creator_name || 'Unknown'}
+                            </span>
+                            <div class="dashboard-actions">
+                                <a href="/dashboard/${d.id}" class="btn-icon" title="View">👁️</a>
+                                ${(isAdmin || d.created_by === currentUserId) ? `
+                                    <a href="/dashboard/${d.id}/edit" class="btn-icon" title="Edit">✏️</a>
+                                    <button onclick="deleteDashboard(${d.id})" class="btn-icon delete" title="Delete">🗑️</button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+        console.error('Error loading dashboards:', error);
+    }
+        }
+
+    async function deleteDashboard(id) {
+        if (!confirm('Are you sure you want to delete this dashboard?')) return;
+
+        try {
+            const response = await fetch(`/api/dashboards/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                loadDashboards();
+            } else {
+                alert('Failed to delete dashboard');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('An error occurred');
+        }
+    }
+</script>
+{% endblock %}

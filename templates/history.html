@@ -1,210 +1,176 @@
-<!DOCTYPE html>
-<html lang="th">
+{% extends "layout.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Monitor - History</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+{% block title %}Network Monitor - History{% endblock %}
 
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="navbar-content">
-            <a href="/" class="navbar-brand">
-                <span>🌐</span> Network Monitor
-            </a>
-            <ul class="navbar-menu">
-                <li><a href="/">Dashboard</a></li>
-                <li><a href="/topology">Topology</a></li>
-                <li><a href="/devices">Devices</a></li>
-                <li><a href="/history" class="active">History</a></li>
-                <li><a href="/sla">SLA</a></li>
-                <li><a href="/settings">Settings</a></li>
-                <li>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
-                        <span id="theme-icon">☀️</span>
-                    </button>
-                </li>
-                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
-            </ul>
+{% block page_title %}Historical Data{% endblock %}
+
+{% set active_page = 'history' %}
+
+{% block head %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Date Range Filter -->
+    <div class="card mb-2">
+        <div class="card-header">
+            <h3 class="card-title">Filter Options</h3>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container">
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1 class="page-title">📊 Historical Data</h1>
-            <p class="page-subtitle">View and analyze past monitoring data</p>
-        </div>
-
-        <!-- Date Range Filter -->
-        <div class="card mb-2">
-            <div class="card-header">
-                <h3 class="card-title">Filter Options</h3>
-            </div>
-            <div class="card-body">
-                <div
-                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: end;">
-                    <div>
-                        <label
-                            style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Start
-                            Date</label>
-                        <input type="datetime-local" id="start-date" class="form-input" style="width: 100%;">
-                    </div>
-                    <div>
-                        <label
-                            style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">End
-                            Date</label>
-                        <input type="datetime-local" id="end-date" class="form-input" style="width: 100%;">
-                    </div>
-                    <div>
-                        <label
-                            style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Device
-                            Type</label>
-                        <select id="device-type" class="form-input" style="width: 100%;">
-                            <option value="">All Types</option>
-                            <option value="server">🖥️ Servers</option>
-                            <option value="switch">🔀 Switches</option>
-                            <option value="router">🌐 Routers</option>
-                            <option value="firewall">🛡️ Firewalls</option>
-                            <option value="website">🌐 Websites</option>
-                            <option value="wireless">📶 Wireless</option>
-                            <option value="vmware">🖴 VMware Servers</option>
-                            <option value="ippbx">☎️ IP-PBX</option>
-                            <option value="vpnrouter">🔒 VPN-Router Sites</option>
-                            <option value="dns">🔍 DNS Servers</option>
-                            <option value="other">⚙️ Other</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn btn-primary" onclick="loadHistoricalData()" style="flex: 1;">
-                            🔍 Load Data
-                        </button>
-                        <button class="btn btn-secondary" onclick="setQuickRange('24h')">
-                            Last 24h
-                        </button>
-                        <button class="btn btn-secondary" onclick="setQuickRange('7d')">
-                            Last 7d
-                        </button>
-                    </div>
+        <div class="card-body">
+            <div
+                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: end;">
+                <div>
+                    <label
+                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Start
+                        Date</label>
+                    <input type="datetime-local" id="start-date" class="form-input" style="width: 100%;">
                 </div>
-            </div>
-        </div>
-
-        <!-- Device Comparison Section -->
-        <div class="card mb-2">
-            <div class="card-header">
-                <h3 class="card-title">📊 Device Comparison</h3>
+                <div>
+                    <label
+                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">End
+                        Date</label>
+                    <input type="datetime-local" id="end-date" class="form-input" style="width: 100%;">
+                </div>
+                <div>
+                    <label
+                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Device
+                        Type</label>
+                    <select id="device-type" class="form-input" style="width: 100%;">
+                        <option value="">All Types</option>
+                        <option value="server">🖥️ Servers</option>
+                        <option value="switch">🔀 Switches</option>
+                        <option value="router">🌐 Routers</option>
+                        <option value="firewall">🛡️ Firewalls</option>
+                        <option value="website">🌐 Websites</option>
+                        <option value="wireless">📶 Wireless</option>
+                        <option value="vmware">🖴 VMware Servers</option>
+                        <option value="ippbx">☎️ IP-PBX</option>
+                        <option value="vpnrouter">🔒 VPN-Router Sites</option>
+                        <option value="dns">🔍 DNS Servers</option>
+                        <option value="other">⚙️ Other</option>
+                    </select>
+                </div>
                 <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-sm btn-secondary" onclick="toggleSelectAll()">
-                        <span id="select-all-icon">☑️</span> Select All
+                    <button class="btn btn-primary" onclick="loadHistoricalData()" style="flex: 1;">
+                        🔍 Load Data
                     </button>
-                    <button class="btn btn-sm btn-secondary" onclick="clearSelection()">
-                        🗑️ Clear
+                    <button class="btn btn-secondary" onclick="setQuickRange('24h')">
+                        Last 24h
                     </button>
-                    <button class="btn btn-primary btn-sm" onclick="loadMultiDeviceHistory()">
-                        📈 Compare Selected
+                    <button class="btn btn-secondary" onclick="setQuickRange('7d')">
+                        Last 7d
                     </button>
-                </div>
-            </div>
-            <div class="card-body">
-                <div id="device-selector-loading" style="text-align: center; padding: 1rem; color: var(--text-muted);">
-                    <div class="spinner" style="width: 24px; height: 24px; margin: 0 auto 0.5rem;"></div>
-                    Loading devices...
-                </div>
-                <div id="device-selector" style="display: none;">
-                    <div id="device-checkbox-list"
-                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">
-                        <!-- Device checkboxes will be dynamically added here -->
-                    </div>
-                </div>
-                <div id="selected-count" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.875rem;">
-                    <span id="count-value">0</span> devices selected
-                </div>
-            </div>
-        </div>
-
-        <!-- Combined Comparison Chart -->
-        <div id="comparison-chart-container" class="card mb-2" style="display: none;">
-            <div class="card-header">
-                <h3 class="card-title">Response Time Comparison</h3>
-                <span id="comparison-devices-badge" class="status-badge status-up">
-                    <span id="comparison-devices-count">0</span> devices
-                </span>
-            </div>
-            <div class="card-body">
-                <div style="height: 400px; position: relative;">
-                    <canvas id="comparison-chart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- Statistics Summary -->
-        <div id="stats-container" style="display: none;">
-            <div class="grid grid-4 mb-2">
-                <div class="stat-card">
-                    <div class="stat-value" id="stat-avg-response">0 ms</div>
-                    <div class="stat-label">Avg Response Time</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="stat-uptime" style="color: var(--success);">0%</div>
-                    <div class="stat-label">Uptime</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="stat-total-checks">0</div>
-                    <div class="stat-label">Total Checks</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="stat-devices">0</div>
-                    <div class="stat-label">Devices Monitored</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Historical Charts -->
-        <div class="card mb-2">
-            <div class="card-header">
-                <h3 class="card-title">Response Time Trends</h3>
-                <span id="data-points-badge" class="status-badge status-up" style="display: none;">
-                    <span id="data-points-count">0</span> data points
-                </span>
-            </div>
-            <div class="card-body">
-                <div id="loading-indicator" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-                    <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 1rem;"></div>
-                    <p>Select a date range and click "Load Data" to view historical trends</p>
-                </div>
-                <div id="charts-container" style="display: none;">
-                    <!-- Charts will be dynamically created here -->
-                </div>
-            </div>
-        </div>
-
-        <!-- Device-specific History -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Device Details</h3>
-            </div>
-            <div class="card-body">
-                <div id="device-details" style="color: var(--text-muted); text-align: center; padding: 2rem;">
-                    Select a device type and date range to view detailed statistics
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- Theme Toggle -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <!-- History Script -->
-    <script src="{{ url_for('static', filename='js/history.js') }}"></script>
-</body>
+    <!-- Device Comparison Section -->
+    <div class="card mb-2">
+        <div class="card-header">
+            <h3 class="card-title">📊 Device Comparison</h3>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-sm btn-secondary" onclick="toggleSelectAll()">
+                    <span id="select-all-icon">☑️</span> Select All
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                    🗑️ Clear
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="loadMultiDeviceHistory()">
+                    📈 Compare Selected
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="device-selector-loading" style="text-align: center; padding: 1rem; color: var(--text-muted);">
+                <div class="spinner" style="width: 24px; height: 24px; margin: 0 auto 0.5rem;"></div>
+                Loading devices...
+            </div>
+            <div id="device-selector" style="display: none;">
+                <div id="device-checkbox-list"
+                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">
+                    <!-- Device checkboxes will be dynamically added here -->
+                </div>
+            </div>
+            <div id="selected-count" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.875rem;">
+                <span id="count-value">0</span> devices selected
+            </div>
+        </div>
+    </div>
 
-</html>
+    <!-- Combined Comparison Chart -->
+    <div id="comparison-chart-container" class="card mb-2" style="display: none;">
+        <div class="card-header">
+            <h3 class="card-title">Response Time Comparison</h3>
+            <span id="comparison-devices-badge" class="status-badge status-up">
+                <span id="comparison-devices-count">0</span> devices
+            </span>
+        </div>
+        <div class="card-body">
+            <div style="height: 400px; position: relative;">
+                <canvas id="comparison-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Summary -->
+    <div id="stats-container" style="display: none;">
+        <div class="grid grid-4 mb-2">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-avg-response">0 ms</div>
+                <div class="stat-label">Avg Response Time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-uptime" style="color: var(--success);">0%</div>
+                <div class="stat-label">Uptime</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total-checks">0</div>
+                <div class="stat-label">Total Checks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-devices">0</div>
+                <div class="stat-label">Devices Monitored</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historical Charts -->
+    <div class="card mb-2">
+        <div class="card-header">
+            <h3 class="card-title">Response Time Trends</h3>
+            <span id="data-points-badge" class="status-badge status-up" style="display: none;">
+                <span id="data-points-count">0</span> data points
+            </span>
+        </div>
+        <div class="card-body">
+            <div id="loading-indicator" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 1rem;"></div>
+                <p>Select a date range and click "Load Data" to view historical trends</p>
+            </div>
+            <div id="charts-container" style="display: none;">
+                <!-- Charts will be dynamically created here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Device-specific History -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Device Details</h3>
+        </div>
+        <div class="card-body">
+            <div id="device-details" style="color: var(--text-muted); text-align: center; padding: 2rem;">
+                Select a device type and date range to view detailed statistics
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- History Script -->
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+{% endblock %}

@@ -1,504 +1,466 @@
-<!DOCTYPE html>
-<html lang="th">
+{% extends "layout.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Monitor - Devices</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+{% block title %}Network Monitor - Devices{% endblock %}
 
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="navbar-content">
-            <a href="/" class="navbar-brand">
-                <span>🌐</span> Network Monitor
-            </a>
-            <ul class="navbar-menu">
-                <li><a href="/">Dashboard</a></li>
-                <li><a href="/topology">Topology</a></li>
-                <li><a href="/devices" class="active">Devices</a></li>
-                <li><a href="/history">History</a></li>
-                <li><a href="/sla">SLA</a></li>
-                <li><a href="/settings">Settings</a></li>
-                <li>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
-                        <span id="theme-icon">☀️</span>
-                    </button>
-                </li>
-                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
-            </ul>
+{% block page_title %}Device Management{% endblock %}
+
+{% set active_page = 'devices' %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header Actions -->
+    <div class="flex-between mb-2">
+        <div>
+            <p class="text-muted">Add, edit, and manage monitored devices</p>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container">
-        <!-- Page Header -->
-        <div class="page-header flex-between">
-            <div>
-                <h1 class="page-title">Device Management</h1>
-                <p class="page-subtitle">Add, edit, and manage monitored devices</p>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="btn btn-secondary" onclick="exportDevices()" title="Export to CSV">
-                    📥 Export CSV
-                </button>
-                <button class="btn btn-secondary" onclick="showImportModal()" title="Import from CSV">
-                    📤 Import CSV
-                </button>
-                <button class="btn btn-primary" onclick="showAddDeviceModal()">
-                    ➕ Add Device
-                </button>
-            </div>
-        </div>
-
-        <!-- Devices List -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Devices</h3>
-                <span id="device-count" class="status-badge status-up">0 devices</span>
-            </div>
-            <div class="card-body">
-                <!-- Search and Filter Controls -->
-                <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: flex-end;">
-                    <!-- Search Box -->
-                    <div style="flex: 1; min-width: 250px;">
-                        <label class="form-label" for="search-input">🔍 Search</label>
-                        <input type="text" id="search-input" class="form-input"
-                            placeholder="Search by name or IP address..." oninput="filterDevices()">
-                    </div>
-
-                    <!-- Type Filter -->
-                    <div style="flex: 0.5; min-width: 150px;">
-                        <label class="form-label" for="filter-type">Type</label>
-                        <select id="filter-type" class="form-select" onchange="filterDevices()">
-                            <option value="">All Types</option>
-                        </select>
-                    </div>
-
-                    <!-- Location Filter -->
-                    <div style="flex: 0.5; min-width: 150px;">
-                        <label class="form-label" for="filter-location">Location</label>
-                        <select id="filter-location" class="form-select" onchange="filterDevices()">
-                            <option value="">All Locations</option>
-                        </select>
-                    </div>
-
-                    <!-- Status Filter -->
-                    <div style="flex: 0.5; min-width: 150px;">
-                        <label class="form-label" for="filter-status">Status</label>
-                        <select id="filter-status" class="form-select" onchange="filterDevices()">
-                            <option value="">All Status</option>
-                            <option value="up">Up</option>
-                            <option value="slow">Slow</option>
-                            <option value="down">Down</option>
-                            <option value="unknown">Unknown</option>
-                        </select>
-                    </div>
-
-                    <!-- Location Type Filter -->
-                    <div style="flex: 0.5; min-width: 150px;">
-                        <label class="form-label" for="filter-location-type">Location Type</label>
-                        <select id="filter-location-type" class="form-select" onchange="filterDevices()">
-                            <option value="">All Location Types</option>
-                            <option value="cloud">☁️ Cloud</option>
-                            <option value="internet">🌐 Internet</option>
-                            <option value="remote">🏢 Remote Site</option>
-                            <option value="on-premise">🏠 On-Premise</option>
-                        </select>
-                    </div>
-
-                    <!-- Clear Filters Button -->
-                    <div>
-                        <button class="btn btn-secondary" onclick="clearFilters()" title="Clear all filters">
-                            🧹 Clear
-                        </button>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                            <tr>
-                                <th>Name</th>
-                                <th>IP</th>
-                                <th>Type</th>
-                                <th>Location</th>
-                                <th>Loc. Type</th>
-                                <th>Status</th>
-                                <th>Resp.</th>
-                                <th>Updated</th>
-                                <th>Actions</th>
-                            </tr>
-                            </tr>
-                        </thead>
-                        <tbody id="devices-table-body">
-                            <tr>
-                                <td colspan="9" class="text-center" style="padding: 2rem; color: var(--text-muted);">
-                                    No devices found. Click "Add Device" to get started.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary" onclick="exportDevices()" title="Export to CSV">
+                📥 Export CSV
+            </button>
+            <button class="btn btn-secondary" onclick="showImportModal()" title="Import from CSV">
+                📤 Import CSV
+            </button>
+            <button class="btn btn-primary" onclick="showAddDeviceModal()">
+                ➕ Add Device
+            </button>
         </div>
     </div>
 
-    <!-- Add/Edit Device Modal -->
-    <div id="device-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="modal-title">Add Device</h3>
-                <button class="modal-close" onclick="closeDeviceModal()">&times;</button>
-            </div>
-            <form id="device-form" onsubmit="saveDevice(event)">
-                <input type="hidden" id="device-id">
-
-                <div class="form-group">
-                    <label class="form-label" for="device-name">Device Name *</label>
-                    <input type="text" id="device-name" class="form-input" required placeholder="e.g., Main Router">
+    <!-- Devices List -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Devices</h3>
+            <span id="device-count" class="status-badge status-up">0 devices</span>
+        </div>
+        <div class="card-body">
+            <!-- Search and Filter Controls -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; align-items: flex-end;">
+                <!-- Search Box -->
+                <div style="flex: 1; min-width: 250px;">
+                    <label class="form-label" for="search-input">🔍 Search</label>
+                    <input type="text" id="search-input" class="form-input"
+                        placeholder="Search by name or IP address..." oninput="filterDevices()">
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="monitor-type">Monitor Type *</label>
-                    <select id="monitor-type" class="form-select" onchange="updateIPFieldLabel()">
-                        <option value="ping">Ping (ICMP)</option>
-                        <option value="http">HTTP/HTTPS</option>
-                        <option value="tcp">TCP Port</option>
-                        <option value="dns">DNS Query</option>
-                        <option value="snmp">SNMP</option>
+                <!-- Type Filter -->
+                <div style="flex: 0.5; min-width: 150px;">
+                    <label class="form-label" for="filter-type">Type</label>
+                    <select id="filter-type" class="form-select" onchange="filterDevices()">
+                        <option value="">All Types</option>
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="device-ip" id="ip-label">IP Address *</label>
-                    <input type="text" id="device-ip" class="form-input" required placeholder="e.g., 192.168.1.1">
-                    <small id="ip-hint" style="color: var(--text-muted); font-size: 0.875rem;">Enter IP address for ping
-                        monitoring</small>
-                </div>
-
-                <!-- TCP Port Settings (hidden by default) -->
-                <div id="tcp-settings" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="tcp-port">TCP Port *</label>
-                        <input type="number" id="tcp-port" class="form-input" value="80"
-                            placeholder="e.g., 22, 80, 443, 3306">
-                        <small style="color: var(--text-muted); font-size: 0.875rem;">Common ports: 22 (SSH), 80 (HTTP),
-                            443 (HTTPS), 3306 (MySQL), 3389 (RDP)</small>
-                    </div>
-                </div>
-
-                <!-- DNS Query Settings (hidden by default) -->
-                <div id="dns-settings" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="dns-query-domain">Query Domain</label>
-                        <input type="text" id="dns-query-domain" class="form-input" value="google.com"
-                            placeholder="e.g., google.com">
-                        <small style="color: var(--text-muted); font-size: 0.875rem;">Domain to query for DNS resolution
-                            test</small>
-                    </div>
-                </div>
-
-                <!-- HTTP Settings (hidden by default) -->
-                <div id="http-settings" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="expected-status-code">Expected HTTP Status Code</label>
-                        <input type="number" id="expected-status-code" class="form-input" value="200"
-                            placeholder="e.g., 200, 301, 404">
-                        <small style="color: var(--text-muted); font-size: 0.875rem;">Common codes: 200 (OK), 301
-                            (Redirect), 404 (Not Found)</small>
-                    </div>
-                </div>
-
-                <!-- SNMP Settings (hidden by default) -->
-                <div id="snmp-settings" style="display: none;">
-                    <div class="form-group">
-                        <label class="form-label" for="snmp-community">SNMP Community String</label>
-                        <input type="text" id="snmp-community" class="form-input" value="public"
-                            placeholder="e.g., public">
-                        <small style="color: var(--text-muted); font-size: 0.875rem;">Default: public</small>
-                    </div>
-
-                    <div style="display: flex; gap: 1rem;">
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label" for="snmp-port">SNMP Port</label>
-                            <input type="number" id="snmp-port" class="form-input" value="161" placeholder="161">
-                        </div>
-                        <div class="form-group" style="flex: 1;">
-                            <label class="form-label" for="snmp-version">SNMP Version</label>
-                            <select id="snmp-version" class="form-select">
-                                <option value="2c">v2c (Recommended)</option>
-                                <option value="1">v1</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="form-label" for="device-type">Device Type</label>
-                    <select id="device-type" class="form-select">
-                        <option value="router">Router</option>
-                        <option value="switch">Switch</option>
-                        <option value="server">Server</option>
-                        <option value="firewall">Firewall</option>
-                        <option value="wireless">Wireless</option>
-                        <option value="website">Website</option>
-                        <option value="dns">DNS</option>
-                        <option value="vmware">VMware Server</option>
-                        <option value="ippbx">IP-PBX</option>
-                        <option value="vpnrouter">VPN-Router Site</option>
-                        <option value="other">Other</option>
+                <!-- Location Filter -->
+                <div style="flex: 0.5; min-width: 150px;">
+                    <label class="form-label" for="filter-location">Location</label>
+                    <select id="filter-location" class="form-select" onchange="filterDevices()">
+                        <option value="">All Locations</option>
                     </select>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="device-location">Location</label>
-                    <input type="text" id="device-location" class="form-input" placeholder="e.g., Server Room A">
+                <!-- Status Filter -->
+                <div style="flex: 0.5; min-width: 150px;">
+                    <label class="form-label" for="filter-status">Status</label>
+                    <select id="filter-status" class="form-select" onchange="filterDevices()">
+                        <option value="">All Status</option>
+                        <option value="up">Up</option>
+                        <option value="slow">Slow</option>
+                        <option value="down">Down</option>
+                        <option value="unknown">Unknown</option>
+                    </select>
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="device-location-type">Location Type</label>
-                    <select id="device-location-type" class="form-select">
+                <!-- Location Type Filter -->
+                <div style="flex: 0.5; min-width: 150px;">
+                    <label class="form-label" for="filter-location-type">Location Type</label>
+                    <select id="filter-location-type" class="form-select" onchange="filterDevices()">
+                        <option value="">All Location Types</option>
                         <option value="cloud">☁️ Cloud</option>
                         <option value="internet">🌐 Internet</option>
                         <option value="remote">🏢 Remote Site</option>
-                        <option value="on-premise" selected>🏠 On-Premise</option>
+                        <option value="on-premise">🏠 On-Premise</option>
                     </select>
                 </div>
 
-                <div class="flex gap-1 mt-2">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">
-                        💾 Save Device
-                    </button>
-                    <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">
-                        Cancel
+                <!-- Clear Filters Button -->
+                <div>
+                    <button class="btn btn-secondary" onclick="clearFilters()" title="Clear all filters">
+                        🧹 Clear
                     </button>
                 </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- SNMP Details Modal -->
-    <div id="snmp-modal" class="modal">
-        <div class="modal-content" style="max-width: 900px;">
-            <div class="modal-header">
-                <h3>📊 SNMP Details - <span id="snmp-device-name"></span></h3>
-                <button class="modal-close" onclick="closeSnmpModal()">&times;</button>
             </div>
-            <div style="padding: 1rem;">
-                <!-- System Info Card -->
-                <div class="card" style="margin-bottom: 1rem;">
-                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">System Information</h4>
-                    <table style="width: 100%;">
+            <div class="table-container">
+                <table>
+                    <thead>
                         <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted); width: 25%;">📛 System Name</td>
-                            <td style="padding: 0.5rem 0;"><strong id="snmp-sysname"></strong></td>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted); width: 20%;">⏱️ Uptime</td>
-                            <td style="padding: 0.5rem 0;"><strong id="snmp-uptime"></strong></td>
+                            <th>Name</th>
+                            <th>IP</th>
+                            <th>Type</th>
+                            <th>Location</th>
+                            <th>Loc. Type</th>
+                            <th>Status</th>
+                            <th>Resp.</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
                         </tr>
+                    </thead>
+                    <tbody id="devices-table-body">
                         <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">📝 Description</td>
-                            <td colspan="3" style="padding: 0.5rem 0; word-break: break-word;" id="snmp-sysdescr"></td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">📍 Location</td>
-                            <td style="padding: 0.5rem 0;" id="snmp-syslocation"></td>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">⚡ Response</td>
-                            <td style="padding: 0.5rem 0;"><strong id="snmp-response-time"></strong></td>
-                        </tr>
-                    </table>
-                </div>
-
-                <!-- Interfaces Section -->
-                <div class="card" style="margin-bottom: 1rem;">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <h4 style="margin: 0; color: var(--primary);">🔌 Interfaces</h4>
-                        <button class="btn btn-sm btn-primary" onclick="loadInterfaces()" id="load-interfaces-btn">
-                            🔄 Load Interfaces
-                        </button>
-                    </div>
-                    <div id="interfaces-container" style="max-height: 300px; overflow-y: auto;">
-                        <p style="color: var(--text-muted); text-align: center; padding: 1rem;">
-                            Click "Load Interfaces" to fetch interface data
-                        </p>
-                    </div>
-                </div>
-
-                <button class="btn btn-secondary" onclick="closeSnmpModal()" style="width: 100%;">
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- SSL Certificate Details Modal -->
-    <div id="ssl-modal" class="modal">
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header">
-                <h3>🔒 SSL Certificate - <span id="ssl-device-name"></span></h3>
-                <button class="modal-close" onclick="closeSslModal()">&times;</button>
-            </div>
-            <div style="padding: 1rem;">
-                <div class="card" style="margin-bottom: 1rem;">
-                    <table style="width: 100%; table-layout: fixed;">
-                        <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted); width: 30%;">📅 Expiry Date</td>
-                            <td style="padding: 0.5rem 0; word-wrap: break-word;"><strong id="ssl-expiry-date"></strong>
+                            <td colspan="9" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                                No devices found. Click "Add Device" to get started.
                             </td>
                         </tr>
-                        <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">⏳ Days Until Expiry</td>
-                            <td style="padding: 0.5rem 0;"><strong id="ssl-days-left"></strong></td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">🏢 Issuer</td>
-                            <td style="padding: 0.5rem 0; word-wrap: break-word;" id="ssl-issuer"></td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 0.5rem 0; color: var(--text-muted);">✅ Status</td>
-                            <td style="padding: 0.5rem 0;"><span id="ssl-status-badge" class="status-badge"></span></td>
-                        </tr>
-                    </table>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Device Modal -->
+<div id="device-modal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modal-title">Add Device</h3>
+            <button class="modal-close" onclick="closeDeviceModal()">&times;</button>
+        </div>
+        <form id="device-form" onsubmit="saveDevice(event)">
+            <input type="hidden" id="device-id">
+
+            <div class="form-group">
+                <label class="form-label" for="device-name">Device Name *</label>
+                <input type="text" id="device-name" class="form-input" required placeholder="e.g., Main Router">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="monitor-type">Monitor Type *</label>
+                <select id="monitor-type" class="form-select" onchange="updateIPFieldLabel()">
+                    <option value="ping">Ping (ICMP)</option>
+                    <option value="http">HTTP/HTTPS</option>
+                    <option value="tcp">TCP Port</option>
+                    <option value="dns">DNS Query</option>
+                    <option value="snmp">SNMP</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="device-ip" id="ip-label">IP Address *</label>
+                <input type="text" id="device-ip" class="form-input" required placeholder="e.g., 192.168.1.1">
+                <small id="ip-hint" style="color: var(--text-muted); font-size: 0.875rem;">Enter IP address for ping
+                    monitoring</small>
+            </div>
+
+            <!-- TCP Port Settings (hidden by default) -->
+            <div id="tcp-settings" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="tcp-port">TCP Port *</label>
+                    <input type="number" id="tcp-port" class="form-input" value="80"
+                        placeholder="e.g., 22, 80, 443, 3306">
+                    <small style="color: var(--text-muted); font-size: 0.875rem;">Common ports: 22 (SSH), 80 (HTTP),
+                        443 (HTTPS), 3306 (MySQL), 3389 (RDP)</small>
                 </div>
-                <button class="btn btn-secondary" onclick="closeSslModal()" style="width: 100%;">
+            </div>
+
+            <!-- DNS Query Settings (hidden by default) -->
+            <div id="dns-settings" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="dns-query-domain">Query Domain</label>
+                    <input type="text" id="dns-query-domain" class="form-input" value="google.com"
+                        placeholder="e.g., google.com">
+                    <small style="color: var(--text-muted); font-size: 0.875rem;">Domain to query for DNS resolution
+                        test</small>
+                </div>
+            </div>
+
+            <!-- HTTP Settings (hidden by default) -->
+            <div id="http-settings" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="expected-status-code">Expected HTTP Status Code</label>
+                    <input type="number" id="expected-status-code" class="form-input" value="200"
+                        placeholder="e.g., 200, 301, 404">
+                    <small style="color: var(--text-muted); font-size: 0.875rem;">Common codes: 200 (OK), 301
+                        (Redirect), 404 (Not Found)</small>
+                </div>
+            </div>
+
+            <!-- SNMP Settings (hidden by default) -->
+            <div id="snmp-settings" style="display: none;">
+                <div class="form-group">
+                    <label class="form-label" for="snmp-community">SNMP Community String</label>
+                    <input type="text" id="snmp-community" class="form-input" value="public" placeholder="e.g., public">
+                    <small style="color: var(--text-muted); font-size: 0.875rem;">Default: public</small>
+                </div>
+
+                <div style="display: flex; gap: 1rem;">
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="snmp-port">SNMP Port</label>
+                        <input type="number" id="snmp-port" class="form-input" value="161" placeholder="161">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label class="form-label" for="snmp-version">SNMP Version</label>
+                        <select id="snmp-version" class="form-select">
+                            <option value="2c">v2c (Recommended)</option>
+                            <option value="1">v1</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="device-type">Device Type</label>
+                <select id="device-type" class="form-select">
+                    <option value="router">Router</option>
+                    <option value="switch">Switch</option>
+                    <option value="server">Server</option>
+                    <option value="firewall">Firewall</option>
+                    <option value="wireless">Wireless</option>
+                    <option value="website">Website</option>
+                    <option value="dns">DNS</option>
+                    <option value="vmware">VMware Server</option>
+                    <option value="ippbx">IP-PBX</option>
+                    <option value="vpnrouter">VPN-Router Site</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="device-location">Location</label>
+                <input type="text" id="device-location" class="form-input" placeholder="e.g., Server Room A">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="device-location-type">Location Type</label>
+                <select id="device-location-type" class="form-select">
+                    <option value="cloud">☁️ Cloud</option>
+                    <option value="internet">🌐 Internet</option>
+                    <option value="remote">🏢 Remote Site</option>
+                    <option value="on-premise" selected>🏠 On-Premise</option>
+                </select>
+            </div>
+
+            <div class="flex gap-1 mt-2">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    💾 Save Device
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeDeviceModal()">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- SNMP Details Modal -->
+<div id="snmp-modal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <h3>📊 SNMP Details - <span id="snmp-device-name"></span></h3>
+            <button class="modal-close" onclick="closeSnmpModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <!-- System Info Card -->
+            <div class="card" style="margin-bottom: 1rem;">
+                <h4 style="margin-bottom: 0.5rem; color: var(--primary);">System Information</h4>
+                <table style="width: 100%;">
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted); width: 25%;">📛 System Name</td>
+                        <td style="padding: 0.5rem 0;"><strong id="snmp-sysname"></strong></td>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted); width: 20%;">⏱️ Uptime</td>
+                        <td style="padding: 0.5rem 0;"><strong id="snmp-uptime"></strong></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">📝 Description</td>
+                        <td colspan="3" style="padding: 0.5rem 0; word-break: break-word;" id="snmp-sysdescr"></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">📍 Location</td>
+                        <td style="padding: 0.5rem 0;" id="snmp-syslocation"></td>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">⚡ Response</td>
+                        <td style="padding: 0.5rem 0;"><strong id="snmp-response-time"></strong></td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Interfaces Section -->
+            <div class="card" style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h4 style="margin: 0; color: var(--primary);">🔌 Interfaces</h4>
+                    <button class="btn btn-sm btn-primary" onclick="loadInterfaces()" id="load-interfaces-btn">
+                        🔄 Load Interfaces
+                    </button>
+                </div>
+                <div id="interfaces-container" style="max-height: 300px; overflow-y: auto;">
+                    <p style="color: var(--text-muted); text-align: center; padding: 1rem;">
+                        Click "Load Interfaces" to fetch interface data
+                    </p>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" onclick="closeSnmpModal()" style="width: 100%;">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- SSL Certificate Details Modal -->
+<div id="ssl-modal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+        <div class="modal-header">
+            <h3>🔒 SSL Certificate - <span id="ssl-device-name"></span></h3>
+            <button class="modal-close" onclick="closeSslModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <div class="card" style="margin-bottom: 1rem;">
+                <table style="width: 100%; table-layout: fixed;">
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted); width: 30%;">📅 Expiry Date</td>
+                        <td style="padding: 0.5rem 0; word-wrap: break-word;"><strong id="ssl-expiry-date"></strong>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">⏳ Days Until Expiry</td>
+                        <td style="padding: 0.5rem 0;"><strong id="ssl-days-left"></strong></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">🏢 Issuer</td>
+                        <td style="padding: 0.5rem 0; word-wrap: break-word;" id="ssl-issuer"></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 0.5rem 0; color: var(--text-muted);">✅ Status</td>
+                        <td style="padding: 0.5rem 0;"><span id="ssl-status-badge" class="status-badge"></span></td>
+                    </tr>
+                </table>
+            </div>
+            <button class="btn btn-secondary" onclick="closeSslModal()" style="width: 100%;">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Real-time Graph Modal -->
+<div id="graph-modal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <h3>📈 Response Time Graph - <span id="graph-device-name"></span></h3>
+            <button class="modal-close" onclick="closeGraphModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <!-- Device Info -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div>
+                    <span style="color: var(--text-muted);">IP: </span>
+                    <code id="graph-device-ip"></code>
+                    <span style="margin-left: 1rem; color: var(--text-muted);">Type: </span>
+                    <span id="graph-device-type"></span>
+                </div>
+                <div>
+                    <span style="color: var(--text-muted);">Current: </span>
+                    <strong id="graph-current-response" style="font-size: 1.2rem;"></strong>
+                    <span id="graph-status-badge" class="status-badge"></span>
+                </div>
+            </div>
+
+            <!-- Chart Container -->
+            <div class="card" style="padding: 1rem; margin-bottom: 1rem;">
+                <canvas id="response-time-chart" height="300"></canvas>
+            </div>
+
+            <!-- Statistics -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Average</div>
+                    <div id="graph-avg" style="font-size: 1.5rem; font-weight: bold; color: var(--primary);"></div>
+                </div>
+                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Min</div>
+                    <div id="graph-min" style="font-size: 1.5rem; font-weight: bold; color: var(--success);"></div>
+                </div>
+                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Max</div>
+                    <div id="graph-max" style="font-size: 1.5rem; font-weight: bold; color: var(--danger);"></div>
+                </div>
+                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Data Points</div>
+                    <div id="graph-count" style="font-size: 1.5rem; font-weight: bold; color: var(--text);"></div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-primary" onclick="refreshGraphData()" style="flex: 1;">
+                    🔄 Refresh Data
+                </button>
+                <button class="btn btn-secondary" onclick="closeGraphModal()">
                     Close
                 </button>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Real-time Graph Modal -->
-    <div id="graph-modal" class="modal">
-        <div class="modal-content" style="max-width: 900px;">
-            <div class="modal-header">
-                <h3>📈 Response Time Graph - <span id="graph-device-name"></span></h3>
-                <button class="modal-close" onclick="closeGraphModal()">&times;</button>
-            </div>
-            <div style="padding: 1rem;">
-                <!-- Device Info -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <div>
-                        <span style="color: var(--text-muted);">IP: </span>
-                        <code id="graph-device-ip"></code>
-                        <span style="margin-left: 1rem; color: var(--text-muted);">Type: </span>
-                        <span id="graph-device-type"></span>
-                    </div>
-                    <div>
-                        <span style="color: var(--text-muted);">Current: </span>
-                        <strong id="graph-current-response" style="font-size: 1.2rem;"></strong>
-                        <span id="graph-status-badge" class="status-badge"></span>
-                    </div>
-                </div>
-
-                <!-- Chart Container -->
-                <div class="card" style="padding: 1rem; margin-bottom: 1rem;">
-                    <canvas id="response-time-chart" height="300"></canvas>
-                </div>
-
-                <!-- Statistics -->
-                <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
-                    <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                        <div style="color: var(--text-muted); font-size: 0.875rem;">Average</div>
-                        <div id="graph-avg" style="font-size: 1.5rem; font-weight: bold; color: var(--primary);"></div>
-                    </div>
-                    <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                        <div style="color: var(--text-muted); font-size: 0.875rem;">Min</div>
-                        <div id="graph-min" style="font-size: 1.5rem; font-weight: bold; color: var(--success);"></div>
-                    </div>
-                    <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                        <div style="color: var(--text-muted); font-size: 0.875rem;">Max</div>
-                        <div id="graph-max" style="font-size: 1.5rem; font-weight: bold; color: var(--danger);"></div>
-                    </div>
-                    <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                        <div style="color: var(--text-muted); font-size: 0.875rem;">Data Points</div>
-                        <div id="graph-count" style="font-size: 1.5rem; font-weight: bold; color: var(--text);"></div>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-primary" onclick="refreshGraphData()" style="flex: 1;">
-                        🔄 Refresh Data
-                    </button>
-                    <button class="btn btn-secondary" onclick="closeGraphModal()">
-                        Close
-                    </button>
-                </div>
-            </div>
+<!-- CSV Import Modal -->
+<div id="import-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <div class="modal-header">
+            <h3>📤 Import Devices from CSV</h3>
+            <button class="modal-close" onclick="closeImportModal()">&times;</button>
         </div>
-    </div>
-
-    <!-- CSV Import Modal -->
-    <div id="import-modal" class="modal">
-        <div class="modal-content" style="max-width: 800px;">
-            <div class="modal-header">
-                <h3>📤 Import Devices from CSV</h3>
-                <button class="modal-close" onclick="closeImportModal()">&times;</button>
+        <div style="padding: 1rem;">
+            <!-- Upload Section -->
+            <div class="card" style="margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Select CSV File</label>
+                    <input type="file" id="csv-file" class="form-input" accept=".csv" onchange="previewCSV()">
+                    <small style="color: var(--text-muted);">
+                        Required columns: <code>name</code>, <code>ip_address</code><br>
+                        Optional: <code>device_type</code>, <code>location</code>, <code>location_type</code>,
+                        <code>monitor_type</code>, <code>snmp_community</code>, <code>snmp_port</code>,
+                        <code>snmp_version</code>, <code>tcp_port</code>, <code>dns_query_domain</code>
+                    </small>
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="downloadTemplate()">
+                    📄 Download Template
+                </button>
             </div>
-            <div style="padding: 1rem;">
-                <!-- Upload Section -->
+
+            <!-- Preview Section -->
+            <div id="csv-preview-section" style="display: none;">
                 <div class="card" style="margin-bottom: 1rem;">
-                    <div class="form-group">
-                        <label class="form-label">Select CSV File</label>
-                        <input type="file" id="csv-file" class="form-input" accept=".csv" onchange="previewCSV()">
-                        <small style="color: var(--text-muted);">
-                            Required columns: <code>name</code>, <code>ip_address</code><br>
-                            Optional: <code>device_type</code>, <code>location</code>, <code>location_type</code>,
-                            <code>monitor_type</code>, <code>snmp_community</code>, <code>snmp_port</code>,
-                            <code>snmp_version</code>, <code>tcp_port</code>, <code>dns_query_domain</code>
-                        </small>
+                    <h4 style="margin-bottom: 0.5rem; color: var(--primary);">Preview</h4>
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        <table id="csv-preview-table" style="width: 100%; font-size: 0.875rem;">
+                            <thead>
+                                <tr></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
-                    <button class="btn btn-secondary btn-sm" onclick="downloadTemplate()">
-                        📄 Download Template
-                    </button>
-                </div>
-
-                <!-- Preview Section -->
-                <div id="csv-preview-section" style="display: none;">
-                    <div class="card" style="margin-bottom: 1rem;">
-                        <h4 style="margin-bottom: 0.5rem; color: var(--primary);">Preview</h4>
-                        <div style="max-height: 200px; overflow-y: auto;">
-                            <table id="csv-preview-table" style="width: 100%; font-size: 0.875rem;">
-                                <thead>
-                                    <tr></tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                        <div style="margin-top: 0.5rem; color: var(--text-muted);">
-                            <span id="csv-row-count">0</span> devices to import
-                        </div>
+                    <div style="margin-top: 0.5rem; color: var(--text-muted);">
+                        <span id="csv-row-count">0</span> devices to import
                     </div>
                 </div>
+            </div>
 
-                <!-- Result Section -->
-                <div id="import-result" class="alert" style="display: none;"></div>
+            <!-- Result Section -->
+            <div id="import-result" class="alert" style="display: none;"></div>
 
-                <div class="flex gap-1">
-                    <button id="import-btn" class="btn btn-primary" onclick="importCSV()" disabled style="flex: 1;">
-                        📤 Import Devices
-                    </button>
-                    <button class="btn btn-secondary" onclick="closeImportModal()">
-                        Cancel
-                    </button>
-                </div>
+            <div class="flex gap-1">
+                <button id="import-btn" class="btn btn-primary" onclick="importCSV()" disabled style="flex: 1;">
+                    📤 Import Devices
+                </button>
+                <button class="btn btn-secondary" onclick="closeImportModal()">
+                    Cancel
+                </button>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- Chart.js for real-time graphs -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Socket.IO -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <!-- Theme Toggle -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <!-- Devices Script -->
-    <script src="{{ url_for('static', filename='js/devices.js') }}"></script>
-</body>
-
-</html>
+{% block scripts %}
+<!-- Chart.js for real-time graphs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Devices Script -->
+<script src="{{ url_for('static', filename='js/devices.js') }}"></script>
+{% endblock %}

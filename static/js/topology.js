@@ -98,16 +98,40 @@ function updateNodeColors() {
     // Update all existing nodes
     const allNodes = nodes.get();
     allNodes.forEach(node => {
-        nodes.update({
-            id: node.id,
-            font: {
-                size: isGroupedView ? 20 : 150,
-                face: 'Inter, sans-serif',
-                vadjust: isGroupedView ? 0 : -30,
-                mod: isGroupedView ? '' : 'bold',
-                color: textColor
-            }
-        });
+        // Find device to get icon/type
+        const device = allDevices.find(d => d.id === node.id);
+        if (device) {
+            const color = getNodeColor(device.status); // Keep current status color
+            const iconEmoji = getDeviceIcon(device.device_type);
+            const svgSize = isGroupedView ? 80 : 150;
+            const iconSvg = getSvgIcon(iconEmoji, color, svgSize);
+
+            nodes.update({
+                id: node.id,
+                shape: 'image',
+                image: iconSvg,
+                size: isGroupedView ? 80 : 170, // Update size
+                font: {
+                    size: isGroupedView ? 80 : 170, // Update font size
+                    face: 'Inter, sans-serif',
+                    vadjust: isGroupedView ? 0 : -5,
+                    mod: isGroupedView ? '' : '',
+                    color: textColor,
+                    bold: {
+                        size: isGroupedView ? 90 : 180,
+                        vadjust: 0
+                    }
+                }
+            });
+        } else {
+            // Fallback for nodes that might not match a device (shouldn't happen)
+            nodes.update({
+                id: node.id,
+                font: {
+                    color: textColor
+                }
+            });
+        }
     });
 }
 
@@ -245,15 +269,15 @@ function initializeNetwork() {
         const nodeId = params.node;
         nodes.update({
             id: nodeId,
-            size: isGroupedView ? 30 : 80,
+            size: isGroupedView ? 120 : 220, // Scale up from 80/170
             font: {
                 multi: true,
-                size: isGroupedView ? 75 : 110,
+                size: isGroupedView ? 120 : 220,
                 face: 'Inter, sans-serif',
                 mod: isGroupedView ? '' : '',
                 color: getTextColor(),
                 bold: {
-                    size: isGroupedView ? 80 : 270
+                    size: isGroupedView ? 130 : 250
                 }
             }
         });
@@ -264,15 +288,15 @@ function initializeNetwork() {
         const nodeId = params.node;
         nodes.update({
             id: nodeId,
-            size: isGroupedView ? 25 : 70,
+            size: isGroupedView ? 80 : 170, // Reset to base size
             font: {
                 multi: true,
-                size: isGroupedView ? 60 : 100,
+                size: isGroupedView ? 80 : 170,
                 face: 'Inter, sans-serif',
                 mod: isGroupedView ? '' : '',
                 color: getTextColor(),
                 bold: {
-                    size: isGroupedView ? 70 : 250
+                    size: isGroupedView ? 90 : 180
                 }
             }
         });
@@ -592,7 +616,9 @@ function updateTopology(devices, connections) {
 
     displayDevices.forEach(device => {
         const color = getNodeColor(device.status);
-        const icon = getDeviceIcon(device.device_type);
+        const iconEmoji = getDeviceIcon(device.device_type);
+        const svgSize = isGroupedView ? 80 : 150; // Increased size for Free View
+        const iconSvg = getSvgIcon(iconEmoji, color, svgSize);
         const deviceType = device.device_type || 'other';
         const locType = device.location_type || 'on-premise';
         const locTypeLabel = getLocationTypeLabel(locType);
@@ -606,8 +632,10 @@ function updateTopology(devices, connections) {
 
         let nodeOptions = {
             id: device.id,
-            label: `<b>${icon}</b>\n${device.name}`,
-            title: `${icon} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nLocation: ${device.location || 'N/A'}\nZone: ${locTypeLabel}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
+            label: device.name,
+            title: `${iconEmoji} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nLocation: ${device.location || 'N/A'}\nZone: ${locTypeLabel}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
+            shape: 'image',
+            image: iconSvg,
             status: device.status, // Store status for edge coloring
             color: {
                 background: color,
@@ -617,16 +645,16 @@ function updateTopology(devices, connections) {
                     border: '#ffffff'
                 }
             },
-            size: isGroupedView ? zoneNodeSize : 70,
+            size: isGroupedView ? 80 : 170, // Increased to 170 for Free View
             font: {
                 multi: true,
-                size: isGroupedView ? zoneFontSize : 100,
+                size: isGroupedView ? 80 : 170, // Proportional font size
                 face: 'Inter, sans-serif',
                 mod: isGroupedView ? '' : '',
                 vadjust: isGroupedView ? 0 : -5,
                 color: getTextColor(),
                 bold: {
-                    size: isGroupedView ? zoneBoldSize : 250,
+                    size: isGroupedView ? 90 : 180,
                     vadjust: 0
                 }
             }
@@ -839,6 +867,16 @@ function getNodeColor(status) {
     return colors[status] || colors['unknown'];
 }
 
+// Generate SVG icon
+function getSvgIcon(emoji, color, size = 100) {
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 28 28">
+        <circle cx="14" cy="14" r="12" fill="${color}" stroke="#ffffff" stroke-width="2" />
+        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="12" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif">${emoji}</text>
+    </svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
 // Get device icon based on type
 function getDeviceIcon(deviceType) {
     const type = (deviceType || 'other').toLowerCase();
@@ -895,13 +933,16 @@ function updateNodeStatus(device) {
     const node = nodes.get(device.id);
     if (node) {
         const color = getNodeColor(device.status);
-        const icon = getDeviceIcon(device.device_type);
+        const iconEmoji = getDeviceIcon(device.device_type);
+        const iconSvg = getSvgIcon(iconEmoji, color);
         const deviceType = device.device_type || 'other';
 
         nodes.update({
             id: device.id,
-            label: `<b>${icon}</b>\n${device.name}`,
-            title: `${icon} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
+            label: device.name,
+            title: `${iconEmoji} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
+            shape: 'image',
+            image: iconSvg,
             color: {
                 background: color,
                 border: color,
@@ -929,73 +970,7 @@ function showEdgeOptions(edgeId) {
     }
 }
 
-// Show add connection modal
-function showAddConnectionModal() {
-    const fromSelect = document.getElementById('from-device');
-    const toSelect = document.getElementById('to-device');
 
-    // Clear and populate device selects
-    fromSelect.innerHTML = '<option value="">Select device...</option>';
-    toSelect.innerHTML = '<option value="">Select device...</option>';
-
-    // Filter devices: show only wireless devices when in Wireless View
-    const devicesToShow = isWirelessView
-        ? allDevices.filter(d => (d.device_type || '').toLowerCase() === 'wireless')
-        : allDevices;
-
-    devicesToShow.forEach(device => {
-        fromSelect.innerHTML += `<option value="${device.id}">${device.name} (${device.ip_address})</option>`;
-        toSelect.innerHTML += `<option value="${device.id}">${device.name} (${device.ip_address})</option>`;
-    });
-
-    document.getElementById('connection-modal').classList.add('active');
-}
-
-// Close connection modal
-function closeConnectionModal() {
-    document.getElementById('connection-modal').classList.remove('active');
-    document.getElementById('connection-form').reset();
-}
-
-// Save connection
-async function saveConnection(event) {
-    event.preventDefault();
-
-    const fromDeviceId = parseInt(document.getElementById('from-device').value);
-    const toDeviceId = parseInt(document.getElementById('to-device').value);
-
-    if (fromDeviceId === toDeviceId) {
-        alert('Cannot connect a device to itself!');
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/topology/connection', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                device_id: fromDeviceId,
-                connected_to: toDeviceId,
-                view_type: isWirelessView ? 'wireless' : 'standard'
-            })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            closeConnectionModal();
-            alert('Connection added successfully!');
-            loadTopologyData();
-        } else {
-            alert('Error: ' + (result.error || 'Failed to add connection'));
-        }
-    } catch (error) {
-        console.error('Error adding connection:', error);
-        alert('Error adding connection. Please try again.');
-    }
-}
 
 // Delete connection
 async function deleteConnection(connectionId) {
@@ -1215,6 +1190,9 @@ function fitNetwork() {
     }
 }
 
+// Listen for fullscreen change to resize network
+
+
 // Toggle Fullscreen
 function toggleFullscreen() {
     const container = document.getElementById('topology-network').parentElement.parentElement; // Card element
@@ -1249,15 +1227,29 @@ document.addEventListener('mozfullscreenchange', handleFullscreenChange);
 document.addEventListener('MSFullscreenChange', handleFullscreenChange);
 
 function handleFullscreenChange() {
-    setTimeout(() => {
-        if (network) {
-            const container = document.getElementById('topology-network');
-            // Force redraw with explicit pixel dimensions to ensure canvas resizes correctly
-            network.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
-            network.redraw();
-            network.fit();
-        }
-    }, 500); // Increased timeout to ensure DOM layout is complete
+    const container = document.getElementById('topology-network');
+    const isFs = !!document.fullscreenElement;
+
+    if (isFs) {
+        // Remove inline height constraints so CSS fullscreen rules take effect
+        container.style.height = '100%';
+        container.style.minHeight = '0';
+    } else {
+        // Restore normal height
+        container.style.height = '65vh';
+        container.style.minHeight = '500px';
+    }
+
+    // Resize vis.js network at multiple intervals to ensure proper layout
+    [100, 300, 600].forEach(delay => {
+        setTimeout(() => {
+            if (network) {
+                network.setSize('100%', '100%');
+                network.redraw();
+                network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+            }
+        }, delay);
+    });
 }
 
 // Refresh topology
@@ -1265,13 +1257,7 @@ function refreshTopology() {
     loadTopologyData();
 }
 
-// Close modal when clicking outside
-document.addEventListener('click', (event) => {
-    const modal = document.getElementById('connection-modal');
-    if (event.target === modal) {
-        closeConnectionModal();
-    }
-});
+
 
 // Constrain On-Premise nodes to their zone and add local gravity
 function constrainOnPremiseNodes() {

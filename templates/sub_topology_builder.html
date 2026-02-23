@@ -1,0 +1,347 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - Sub-Topology Builder{% endblock %}
+
+{% block page_title %}{% if sub_topo_id %}Edit Sub-Topology{% else %}New Sub-Topology{% endif %}{% endblock %}
+
+{% set active_page = 'sub_topology' %}
+
+{% block head %}
+<!-- Vis.js Network -->
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+    .builder-container {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 64px - 3rem);
+        overflow: hidden;
+        width: 100%;
+        padding: 0 1rem;
+    }
+
+    .builder-layout {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 1rem;
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        width: 100%;
+    }
+
+    .device-panel {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 320px;
+    }
+
+    .device-panel .card-body {
+        overflow-y: auto;
+        padding: 0.75rem;
+        flex: 1;
+    }
+
+    .device-filter {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .device-filter input,
+    .device-filter select {
+        width: 100%;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .device-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.6rem;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.15s;
+        font-size: 0.85rem;
+    }
+
+    .device-item:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .device-item.selected {
+        background: rgba(16, 185, 129, 0.15);
+        border-left: 3px solid var(--success);
+    }
+
+    .device-item input[type="checkbox"] {
+        accent-color: var(--success);
+    }
+
+    .device-status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .preview-panel {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 0;
+        /* Critical for flex items */
+        height: 100%;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+
+    .preview-panel .card-body {
+        flex: 1;
+        padding: 0;
+        position: relative;
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    #preview-network {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    .builder-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .builder-header input[type="text"] {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .connect-banner {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(59, 130, 246, 0.9);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        z-index: 10;
+        display: none;
+    }
+
+    .device-count-badge {
+        background: var(--primary);
+        color: white;
+        padding: 0.15rem 0.5rem;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        margin-left: auto;
+    }
+
+    .type-group-header {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        padding: 0.5rem 0.6rem 0.25rem;
+        margin-top: 0.5rem;
+    }
+
+    .type-group-header:first-child {
+        margin-top: 0;
+    }
+
+    .select-type-btns {
+        display: flex;
+        gap: 0.25rem;
+        margin-left: auto;
+    }
+
+    .select-type-btns button {
+        font-size: 0.65rem;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-primary);
+        color: var(--text-muted);
+        cursor: pointer;
+    }
+
+    .select-type-btns button:hover {
+        background: var(--primary);
+        color: white;
+    }
+
+    .bg-zoom-controls {
+        display: none;
+        align-items: center;
+        gap: 0.35rem;
+        background: var(--bg-tertiary);
+        padding: 0.25rem 0.5rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+
+    .bg-zoom-controls button {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        cursor: pointer;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+
+    .bg-zoom-controls button:hover {
+        background: var(--primary);
+        color: white;
+    }
+
+    .bg-zoom-controls input[type="range"] {
+        width: 100px;
+        height: 4px;
+        accent-color: var(--primary);
+        cursor: pointer;
+    }
+
+    .bg-zoom-controls .zoom-label {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+        min-width: 32px;
+        text-align: center;
+    }
+
+
+    @media (max-width: 768px) {
+        .builder-layout {
+            grid-template-columns: 1fr;
+            height: auto;
+        }
+
+        .device-panel {
+            max-height: 300px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="builder-container">
+    <!-- Header -->
+    <div class="builder-header">
+        <input type="text" id="sub-topo-name" placeholder="Sub-Topology Name..." value="">
+        <input type="text" id="sub-topo-desc" placeholder="Description (optional)" value="" style="min-width: 150px;">
+        <button class="btn btn-sm btn-success" onclick="toggleBuilderConnectMode()">
+            ➕ Add Connection
+        </button>
+        <button class="btn btn-sm btn-info" onclick="document.getElementById('bg-upload-input').click()">
+            🖼️ Upload Background
+        </button>
+        <button class="btn btn-sm btn-warning" id="remove-bg-btn" onclick="removeBackground()" style="display:none;">
+            ❌ Remove Background
+        </button>
+        <div id="bg-zoom-controls" class="bg-zoom-controls">
+            <span class="zoom-label">🔍</span>
+            <button onclick="bgZoomOut()" title="Zoom Out">−</button>
+            <input type="range" id="bg-zoom-slider" min="10" max="500" value="100" oninput="onBgZoomChange(this.value)">
+            <button onclick="bgZoomIn()" title="Zoom In">+</button>
+            <span id="bg-zoom-value" class="zoom-label">100%</span>
+            <button onclick="bgZoomReset()" title="Reset Zoom" style="font-size:0.7rem;">⟲</button>
+        </div>
+        <div id="bg-opacity-controls" class="bg-zoom-controls">
+            <span class="zoom-label">☀️</span>
+            <input type="range" id="bg-opacity-slider" min="5" max="100" value="100"
+                oninput="onBgOpacityChange(this.value)">
+            <span id="bg-opacity-value" class="zoom-label">100%</span>
+        </div>
+        <div id="bg-brightness-controls" class="bg-zoom-controls">
+            <span class="zoom-label">💡</span>
+            <input type="range" id="bg-brightness-slider" min="50" max="250" value="100"
+                oninput="onBgBrightnessChange(this.value)">
+            <span id="bg-brightness-value" class="zoom-label">100%</span>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="saveSubTopology()">
+            💾 Save
+        </button>
+        <button class="btn btn-sm btn-secondary" onclick="window.location.href='/topology'">
+            ← Back
+        </button>
+        <input type="file" id="bg-upload-input" accept="image/*" style="display:none;"
+            onchange="uploadBackground(this)">
+    </div>
+
+    <!-- Builder Layout -->
+    <div class="builder-layout">
+        <!-- Left Panel: Device Selection -->
+        <div class="device-panel card">
+            <div class="card-header" style="padding: 0.5rem 0.75rem;">
+                <h3 class="card-title" style="font-size: 0.95rem;">
+                    📋 Select Devices
+                    <span id="selected-count" class="device-count-badge">0</span>
+                </h3>
+            </div>
+            <div class="device-filter">
+                <input type="text" id="device-search" placeholder="🔍 Search devices..." oninput="filterDevices()">
+                <select id="device-type-filter" onchange="filterDevices()">
+                    <option value="">All Device Types</option>
+                </select>
+            </div>
+            <div class="card-body" id="device-list">
+                <!-- Devices will be populated here -->
+            </div>
+        </div>
+
+        <!-- Right Panel: Topology Preview -->
+        <div class="preview-panel card">
+            <div class="card-header" style="padding: 0.5rem 0.75rem;">
+                <h3 class="card-title" style="font-size: 0.95rem;">🗺️ Topology Preview</h3>
+                <div class="flex gap-1">
+                    <button class="btn btn-sm btn-secondary" onclick="fitPreview()">📐 Fit</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="connect-banner" class="connect-banner">
+                    🔗 <strong>Connect Mode:</strong> Click a node, drag to another to connect. Press <kbd>ESC</kbd> to
+                    exit.
+                </div>
+                <div id="preview-network"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const SUB_TOPO_ID = {{ sub_topo_id | default ('null') }};
+</script>
+<script src="{{ url_for('static', filename='js/sub_topology_builder.js') }}?v=2.1"></script>
+{% endblock %}

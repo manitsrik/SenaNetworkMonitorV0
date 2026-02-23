@@ -1,210 +1,179 @@
-<!DOCTYPE html>
-<html lang="th">
+{% extends "layout.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Monitor - SLA Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+{% block title %}Network Monitor - SLA Dashboard{% endblock %}
 
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="navbar-content">
-            <a href="/" class="navbar-brand">
-                <span>🌐</span> Network Monitor
-            </a>
-            <ul class="navbar-menu">
-                <li><a href="/">Dashboard</a></li>
-                <li><a href="/topology">Topology</a></li>
-                <li><a href="/devices">Devices</a></li>
-                <li><a href="/history">History</a></li>
-                <li><a href="/sla" class="active">SLA</a></li>
-                <li><a href="/settings">Settings</a></li>
-                <li>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
-                        <span id="theme-icon">☀️</span>
-                    </button>
-                </li>
-                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
-            </ul>
+{% block page_title %}SLA Dashboard{% endblock %}
+
+{% set active_page = 'sla' %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="flex-between mb-2">
+        <div>
+            <p class="text-muted">Service Level Agreement monitoring and uptime statistics</p>
         </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="container">
-        <!-- Page Header -->
-        <div class="page-header flex-between">
-            <div>
-                <h1 class="page-title">📊 SLA Dashboard</h1>
-                <p class="page-subtitle">Service Level Agreement monitoring and uptime statistics</p>
-            </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <label style="color: var(--text-muted); font-size: 0.875rem;">Period:</label>
-                <select id="sla-period" class="form-input" style="width: auto;" onchange="loadSlaData()">
-                    <option value="7">Last 7 Days</option>
-                    <option value="30" selected>Last 30 Days</option>
-                    <option value="90">Last 90 Days</option>
-                </select>
-                <label style="color: var(--text-muted); font-size: 0.875rem; margin-left: 1rem;">Target:</label>
-                <select id="sla-target" class="form-input" style="width: auto;" onchange="loadSlaData()">
-                    <option value="99">99%</option>
-                    <option value="99.5">99.5%</option>
-                    <option value="99.9" selected>99.9%</option>
-                    <option value="99.99">99.99%</option>
-                </select>
-                <button class="btn btn-primary btn-sm" onclick="loadSlaData()">🔄 Refresh</button>
-            </div>
-        </div>
-
-        <!-- Summary Cards -->
-        <div class="grid grid-5 mb-2" id="summary-cards">
-            <div class="stat-card">
-                <div class="stat-value" id="avg-uptime">-</div>
-                <div class="stat-label">Average Uptime</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="total-devices">0</div>
-                <div class="stat-label">Total Devices</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="sla-met" style="color: var(--success);">0</div>
-                <div class="stat-label">✅ SLA Met</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="sla-warning" style="color: var(--warning);">0</div>
-                <div class="stat-label">⚠️ Warning</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value" id="sla-breached" style="color: var(--danger);">0</div>
-                <div class="stat-label">❌ Breached</div>
-            </div>
-        </div>
-
-        <!-- SLA Table -->
-        <div class="card">
-            <div class="card-header">
-                <h3 class="card-title">Device SLA Status</h3>
-                <span class="status-badge" id="table-info">Loading...</span>
-            </div>
-            <div class="card-body" style="overflow-x: auto;">
-                <table class="table" id="sla-table">
-                    <thead>
-                        <tr>
-                            <th>Device</th>
-                            <th>Type</th>
-                            <th>Location</th>
-                            <th style="text-align: center;">Status</th>
-                            <th style="text-align: right;">Uptime %</th>
-                            <th style="text-align: center;">SLA Target</th>
-                            <th style="text-align: center;">SLA Status</th>
-                            <th style="text-align: right;">Checks</th>
-                            <th style="text-align: right;">Avg Response</th>
-                        </tr>
-                    </thead>
-                    <tbody id="sla-tbody">
-                        <tr>
-                            <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                                Loading SLA data...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- SLA Legend -->
-        <div class="card mt-2">
-            <div class="card-body" style="padding: 0.75rem;">
-                <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
-                    <span><span class="status-badge status-up">✅ Met</span> Uptime ≥ Target</span>
-                    <span><span class="status-badge status-slow">⚠️ Warning</span> Uptime within 1% of Target</span>
-                    <span><span class="status-badge status-down">❌ Breached</span> Uptime below Target</span>
-                    <span><span class="status-badge status-unknown">📊 No Data</span> Insufficient history</span>
-                </div>
-            </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label style="color: var(--text-muted); font-size: 0.875rem;">Period:</label>
+            <select id="sla-period" class="form-input" style="width: auto;" onchange="loadSlaData()">
+                <option value="7">Last 7 Days</option>
+                <option value="30" selected>Last 30 Days</option>
+                <option value="90">Last 90 Days</option>
+            </select>
+            <label style="color: var(--text-muted); font-size: 0.875rem; margin-left: 1rem;">Target:</label>
+            <select id="sla-target" class="form-input" style="width: auto;" onchange="loadSlaData()">
+                <option value="99">99%</option>
+                <option value="99.5">99.5%</option>
+                <option value="99.9" selected>99.9%</option>
+                <option value="99.99">99.99%</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="loadSlaData()">🔄 Refresh</button>
         </div>
     </div>
 
-    <!-- Theme Toggle -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <!-- Summary Cards -->
+    <div class="grid grid-5 mb-2" id="summary-cards">
+        <div class="stat-card">
+            <div class="stat-value" id="avg-uptime">-</div>
+            <div class="stat-label">Average Uptime</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="total-devices">0</div>
+            <div class="stat-label">Total Devices</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="sla-met" style="color: var(--success);">0</div>
+            <div class="stat-label">✅ SLA Met</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="sla-warning" style="color: var(--warning);">0</div>
+            <div class="stat-label">⚠️ Warning</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="sla-breached" style="color: var(--danger);">0</div>
+            <div class="stat-label">❌ Breached</div>
+        </div>
+    </div>
 
-    <!-- SLA Dashboard Script -->
-    <script>
-        // Load SLA data on page load
-        document.addEventListener('DOMContentLoaded', loadSlaData);
+    <!-- SLA Table -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Device SLA Status</h3>
+            <span class="status-badge" id="table-info">Loading...</span>
+        </div>
+        <div class="card-body" style="overflow-x: auto;">
+            <table class="table" id="sla-table">
+                <thead>
+                    <tr>
+                        <th>Device</th>
+                        <th>Type</th>
+                        <th>Location</th>
+                        <th style="text-align: center;">Status</th>
+                        <th style="text-align: right;">Uptime %</th>
+                        <th style="text-align: center;">SLA Target</th>
+                        <th style="text-align: center;">SLA Status</th>
+                        <th style="text-align: right;">Checks</th>
+                        <th style="text-align: right;">Avg Response</th>
+                    </tr>
+                </thead>
+                <tbody id="sla-tbody">
+                    <tr>
+                        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                            Loading SLA data...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
-        async function loadSlaData() {
-            const days = document.getElementById('sla-period').value;
-            const target = document.getElementById('sla-target').value;
+    <!-- SLA Legend -->
+    <div class="card mt-2">
+        <div class="card-body" style="padding: 0.75rem;">
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
+                <span><span class="status-badge status-up">✅ Met</span> Uptime ≥ Target</span>
+                <span><span class="status-badge status-slow">⚠️ Warning</span> Uptime within 1% of Target</span>
+                <span><span class="status-badge status-down">❌ Breached</span> Uptime below Target</span>
+                <span><span class="status-badge status-unknown">📊 No Data</span> Insufficient history</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
 
-            try {
-                const response = await fetch(`/api/sla?days=${days}&target=${target}`);
-                const data = await response.json();
+{% block scripts %}
+<!-- SLA Dashboard Script -->
+<script>
+    // Load SLA data on page load
+    document.addEventListener('DOMContentLoaded', loadSlaData);
 
-                updateSummary(data.summary);
-                updateTable(data.devices);
-            } catch (error) {
-                console.error('Error loading SLA data:', error);
-                document.getElementById('sla-tbody').innerHTML = `
+    async function loadSlaData() {
+        const days = document.getElementById('sla-period').value;
+        const target = document.getElementById('sla-target').value;
+
+        try {
+            const response = await fetch(`/api/sla?days=${days}&target=${target}`);
+            const data = await response.json();
+
+            updateSummary(data.summary);
+            updateTable(data.devices);
+        } catch (error) {
+            console.error('Error loading SLA data:', error);
+            document.getElementById('sla-tbody').innerHTML = `
                     <tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 2rem;">
                         Error loading SLA data
                     </td></tr>
                 `;
-            }
         }
+    }
 
-        function updateSummary(summary) {
-            document.getElementById('avg-uptime').textContent =
-                summary.average_uptime ? summary.average_uptime.toFixed(2) + '%' : '-';
-            document.getElementById('total-devices').textContent = summary.total_devices;
-            document.getElementById('sla-met').textContent = summary.sla_met;
-            document.getElementById('sla-warning').textContent = summary.sla_warning;
-            document.getElementById('sla-breached').textContent = summary.sla_breached;
+    function updateSummary(summary) {
+        document.getElementById('avg-uptime').textContent =
+            summary.average_uptime ? summary.average_uptime.toFixed(2) + '%' : '-';
+        document.getElementById('total-devices').textContent = summary.total_devices;
+        document.getElementById('sla-met').textContent = summary.sla_met;
+        document.getElementById('sla-warning').textContent = summary.sla_warning;
+        document.getElementById('sla-breached').textContent = summary.sla_breached;
 
-            // Update table info badge
-            const tableInfo = document.getElementById('table-info');
-            tableInfo.textContent = `${summary.days} days, Target: ${summary.sla_target}%`;
-            tableInfo.className = 'status-badge status-up';
-        }
+        // Update table info badge
+        const tableInfo = document.getElementById('table-info');
+        tableInfo.textContent = `${summary.days} days, Target: ${summary.sla_target}%`;
+        tableInfo.className = 'status-badge status-up';
+    }
 
-        function updateTable(devices) {
-            const tbody = document.getElementById('sla-tbody');
+    function updateTable(devices) {
+        const tbody = document.getElementById('sla-tbody');
 
-            if (!devices || devices.length === 0) {
-                tbody.innerHTML = `
+        if (!devices || devices.length === 0) {
+            tbody.innerHTML = `
                     <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
                         No devices found
                     </td></tr>
                 `;
-                return;
-            }
+            return;
+        }
 
-            // Sort by uptime (null values last, then by uptime ascending to show worst first)
-            devices.sort((a, b) => {
-                if (a.uptime_percent === null && b.uptime_percent === null) return 0;
-                if (a.uptime_percent === null) return 1;
-                if (b.uptime_percent === null) return -1;
-                return a.uptime_percent - b.uptime_percent;
-            });
+        // Sort by uptime (null values last, then by uptime ascending to show worst first)
+        devices.sort((a, b) => {
+            if (a.uptime_percent === null && b.uptime_percent === null) return 0;
+            if (a.uptime_percent === null) return 1;
+            if (b.uptime_percent === null) return -1;
+            return a.uptime_percent - b.uptime_percent;
+        });
 
-            tbody.innerHTML = devices.map(device => {
-                const statusClass = getStatusClass(device.current_status);
-                const slaClass = getSlaClass(device.sla_status);
-                const slaIcon = getSlaIcon(device.sla_status);
-                const uptime = device.uptime_percent !== null
-                    ? device.uptime_percent.toFixed(4) + '%'
-                    : 'N/A';
-                const uptimeColor = getUptimeColor(device.uptime_percent, device.sla_target);
-                const avgResponse = device.avg_response_time !== null
-                    ? device.avg_response_time + ' ms'
-                    : 'N/A';
+        tbody.innerHTML = devices.map(device => {
+            const statusClass = getStatusClass(device.current_status);
+            const slaClass = getSlaClass(device.sla_status);
+            const slaIcon = getSlaIcon(device.sla_status);
+            const uptime = device.uptime_percent !== null
+                ? device.uptime_percent.toFixed(4) + '%'
+                : 'N/A';
+            const uptimeColor = getUptimeColor(device.uptime_percent, device.sla_target);
+            const avgResponse = device.avg_response_time !== null
+                ? device.avg_response_time + ' ms'
+                : 'N/A';
 
-                return `
+            return `
                     <tr>
                         <td>
                             <strong>${device.name}</strong><br>
@@ -226,59 +195,57 @@
                         <td style="text-align: right;">${avgResponse}</td>
                     </tr>
                 `;
-            }).join('');
-        }
+        }).join('');
+    }
 
-        function getStatusClass(status) {
-            switch (status) {
-                case 'up': return 'status-up';
-                case 'down': return 'status-down';
-                case 'slow': return 'status-slow';
-                default: return 'status-unknown';
-            }
+    function getStatusClass(status) {
+        switch (status) {
+            case 'up': return 'status-up';
+            case 'down': return 'status-down';
+            case 'slow': return 'status-slow';
+            default: return 'status-unknown';
         }
+    }
 
-        function getSlaClass(status) {
-            switch (status) {
-                case 'met': return 'status-up';
-                case 'warning': return 'status-slow';
-                case 'breached': return 'status-down';
-                default: return 'status-unknown';
-            }
+    function getSlaClass(status) {
+        switch (status) {
+            case 'met': return 'status-up';
+            case 'warning': return 'status-slow';
+            case 'breached': return 'status-down';
+            default: return 'status-unknown';
         }
+    }
 
-        function getSlaIcon(status) {
-            switch (status) {
-                case 'met': return '✅ Met';
-                case 'warning': return '⚠️ Warning';
-                case 'breached': return '❌ Breached';
-                default: return '📊 No Data';
-            }
+    function getSlaIcon(status) {
+        switch (status) {
+            case 'met': return '✅ Met';
+            case 'warning': return '⚠️ Warning';
+            case 'breached': return '❌ Breached';
+            default: return '📊 No Data';
         }
+    }
 
-        function getUptimeColor(uptime, target) {
-            if (uptime === null) return 'var(--text-muted)';
-            if (uptime >= target) return 'var(--success)';
-            if (uptime >= target - 1) return 'var(--warning)';
-            return 'var(--danger)';
-        }
+    function getUptimeColor(uptime, target) {
+        if (uptime === null) return 'var(--text-muted)';
+        if (uptime >= target) return 'var(--success)';
+        if (uptime >= target - 1) return 'var(--warning)';
+        return 'var(--danger)';
+    }
 
-        function getDeviceTypeIcon(type) {
-            const icons = {
-                'server': '🖥️',
-                'router': '🔀',
-                'switch': '🔌',
-                'firewall': '🛡️',
-                'access_point': '📡',
-                'wireless': '📶',
-                'website': '🌐',
-                'dns': '📬',
-                'cloud': '☁️',
-                'other': '📦'
-            };
-            return icons[type] || '📦';
-        }
-    </script>
-</body>
-
-</html>
+    function getDeviceTypeIcon(type) {
+        const icons = {
+            'server': '🖥️',
+            'router': '🔀',
+            'switch': '🔌',
+            'firewall': '🛡️',
+            'access_point': '📡',
+            'wireless': '📶',
+            'website': '🌐',
+            'dns': '📬',
+            'cloud': '☁️',
+            'other': '📦'
+        };
+        return icons[type] || '📦';
+    }
+</script>
+{% endblock %}

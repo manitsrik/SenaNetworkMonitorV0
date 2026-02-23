@@ -13,10 +13,13 @@ from config import Config
 from functools import wraps
 import atexit
 import os
+import json
 
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 CORS(app)
 
 # Initialize SocketIO
@@ -381,6 +384,14 @@ def get_historical_stats():
     stats = db.get_aggregated_stats(start_date, end_date)
     return jsonify(stats)
 
+@app.route('/api/statistics/trend', methods=['GET'])
+def get_trend_statistics():
+    """Get response time trends by device type"""
+    # Default to 3 hours (180 minutes)
+    minutes = request.args.get('minutes', 180, type=int)
+    trends = db.get_device_type_trends(minutes)
+    return jsonify(trends)
+
 @app.route('/api/check/<int:device_id>', methods=['POST'])
 @operator_required
 def check_device_now(device_id):
@@ -735,6 +746,261 @@ def get_device_sla(device_id):
         'device': device,
         **stats
     })
+
+
+
+# ============================================================================
+# Dashboard Management Routes
+# ============================================================================
+
+@app.route('/dashboards')
+@login_required
+def dashboards_list():
+    """List all dashboards page"""
+    return render_template('dashboards.html')
+
+@app.route('/dashboard/new')
+@admin_required
+def new_dashboard():
+    """Dashboard creator page"""
+    return render_template('dashboard_builder.html')
+
+@app.route('/dashboard/<int:dashboard_id>/edit')
+@admin_required
+def edit_dashboard(dashboard_id):
+    """Edit dashboard page"""
+    return render_template('dashboard_builder.html', dashboard_id=dashboard_id)
+
+@app.route('/dashboard/<int:dashboard_id>')
+@login_required
+def view_dashboard(dashboard_id):
+    """View specific dashboard"""
+    return render_template('dashboard_view.html', dashboard_id=dashboard_id)
+
+@app.route('/api/dashboards', methods=['GET'])
+@login_required
+def get_dashboards():
+    """Get all dashboards"""
+    user_id = session.get('user_id')
+    dashboards = db.get_dashboards(user_id)
+    
+    # Parse layout_config JSON string
+    for d in dashboards:
+        try:
+            if d['layout_config']:
+                d['layout_config'] = json.loads(d['layout_config'])
+        except:
+            d['layout_config'] = []
+            
+    return jsonify(dashboards)
+
+@app.route('/api/dashboards', methods=['POST'])
+@admin_required
+def create_dashboard():
+    """Create a new dashboard"""
+    data = request.json
+    
+    if not data.get('name'):
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+        
+    layout_config = data.get('layout_config')
+    if isinstance(layout_config, (dict, list)):
+        layout_config = json.dumps(layout_config)
+    
+    result = db.create_dashboard(
+        name=data['name'],
+        layout_config=layout_config,
+        description=data.get('description'),
+        created_by=session.get('user_id'),
+        is_public=data.get('is_public', 0)
+    )
+    
+    return jsonify(result)
+
+@app.route('/api/dashboards/<int:dashboard_id>', methods=['GET'])
+@login_required
+def get_dashboard(dashboard_id):
+    """Get a specific dashboard"""
+    dashboard = db.get_dashboard(dashboard_id)
+    if not dashboard:
+        return jsonify({'error': 'Dashboard not found'}), 404
+        
+    # Check access
+    if not dashboard['is_public'] and dashboard['created_by'] != session.get('user_id'):
+        return jsonify({'error': 'Access denied'}), 403
+        
+    try:
+        if dashboard['layout_config']:
+            dashboard['layout_config'] = json.loads(dashboard['layout_config'])
+    except:
+        dashboard['layout_config'] = []
+        
+    return jsonify(dashboard)
+
+@app.route('/api/dashboards/<int:dashboard_id>', methods=['PUT'])
+@admin_required
+def update_dashboard(dashboard_id):
+    """Update a dashboard"""
+    data = request.json
+    
+    # Check ownership or admin
+    dashboard = db.get_dashboard(dashboard_id)
+    if not dashboard:
+        return jsonify({'error': 'Dashboard not found'}), 404
+        
+    # We are already in @admin_required, strictly enforcing admins only for now.
+    # If we want regular users to update their own, we'd need different logic.
+    # Current requirement says "Admin can define...", so @admin_required is safe.
+
+    layout_config = data.get('layout_config')
+    if layout_config is not None and isinstance(layout_config, (dict, list)):
+        layout_config = json.dumps(layout_config)
+        
+    result = db.update_dashboard(
+        dashboard_id,
+        name=data.get('name'),
+        layout_config=layout_config,
+        description=data.get('description'),
+        is_public=data.get('is_public')
+    )
+    
+    return jsonify(result)
+
+@app.route('/api/dashboards/<int:dashboard_id>', methods=['DELETE'])
+@admin_required
+def delete_dashboard(dashboard_id):
+    """Delete a dashboard"""
+    result = db.delete_dashboard(dashboard_id)
+    return jsonify(result)
+
+# ============================================================================
+# Sub-Topology Routes
+# ============================================================================
+
+@app.route('/sub-topology/new')
+@operator_required
+def new_sub_topology():
+    """Sub-topology builder page (create)"""
+    return render_template('sub_topology_builder.html')
+
+@app.route('/sub-topology/<int:sub_topo_id>/edit')
+@operator_required
+def edit_sub_topology(sub_topo_id):
+    """Sub-topology builder page (edit)"""
+    return render_template('sub_topology_builder.html', sub_topo_id=sub_topo_id)
+
+@app.route('/sub-topology/<int:sub_topo_id>')
+@login_required
+def view_sub_topology(sub_topo_id):
+    """View sub-topology"""
+    return render_template('sub_topology_view.html', sub_topo_id=sub_topo_id)
+
+@app.route('/api/sub-topologies', methods=['GET'])
+@login_required
+def get_sub_topologies():
+    """Get all sub-topologies"""
+    sub_topos = db.get_all_sub_topologies()
+    return jsonify(sub_topos)
+
+@app.route('/api/sub-topologies', methods=['POST'])
+@operator_required
+def create_sub_topology():
+    """Create a new sub-topology"""
+    data = request.json
+    
+    if not data.get('name'):
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+    
+    result = db.create_sub_topology(
+        name=data['name'],
+        description=data.get('description'),
+        created_by=session.get('user_id'),
+        background_image=data.get('background_image'),
+        background_zoom=data.get('background_zoom', 100),
+        node_positions=data.get('node_positions'),
+        background_opacity=data.get('background_opacity', 100)
+    )
+    
+    if result['success']:
+        sub_topo_id = result['id']
+        # Save devices
+        device_ids = data.get('device_ids', [])
+        connections = data.get('connections', [])
+        db.update_sub_topology(sub_topo_id, device_ids=device_ids, connections=connections)
+        return jsonify(result), 201
+    
+    return jsonify(result), 400
+
+@app.route('/api/sub-topologies/<int:sub_topo_id>', methods=['GET'])
+@login_required
+def get_sub_topology_detail(sub_topo_id):
+    """Get a sub-topology with devices and connections"""
+    sub_topo = db.get_sub_topology(sub_topo_id)
+    if not sub_topo:
+        return jsonify({'error': 'Sub-topology not found'}), 404
+    return jsonify(sub_topo)
+
+@app.route('/api/sub-topologies/<int:sub_topo_id>', methods=['PUT'])
+@operator_required
+def update_sub_topology_route(sub_topo_id):
+    """Update a sub-topology"""
+    data = request.json
+    
+    sub_topo = db.get_sub_topology(sub_topo_id)
+    if not sub_topo:
+        return jsonify({'error': 'Sub-topology not found'}), 404
+    
+    result = db.update_sub_topology(
+        sub_topo_id,
+        name=data.get('name'),
+        description=data.get('description'),
+        device_ids=data.get('device_ids'),
+        connections=data.get('connections'),
+        background_image=data.get('background_image'),
+        background_zoom=data.get('background_zoom'),
+        node_positions=data.get('node_positions'),
+        background_opacity=data.get('background_opacity')
+    )
+    
+    return jsonify(result)
+
+@app.route('/api/sub-topologies/<int:sub_topo_id>', methods=['DELETE'])
+@operator_required
+def delete_sub_topology_route(sub_topo_id):
+    """Delete a sub-topology"""
+    result = db.delete_sub_topology(sub_topo_id)
+    return jsonify(result)
+
+@app.route('/api/sub-topologies/upload-bg', methods=['POST'])
+@operator_required
+def upload_sub_topology_bg():
+    """Upload a background image for sub-topology"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed_extensions:
+        return jsonify({'success': False, 'error': f'Invalid file type. Allowed: {allowed_extensions}'}), 400
+    
+    # Save file
+    bg_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'backgrounds')
+    os.makedirs(bg_dir, exist_ok=True)
+    
+    import uuid
+    filename = f'bg_{uuid.uuid4().hex[:8]}.{ext}'
+    filepath = os.path.join(bg_dir, filename)
+    file.save(filepath)
+    
+    # Return URL path
+    url_path = f'/static/uploads/backgrounds/{filename}'
+    return jsonify({'success': True, 'url': url_path})
+
 
 # ============================================================================
 # WebSocket Events

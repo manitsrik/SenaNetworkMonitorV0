@@ -1,303 +1,270 @@
-<!DOCTYPE html>
-<html lang="th">
+{% extends "layout.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Monitor - Alert Settings</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
+{% block title %}Network Monitor - Alert Settings{% endblock %}
 
-<body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="navbar-content">
-            <a href="/" class="navbar-brand">
-                <span>🌐</span> Network Monitor
-            </a>
-            <ul class="navbar-menu">
-                <li><a href="/">Dashboard</a></li>
-                <li><a href="/topology">Topology</a></li>
-                <li><a href="/devices">Devices</a></li>
-                <li><a href="/history">History</a></li>
-                <li><a href="/sla">SLA</a></li>
-                <li><a href="/settings" class="active">Settings</a></li>
-                <li>
-                    <button class="btn btn-sm btn-secondary" onclick="toggleTheme()" style="margin-left: 0.5rem;">
-                        <span id="theme-icon">☀️</span>
-                    </button>
-                </li>
-                <li><a href="/logout" class="btn btn-sm btn-danger" style="margin-left: 0.5rem;">🚪 Logout</a></li>
-            </ul>
+{% block page_title %}Alert Settings{% endblock %}
+
+{% set active_page = 'settings' %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="mb-2">
+        <p class="text-muted">Configure notification channels and alert preferences</p>
+    </div>
+
+    <!-- Alert Messages -->
+    <div id="alert-message" class="alert" style="display: none;"></div>
+
+    <!-- Settings Grid -->
+    <div class="grid grid-2">
+        <!-- General Alert Settings -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🔔 General Settings</h3>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="alert_on_down" checked>
+                        Alert when device goes DOWN
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="alert_on_recovery" checked>
+                        Alert when device RECOVERS
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">
+                        <input type="checkbox" id="alert_on_ssl_expiry" checked>
+                        Alert on SSL certificate expiry
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Alert Cooldown (seconds)</label>
+                    <input type="number" id="alert_cooldown" class="form-control" value="300" min="60" max="3600">
+                    <small style="color: var(--text-muted);">Minimum time between repeated alerts for the same
+                        device</small>
+                </div>
+            </div>
         </div>
-    </nav>
 
-    <!-- Main Content -->
-    <div class="container">
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1 class="page-title">⚙️ Alert Settings</h1>
-            <p class="page-subtitle">Configure notification channels and alert preferences</p>
+        <!-- Email Settings -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📧 Email (SMTP)</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="email_enabled"> Enabled
+                </label>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">SMTP Server</label>
+                    <input type="text" id="smtp_server" class="form-control" placeholder="smtp.gmail.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SMTP Port</label>
+                    <input type="number" id="smtp_port" class="form-control" value="587">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" id="smtp_user" class="form-control" placeholder="your-email@gmail.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password / App Password</label>
+                    <input type="password" id="smtp_password" class="form-control" placeholder="Enter password">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">From Address (optional)</label>
+                    <input type="text" id="smtp_from" class="form-control" placeholder="Leave empty to use username">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Recipient Email</label>
+                    <input type="email" id="email_recipient" class="form-control" placeholder="admin@example.com">
+                </div>
+                <button class="btn btn-secondary" onclick="testEmail()">
+                    📤 Send Test Email
+                </button>
+            </div>
         </div>
 
-        <!-- Alert Messages -->
-        <div id="alert-message" class="alert" style="display: none;"></div>
-
-        <!-- Settings Grid -->
-        <div class="grid grid-2">
-            <!-- General Alert Settings -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">🔔 General Settings</h3>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" id="alert_on_down" checked>
-                            Alert when device goes DOWN
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" id="alert_on_recovery" checked>
-                            Alert when device RECOVERS
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">
-                            <input type="checkbox" id="alert_on_ssl_expiry" checked>
-                            Alert on SSL certificate expiry
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Alert Cooldown (seconds)</label>
-                        <input type="number" id="alert_cooldown" class="form-control" value="300" min="60" max="3600">
-                        <small style="color: var(--text-muted);">Minimum time between repeated alerts for the same
-                            device</small>
-                    </div>
-                </div>
+        <!-- Telegram Settings -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📱 Telegram</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="telegram_enabled"> Enabled
+                </label>
             </div>
-
-            <!-- Email Settings -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">📧 Email (SMTP)</h3>
-                    <label class="form-label" style="margin: 0;">
-                        <input type="checkbox" id="email_enabled"> Enabled
-                    </label>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">Bot Token</label>
+                    <input type="password" id="telegram_bot_token" class="form-control"
+                        placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
+                    <small style="color: var(--text-muted);">
+                        Create bot via <a href="https://t.me/BotFather" target="_blank"
+                            style="color: var(--primary);">@BotFather</a> on Telegram
+                    </small>
                 </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label class="form-label">SMTP Server</label>
-                        <input type="text" id="smtp_server" class="form-control" placeholder="smtp.gmail.com">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">SMTP Port</label>
-                        <input type="number" id="smtp_port" class="form-control" value="587">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Username</label>
-                        <input type="text" id="smtp_user" class="form-control" placeholder="your-email@gmail.com">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Password / App Password</label>
-                        <input type="password" id="smtp_password" class="form-control" placeholder="Enter password">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">From Address (optional)</label>
-                        <input type="text" id="smtp_from" class="form-control"
-                            placeholder="Leave empty to use username">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Recipient Email</label>
-                        <input type="email" id="email_recipient" class="form-control" placeholder="admin@example.com">
-                    </div>
-                    <button class="btn btn-secondary" onclick="testEmail()">
-                        📤 Send Test Email
-                    </button>
+                <div class="form-group">
+                    <label class="form-label">Chat ID</label>
+                    <input type="text" id="telegram_chat_id" class="form-control"
+                        placeholder="123456789 or -100123456789">
+                    <small style="color: var(--text-muted);">
+                        Your user ID or group chat ID
+                    </small>
                 </div>
+                <button class="btn btn-secondary" onclick="testTelegram()">
+                    📤 Send Test Message
+                </button>
             </div>
+        </div>
 
-            <!-- Telegram Settings -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">📱 Telegram</h3>
-                    <label class="form-label" style="margin: 0;">
-                        <input type="checkbox" id="telegram_enabled"> Enabled
-                    </label>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label class="form-label">Bot Token</label>
-                        <input type="password" id="telegram_bot_token" class="form-control"
-                            placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz">
-                        <small style="color: var(--text-muted);">
-                            Create bot via <a href="https://t.me/BotFather" target="_blank"
-                                style="color: var(--primary);">@BotFather</a> on Telegram
-                        </small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Chat ID</label>
-                        <input type="text" id="telegram_chat_id" class="form-control"
-                            placeholder="123456789 or -100123456789">
-                        <small style="color: var(--text-muted);">
-                            Your user ID or group chat ID
-                        </small>
-                    </div>
-                    <button class="btn btn-secondary" onclick="testTelegram()">
-                        📤 Send Test Message
-                    </button>
-                </div>
+        <!-- LINE Notify Settings (DEPRECATED) -->
+        <div class="card" style="opacity: 0.6;">
+            <div class="card-header">
+                <h3 class="card-title">💬 LINE Notify <span
+                        style="color: #ff6b6b; font-size: 0.8em;">(Discontinued)</span></h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="line_enabled" disabled> Enabled
+                </label>
             </div>
-
-            <!-- LINE Notify Settings (DEPRECATED) -->
-            <div class="card" style="opacity: 0.6;">
-                <div class="card-header">
-                    <h3 class="card-title">💬 LINE Notify <span
-                            style="color: #ff6b6b; font-size: 0.8em;">(Discontinued)</span></h3>
-                    <label class="form-label" style="margin: 0;">
-                        <input type="checkbox" id="line_enabled" disabled> Enabled
-                    </label>
-                </div>
-                <div class="card-body">
-                    <div
-                        style="background: rgba(255,107,107,0.1); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
-                        <p style="color: #ff6b6b; margin: 0;">
-                            ⚠️ LINE Notify service ended on March 31, 2025. Please use Telegram instead.
-                        </p>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">LINE Notify Token</label>
-                        <input type="password" id="line_notify_token" class="form-control" disabled
-                            placeholder="Service discontinued">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Scheduled Reports -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">📊 Scheduled Reports</h3>
-                    <label class="form-label" style="margin: 0;">
-                        <input type="checkbox" id="reports_enabled"> Enabled
-                    </label>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label class="form-label">Report Time (Daily)</label>
-                        <input type="time" id="report_time" class="form-control" value="08:00">
-                        <small style="color: var(--text-muted);">Time to send daily status report</small>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Report Recipient</label>
-                        <input type="email" id="report_recipient" class="form-control"
-                            placeholder="Leave empty to use alert email recipient">
-                    </div>
-                    <button class="btn btn-primary btn-sm" onclick="sendTestReport()">
-                        📧 Send Test Report
-                    </button>
-                </div>
-            </div>
-
-            <!-- Alert History -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">📋 Recent Alerts</h3>
-                    <button class="btn btn-sm btn-secondary" onclick="loadAlertHistory()">🔄 Refresh</button>
-                </div>
-                <div class="card-body">
-                    <div id="alert-history" style="max-height: 300px; overflow-y: auto;">
-                        <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
-                            Loading...
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Maintenance Windows -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">🔧 Maintenance Windows</h3>
-                    <button class="btn btn-sm btn-primary" onclick="showAddMaintenanceModal()">➕ Add</button>
-                </div>
-                <div class="card-body">
-                    <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
-                        During maintenance windows, alerts are suppressed for selected devices.
+            <div class="card-body">
+                <div
+                    style="background: rgba(255,107,107,0.1); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                    <p style="color: #ff6b6b; margin: 0;">
+                        ⚠️ LINE Notify service ended on March 31, 2025. Please use Telegram instead.
                     </p>
-                    <div id="maintenance-list" style="max-height: 300px; overflow-y: auto;">
-                        <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
-                            Loading...
-                        </p>
-                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">LINE Notify Token</label>
+                    <input type="password" id="line_notify_token" class="form-control" disabled
+                        placeholder="Service discontinued">
                 </div>
             </div>
         </div>
 
-        <!-- Save Button -->
-        <div style="margin-top: 1.5rem; text-align: center;">
-            <button class="btn btn-primary btn-lg" onclick="saveSettings()">
-                💾 Save All Settings
-            </button>
-        </div>
-    </div>
-
-    <!-- Add Maintenance Modal -->
-    <div id="maintenance-modal" class="modal">
-        <div class="modal-content" style="max-width: 500px;">
-            <div class="modal-header">
-                <h3>🔧 Add Maintenance Window</h3>
-                <button class="modal-close" onclick="closeMaintenanceModal()">&times;</button>
+        <!-- Scheduled Reports -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📊 Scheduled Reports</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="reports_enabled"> Enabled
+                </label>
             </div>
-            <form id="maintenance-form" onsubmit="saveMaintenance(event)" style="padding: 1rem;">
+            <div class="card-body">
                 <div class="form-group">
-                    <label class="form-label">Name *</label>
-                    <input type="text" id="maint-name" class="form-input" placeholder="e.g., Server Update" required>
+                    <label class="form-label">Report Time (Daily)</label>
+                    <input type="time" id="report_time" class="form-control" value="08:00">
+                    <small style="color: var(--text-muted);">Time to send daily status report</small>
                 </div>
-
                 <div class="form-group">
-                    <label class="form-label">Device</label>
-                    <select id="maint-device" class="form-input">
-                        <option value="">All Devices (Global)</option>
-                    </select>
-                    <small style="color: var(--text-muted);">Leave empty for global maintenance</small>
+                    <label class="form-label">Report Recipient</label>
+                    <input type="email" id="report_recipient" class="form-control"
+                        placeholder="Leave empty to use alert email recipient">
                 </div>
+                <button class="btn btn-primary btn-sm" onclick="sendTestReport()">
+                    📧 Send Test Report
+                </button>
+            </div>
+        </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label class="form-label">Start Time *</label>
-                        <input type="datetime-local" id="maint-start" class="form-input" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">End Time *</label>
-                        <input type="datetime-local" id="maint-end" class="form-input" required>
-                    </div>
+        <!-- Alert History -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📋 Recent Alerts</h3>
+                <button class="btn btn-sm btn-secondary" onclick="loadAlertHistory()">🔄 Refresh</button>
+            </div>
+            <div class="card-body">
+                <div id="alert-history" style="max-height: 300px; overflow-y: auto;">
+                    <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
+                        Loading...
+                    </p>
                 </div>
+            </div>
+        </div>
 
-                <div class="form-group">
-                    <label class="form-label">Description</label>
-                    <textarea id="maint-description" class="form-input" rows="2"
-                        placeholder="Optional details about the maintenance"></textarea>
+        <!-- Maintenance Windows -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🔧 Maintenance Windows</h3>
+                <button class="btn btn-sm btn-primary" onclick="showAddMaintenanceModal()">➕ Add</button>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+                    During maintenance windows, alerts are suppressed for selected devices.
+                </p>
+                <div id="maintenance-list" style="max-height: 300px; overflow-y: auto;">
+                    <p class="text-center" style="color: var(--text-muted); padding: 1rem;">
+                        Loading...
+                    </p>
                 </div>
-
-                <div class="flex gap-1" style="margin-top: 1rem;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">
-                        💾 Save
-                    </button>
-                    <button type="button" class="btn btn-secondary" onclick="closeMaintenanceModal()">
-                        Cancel
-                    </button>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 
-    <!-- Theme Toggle -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
-    <!-- Settings Script -->
-    <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
-</body>
+    <!-- Save Button -->
+    <div style="margin-top: 1.5rem; text-align: center;">
+        <button class="btn btn-primary btn-lg" onclick="saveSettings()">
+            💾 Save All Settings
+        </button>
+    </div>
+</div>
 
-</html>
+<!-- Add Maintenance Modal -->
+<div id="maintenance-modal" class="modal">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header">
+            <h3>🔧 Add Maintenance Window</h3>
+            <button class="modal-close" onclick="closeMaintenanceModal()">&times;</button>
+        </div>
+        <form id="maintenance-form" onsubmit="saveMaintenance(event)" style="padding: 1rem;">
+            <div class="form-group">
+                <label class="form-label">Name *</label>
+                <input type="text" id="maint-name" class="form-input" placeholder="e.g., Server Update" required>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Device</label>
+                <select id="maint-device" class="form-input">
+                    <option value="">All Devices (Global)</option>
+                </select>
+                <small style="color: var(--text-muted);">Leave empty for global maintenance</small>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Start Time *</label>
+                    <input type="datetime-local" id="maint-start" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Time *</label>
+                    <input type="datetime-local" id="maint-end" class="form-input" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <textarea id="maint-description" class="form-input" rows="2"
+                    placeholder="Optional details about the maintenance"></textarea>
+            </div>
+
+            <div class="flex gap-1" style="margin-top: 1rem;">
+                <button type="submit" class="btn btn-primary" style="flex: 1;">
+                    💾 Save
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="closeMaintenanceModal()">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Settings Script -->
+<script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+{% endblock %}

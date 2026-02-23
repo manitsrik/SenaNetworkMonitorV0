@@ -39,6 +39,7 @@ const typeMetadata = {
 document.addEventListener('DOMContentLoaded', () => {
     initMiniTopology();
     initResponseChart();
+    initDeviceTypeResponseChart();
     loadInitialData();
     setupSocketListeners();
 });
@@ -64,6 +65,7 @@ async function loadInitialData() {
         // Update all components
         updateStatistics(stats);
         updateDeviceTypeStats(devices);
+        updateDeviceTypeResponseChart(devices);
         updateMiniTopology(topology.devices, topology.connections);
         updateSlowDevices(devices);
         updateActiveAlerts(devices);
@@ -118,47 +120,102 @@ function updateDeviceTypeStats(devices) {
     devices.forEach(device => {
         const type = device.device_type || 'other';
         if (!devicesByType[type]) {
-            devicesByType[type] = { total: 0, up: 0, down: 0, slow: 0 };
+            devicesByType[type] = {
+                total: 0,
+                up: 0,
+                down: 0,
+                slow: 0,
+                totalResponseTime: 0,
+                responseTimeCount: 0
+            };
         }
         devicesByType[type].total++;
         if (device.status === 'up') {
+            if (device.response_time && parseFloat(device.response_time) > 0) {
+                devicesByType[type].totalResponseTime += parseFloat(device.response_time);
+                devicesByType[type].responseTimeCount++;
+            }
+
             if (device.response_time && parseFloat(device.response_time) > 500) {
                 devicesByType[type].slow++;
             } else {
                 devicesByType[type].up++;
             }
+        } else if (device.status === 'slow') {
+            // Handle explicit slow status if it exists in data
+            if (device.response_time && parseFloat(device.response_time) > 0) {
+                devicesByType[type].totalResponseTime += parseFloat(device.response_time);
+                devicesByType[type].responseTimeCount++;
+            }
+            devicesByType[type].slow++;
         } else {
             devicesByType[type].down++;
         }
     });
 
     // Generate HTML
-    let html = '';
+    let html = '<div class="device-type-grid">';
+
     Object.keys(devicesByType).sort().forEach(type => {
         const meta = typeMetadata[type] || typeMetadata['other'];
         const stats = devicesByType[type];
-        const upPercent = stats.total > 0 ? Math.round((stats.up / stats.total) * 100) : 0;
 
-        let statusColor = '#10b981'; // green
-        if (stats.down > 0) statusColor = '#ef4444'; // red
-        else if (stats.slow > 0) statusColor = '#f59e0b'; // yellow
+        // Calculate average response time
+        const avgResponseTime = stats.responseTimeCount > 0
+            ? Math.round(stats.totalResponseTime / stats.responseTimeCount)
+            : 0;
+
+        // Calculate percentages for progress bar
+        const total = stats.total;
+        const upPercent = total > 0 ? (stats.up / total) * 100 : 0;
+        const slowPercent = total > 0 ? (stats.slow / total) * 100 : 0;
+        const downPercent = total > 0 ? (stats.down / total) * 100 : 0;
+
+        let statusClass = 'status-normal';
+        let statusIcon = 'check-circle';
+        let statusColor = 'var(--success)';
+
+        if (stats.down > 0) {
+            statusClass = 'status-critical';
+            statusIcon = 'alert-circle';
+            statusColor = 'var(--danger)';
+        } else if (stats.slow > 0) {
+            statusClass = 'status-warning';
+            statusIcon = 'alert-triangle';
+            statusColor = 'var(--warning)';
+        }
 
         html += `
-            <div class="device-type-item" style="border-left-color: ${meta.color};">
-                <div class="device-type-icon">${meta.icon}</div>
-                <div class="device-type-info">
-                    <div class="device-type-name">${meta.name}</div>
-                    <div class="device-type-count">${stats.total} devices</div>
+            <div class="device-type-card ${statusClass}">
+                <div class="device-card-header">
+                    <div class="device-icon-wrapper" style="background-color: ${meta.color}20; color: ${meta.color};">
+                        ${meta.icon}
+                    </div>
+                    <div class="device-info">
+                        <div class="device-name">${meta.name}</div>
+                        <div class="device-count">${stats.total} Devices</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                            Avg: <span style="font-weight: 600; color: var(--text-primary);">${avgResponseTime} ms</span>
+                        </div>
+                    </div>
+                    <div class="device-status-badge" style="color: ${statusColor};">
+                        ${stats.up}/${stats.total}
+                    </div>
                 </div>
-                <div class="device-type-status" style="color: ${statusColor};">
-                    ${stats.up}/${stats.total}
+                
+                <div class="device-progress-bar">
+                    <div class="progress-segment success" style="width: ${upPercent}%"></div>
+                    <div class="progress-segment warning" style="width: ${slowPercent}%"></div>
+                    <div class="progress-segment danger" style="width: ${downPercent}%"></div>
                 </div>
             </div>
         `;
     });
 
-    if (html === '') {
-        html = '<p class="text-muted text-center" style="grid-column: span 2; padding: 2rem;">No devices configured</p>';
+    html += '</div>';
+
+    if (Object.keys(devicesByType).length === 0) {
+        html = '<p class="text-muted text-center" style="padding: 2rem;">No devices configured</p>';
     }
 
     container.innerHTML = html;
@@ -174,9 +231,9 @@ function initMiniTopology() {
     const options = {
         nodes: {
             shape: 'dot',
-            size: 8,
+            size: 7,
             font: {
-                size: 9,
+                size: 8,
                 color: getTextColor()
             },
             borderWidth: 1,
@@ -198,8 +255,8 @@ function initMiniTopology() {
             solver: 'forceAtlas2Based',
             forceAtlas2Based: {
                 gravitationalConstant: -25,
-                centralGravity: 0.08,
-                springLength: 30,
+                centralGravity: 0.15, // Reverted to previous value
+                springLength: 23,     // Reduced to make edges shorter
                 springConstant: 0.1
             },
             stabilization: {
@@ -226,16 +283,10 @@ function initMiniTopology() {
     // Stop physics and fit all nodes in view after stabilization
     miniNetwork.on('stabilizationIterationsDone', function () {
         miniNetwork.setOptions({ physics: { enabled: false } });
-        // Fit all nodes with maximum padding
+        // Fit all nodes with appropriate padding
         miniNetwork.fit({
             animation: false,
-            maxZoomLevel: 0.6
-        });
-        // Scale down to ensure nodes don't touch edges
-        const currentScale = miniNetwork.getScale();
-        miniNetwork.moveTo({
-            scale: currentScale * 0.50,
-            animation: false
+            scale: 0.8 // Add padding to fit nicely
         });
     });
 
@@ -267,10 +318,14 @@ function updateMiniTopology(devices, connections) {
     devices.forEach(device => {
         const color = getNodeColor(device.status, device.response_time);
         const meta = typeMetadata[device.device_type] || typeMetadata['other'];
+        const iconSvg = getSvgIcon(meta.icon, color);
 
         miniNodes.add({
             id: device.id,
             label: device.name.length > 12 ? device.name.substring(0, 12) + '...' : device.name,
+            shape: 'image',
+            image: iconSvg,
+            size: 10, // Reduced size (was 15)
             color: {
                 background: color,
                 border: color,
@@ -317,9 +372,13 @@ function updateMiniTopology(devices, connections) {
 function updateTopologyNodeColors(devices) {
     devices.forEach(device => {
         const color = getNodeColor(device.status, device.response_time);
+        const meta = typeMetadata[device.device_type] || typeMetadata['other'];
+        const iconSvg = getSvgIcon(meta.icon, color);
+
         try {
             miniNodes.update({
                 id: device.id,
+                image: iconSvg,
                 color: {
                     background: color,
                     border: color,
@@ -331,6 +390,15 @@ function updateTopologyNodeColors(devices) {
             // Node doesn't exist, will be added on next full refresh
         }
     });
+}
+
+function getSvgIcon(emoji, color) {
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 28 28">
+        <circle cx="14" cy="14" r="12" fill="${color}" stroke="#ffffff" stroke-width="2" />
+        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="12" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif">${emoji}</text>
+    </svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
 function getNodeColor(status, responseTime) {
@@ -408,10 +476,10 @@ function initResponseChart() {
     responseChart = new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: ['Value', 'Remaining'],
+            labels: ['Fast', 'Moderate', 'Slow'],
             datasets: [{
-                data: [0, GAUGE_MAX],
-                backgroundColor: ['#10b981', '#e2e8f0'], // Initial Green / Gray
+                data: [100, 200, 200], // 0-100, 100-300, 300-500
+                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'], // Green, Yellow, Red
                 borderWidth: 0,
                 needleValue: 0
             }]
@@ -436,23 +504,14 @@ function initResponseChart() {
     });
 }
 
+
 function updateGaugeValue(value) {
     if (!responseChart) return;
 
     value = parseFloat(value);
 
-    // Update data: [value, max-value]
-    // If value > max, render full gauge
-    let renderValue = value > GAUGE_MAX ? GAUGE_MAX : value;
-    let remaining = GAUGE_MAX - renderValue;
-
-    responseChart.data.datasets[0].data = [renderValue, remaining];
-    responseChart.data.datasets[0].needleValue = value; // Store actual value for needle
-    responseChart.data.datasets[0].backgroundColor = [
-        getGaugeColor(value),
-        '#e2e8f0' // Gray background
-    ];
-
+    // Update needle value only. Data segments remain static.
+    responseChart.data.datasets[0].needleValue = value;
     responseChart.update();
 }
 
@@ -476,16 +535,37 @@ function updateSlowDevices(devices) {
         .slice(0, 5);
 
     if (slowDevices.length === 0) {
-        container.innerHTML = '<p class="text-muted" style="font-size: 0.875rem;">No slow devices</p>';
+        container.innerHTML = `
+            <div style="display: flex; flex-direction: column; align-items: center; padding: 2rem; color: var(--text-muted);">
+                <span style="font-size: 2rem; margin-bottom: 0.5rem;">⚡</span>
+                <p>No slow devices detected</p>
+                <small>All systems responding efficiently</small>
+            </div>
+        `;
         return;
     }
 
-    container.innerHTML = slowDevices.map(device => `
+    const maxTime = Math.max(...slowDevices.map(d => parseFloat(d.response_time)));
+
+    const html = slowDevices.map(device => {
+        const time = parseFloat(device.response_time);
+        const percent = (time / maxTime) * 100;
+
+        return `
         <div class="slow-device-item">
-            <span class="slow-device-name">${device.name}</span>
-            <span class="slow-device-time">${device.response_time} ms</span>
+            <div class="slow-device-info">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="slow-device-name" title="${device.name}">${device.name}</span>
+                    <span class="slow-device-time-badge">${device.response_time} ms</span>
+                </div>
+                <div class="slow-device-bar-bg">
+                    <div class="slow-device-bar-fill" style="width: ${percent}%"></div>
+                </div>
+            </div>
         </div>
-    `).join('');
+    `}).join('');
+
+    container.innerHTML = `<div class="slow-devices-container">${html}</div>`;
 }
 
 // ============================================
@@ -564,12 +644,16 @@ function setupSocketListeners() {
         socket.emit('request_status');
     });
 
+    let debounceTimer;
     socket.on('status_update', (device) => {
         console.log('Status update:', device);
         addActivityLog(device);
 
-        // Reload data to update all components
-        loadInitialData();
+        // Debounce reload to update all components once per batch
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            loadInitialData();
+        }, 1000);
     });
 
     socket.on('statistics_update', (stats) => {
@@ -667,4 +751,207 @@ if (typeof originalToggleTheme === 'function') {
             }
         }, 100);
     };
+}
+
+
+// ============================================
+// Device Type Response Time Chart
+// ============================================
+
+// ============================================
+// Device Type Response Time Trend Chart
+// ============================================
+
+// ============================================
+// Device Type Response Time Trend Chart
+// ============================================
+
+let deviceTypeChart = null;
+let currentTrendRange = 1; // Default to 1 minute
+
+function updateTrendRange(minutes, btn) {
+    currentTrendRange = minutes;
+
+    // Update active button state
+    if (btn) {
+        const group = btn.parentElement;
+        Array.from(group.children).forEach(c => c.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    updateDeviceTypeResponseChart();
+}
+
+// Expose to global scope for HTML onclick
+window.updateTrendRange = updateTrendRange;
+
+function initDeviceTypeResponseChart() {
+    const ctx = document.getElementById('device-type-response-chart');
+    if (!ctx) return;
+
+    deviceTypeChart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: [], // Time labels
+            datasets: [] // Will be populated dynamically
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        usePointStyle: true,
+                        boxWidth: 8,
+                        color: '#94a3b8',
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#f8fafc',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: true,
+                    itemSort: function (a, b) {
+                        return b.raw - a.raw;
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Response Time (ms)',
+                        color: '#94a3b8'
+                    },
+                    grid: {
+                        color: 'rgba(148, 163, 184, 0.1)'
+                    },
+                    ticks: {
+                        color: '#94a3b8'
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    ticks: {
+                        color: '#94a3b8',
+                        maxTicksLimit: 8
+                    },
+                    title: {
+                        display: true,
+                        text: 'Time',
+                        color: '#94a3b8'
+                    }
+                }
+            },
+            animation: {
+                duration: 750 // Enable animation for smoother updates
+            }
+        }
+    });
+}
+
+async function updateDeviceTypeResponseChart() {
+    if (!deviceTypeChart) return;
+
+    try {
+        // Fetch at least 3 minutes of data to ensure we have enough points for a line
+        // 1 minute is too short for 30s ping intervals (might result in 0-1 points)
+        const requestMinutes = currentTrendRange === 1 ? 3 : currentTrendRange;
+        const response = await fetch(`/api/statistics/trend?minutes=${requestMinutes}`);
+
+        if (!response.ok) {
+            console.error('Failed to fetch trend stats:', response.status);
+            return;
+        }
+
+        const trends = await response.json();
+
+        if (!trends || trends.length === 0) {
+            // No data available
+            return;
+        }
+
+        // Process data
+        // Group by device type
+        const datasets = {};
+        const timestamps = new Set();
+
+        trends.forEach(item => {
+            const type = item.device_type || 'other';
+
+            // Format time label based on range
+            let timeLabel;
+            if (currentTrendRange <= 10) {
+                // Show seconds for short ranges (HH:MM:SS)
+                timeLabel = item.timestamp.substring(11, 19);
+            } else {
+                // Show HH:MM for longer ranges
+                timeLabel = item.timestamp.substring(11, 16);
+            }
+
+            timestamps.add(timeLabel);
+
+            if (!datasets[type]) {
+                const meta = typeMetadata[type] || typeMetadata['other'];
+                datasets[type] = {
+                    label: meta.name,
+                    data: {}, // Map time to value for easy lookup
+                    borderColor: meta.color,
+                    backgroundColor: meta.color + '20', // Low opacity fill
+                    borderWidth: 2,
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: meta.color,
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 1,
+                    spanGaps: true // Connect lines over missing data
+                };
+            }
+
+            datasets[type].data[timeLabel] = Math.round(item.avg_response_time);
+        });
+
+        // Sort timestamps
+        const sortedTimes = Array.from(timestamps).sort();
+
+        // Convert datasets to Chart.js format
+        const chartDatasets = Object.values(datasets).map(ds => {
+            const dataArray = sortedTimes.map(time => ds.data[time] || null); // Use null for missing data points
+            return {
+                ...ds,
+                data: dataArray
+            };
+        });
+
+        // Sort datasets by latest value (optional, for legend order)
+        chartDatasets.sort((a, b) => {
+            const lastA = a.data[a.data.length - 1] || 0;
+            const lastB = b.data[b.data.length - 1] || 0;
+            return lastB - lastA;
+        });
+
+        deviceTypeChart.data.labels = sortedTimes;
+        deviceTypeChart.data.datasets = chartDatasets;
+        deviceTypeChart.update();
+
+    } catch (error) {
+        console.error('Error fetching trend stats:', error);
+    }
 }

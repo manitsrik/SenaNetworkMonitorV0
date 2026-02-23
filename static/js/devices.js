@@ -346,48 +346,70 @@ async function editDevice(deviceId) {
     }
 }
 
+// Helper to safely get element value
+function getElementValue(id, defaultValue = '') {
+    const element = document.getElementById(id);
+    if (!element) {
+        console.warn(`Element with ID '${id}' not found. Using default value: '${defaultValue}'`);
+        return defaultValue;
+    }
+    return element.value;
+}
+
 // Save device (add or update)
 async function saveDevice(event) {
     event.preventDefault();
+    console.log('saveDevice called');
 
-    const monitorType = document.getElementById('monitor-type').value;
+    const saveBtn = event.target.querySelector('button[type="submit"]');
+    const originalBtnText = saveBtn.textContent;
 
-    const deviceData = {
-        name: document.getElementById('device-name').value,
-        ip_address: document.getElementById('device-ip').value,
-        device_type: document.getElementById('device-type').value,
-        location: document.getElementById('device-location').value,
-        location_type: document.getElementById('device-location-type').value,
-        monitor_type: monitorType,
-        expected_status_code: 200
-    };
-
-    // Add SNMP settings if SNMP monitor type is selected
-    if (monitorType === 'snmp') {
-        deviceData.snmp_community = document.getElementById('snmp-community').value || 'public';
-        deviceData.snmp_port = parseInt(document.getElementById('snmp-port').value) || 161;
-        deviceData.snmp_version = document.getElementById('snmp-version').value || '2c';
-    }
-
-    // Add TCP port if TCP monitor type is selected
-    if (monitorType === 'tcp') {
-        deviceData.tcp_port = parseInt(document.getElementById('tcp-port').value) || 80;
-    }
-
-    // Add DNS query domain if DNS monitor type is selected
-    if (monitorType === 'dns') {
-        deviceData.dns_query_domain = document.getElementById('dns-query-domain').value || 'google.com';
-    }
-
-    // Add expected status code if HTTP monitor type is selected
-    if (monitorType === 'http') {
-        deviceData.expected_status_code = parseInt(document.getElementById('expected-status-code').value) || 200;
-    }
+    // Disable button and show loading state
+    saveBtn.disabled = true;
+    saveBtn.textContent = '⏳ Saving...';
 
     try {
+        const monitorType = getElementValue('monitor-type', 'ping');
+        console.log('Monitor Type:', monitorType);
+
+        const deviceData = {
+            name: getElementValue('device-name'),
+            ip_address: getElementValue('device-ip'),
+            device_type: getElementValue('device-type', 'other'),
+            location: getElementValue('device-location'),
+            location_type: getElementValue('device-location-type', 'on-premise'),
+            monitor_type: monitorType,
+            expected_status_code: 200
+        };
+
+        // Add SNMP settings if SNMP monitor type is selected
+        if (monitorType === 'snmp') {
+            deviceData.snmp_community = getElementValue('snmp-community', 'public');
+            deviceData.snmp_port = parseInt(getElementValue('snmp-port', '161')) || 161;
+            deviceData.snmp_version = getElementValue('snmp-version', '2c');
+        }
+
+        // Add TCP port if TCP monitor type is selected
+        if (monitorType === 'tcp') {
+            deviceData.tcp_port = parseInt(getElementValue('tcp-port', '80')) || 80;
+        }
+
+        // Add DNS query domain if DNS monitor type is selected
+        if (monitorType === 'dns') {
+            deviceData.dns_query_domain = getElementValue('dns-query-domain', 'google.com');
+        }
+
+        // Add expected status code if HTTP monitor type is selected
+        if (monitorType === 'http') {
+            deviceData.expected_status_code = parseInt(getElementValue('expected-status-code', '200')) || 200;
+        }
+
+        console.log('Device Data to send:', deviceData);
+
         let response;
         if (editingDeviceId) {
             // Update existing device
+            console.log('Updating device:', editingDeviceId);
             response = await fetch(`/api/devices/${editingDeviceId}`, {
                 method: 'PUT',
                 headers: {
@@ -397,6 +419,7 @@ async function saveDevice(event) {
             });
         } else {
             // Add new device
+            console.log('Adding new device');
             response = await fetch('/api/devices', {
                 method: 'POST',
                 headers: {
@@ -406,18 +429,27 @@ async function saveDevice(event) {
             });
         }
 
+        console.log('Response status:', response.status);
         const result = await response.json();
+        console.log('Response result:', result);
 
         if (result.success || response.ok) {
             closeDeviceModal();
             loadDevices();
             alert(editingDeviceId ? 'Device updated successfully!' : 'Device added successfully!');
         } else {
+            console.error('Server returned error:', result);
             alert('Error: ' + (result.error || 'Failed to save device'));
         }
     } catch (error) {
         console.error('Error saving device:', error);
-        alert('Error saving device. Please try again.');
+        alert('Error saving device: ' + error.message);
+    } finally {
+        // Restore button state
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalBtnText;
+        }
     }
 }
 

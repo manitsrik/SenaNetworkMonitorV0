@@ -22,18 +22,20 @@ const MAX_ACTIVITY_ITEMS = 20;
 
 // Device type metadata
 const typeMetadata = {
-    'switch': { icon: '🔀', name: 'Switches', color: '#10b981' },
+    'switch': { icon: '🔄', name: 'Switches', color: '#10b981' },
     'firewall': { icon: '🛡️', name: 'Firewalls', color: '#ef4444' },
     'server': { icon: '🖥️', name: 'Servers', color: '#6366f1' },
     'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
     'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
-    'website': { icon: '🌐', name: 'Websites', color: '#8b5cf6' },
-    'vmware': { icon: '🖴', name: 'VMware', color: '#22c55e' },
+    'website': { icon: '🌍', name: 'Websites', color: '#8b5cf6' },
+    'vmware': { icon: '🖥️', name: 'VMware', color: '#22c55e' },
     'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
     'vpnrouter': { icon: '🔒', name: 'VPN Router', color: '#a855f7' },
     'dns': { icon: '🔍', name: 'DNS', color: '#0ea5e9' },
     'other': { icon: '⚙️', name: 'Other', color: '#94a3b8' }
 };
+
+// Gauge Chart Configuration
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
@@ -86,10 +88,41 @@ function updateStatistics(stats) {
     document.getElementById('devices-slow').textContent = stats.devices_slow || 0;
     document.getElementById('devices-down').textContent = stats.devices_down || 0;
     document.getElementById('uptime-percentage').textContent = (stats.uptime_percentage || 0) + '%';
-    document.getElementById('avg-response-time').textContent = stats.average_response_time || 0;
+    const avgResponse = stats.average_response_time || 0;
+    document.getElementById('avg-response-time').textContent = avgResponse;
+    // Also update the hero value in the new Response Time card
+    const heroResponse = document.getElementById('avg-response-time-hero');
+    if (heroResponse) heroResponse.textContent = avgResponse;
 
-    // Update gauge with new data
-    updateGaugeValue(stats.average_response_time || 0);
+    // Update Gauge
+    if (responseChart) {
+        responseChart.data.datasets[0].needleValue = avgResponse;
+        responseChart.update();
+    }
+}
+
+function updateSlowDevicesList(devices) {
+    const listContainer = document.getElementById('slow-devices-list');
+    if (!listContainer) return;
+
+    const slowDevices = devices.filter(d =>
+        (d.status === 'up' && d.response_time && parseFloat(d.response_time) > 200)
+    ).sort((a, b) => (parseFloat(b.response_time) || 0) - (parseFloat(a.response_time) || 0))
+        .slice(0, 5);
+
+    if (slowDevices.length === 0) {
+        listContainer.innerHTML = '<p class="text-muted" style="font-size: 0.8rem; text-align: center;">No slow devices detected</p>';
+        return;
+    }
+
+    listContainer.innerHTML = slowDevices.map(d => `
+        <div class="slow-device-item" style="margin-bottom: 0.5rem; padding: 0.5rem; background: var(--bg-primary); border-radius: var(--radius-md); border-left: 3px solid var(--warning);">
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <span style="font-size: 0.85rem; font-weight: 500;">${d.name}</span>
+                <span style="font-size: 0.85rem; color: var(--warning); font-weight: 600;">${d.response_time}ms</span>
+            </div>
+        </div>
+    `).join('');
 }
 
 function updateSystemStatus(stats) {
@@ -231,13 +264,15 @@ function initMiniTopology() {
     const options = {
         nodes: {
             shape: 'dot',
-            size: 7,
+            size: 30, // 5x scaling starting point
             font: {
-                size: 8,
-                color: getTextColor()
+                size: 12,
+                color: getTextColor(),
+                face: 'Inter, system-ui, sans-serif'
             },
-            borderWidth: 1,
-            shadow: false
+            borderWidth: 2.5,
+            shadow: false,
+            scaling: { label: { enabled: false } }
         },
         edges: {
             width: 1.5,
@@ -252,17 +287,18 @@ function initMiniTopology() {
         },
         physics: {
             enabled: true,
-            solver: 'forceAtlas2Based',
-            forceAtlas2Based: {
-                gravitationalConstant: -25,
-                centralGravity: 0.15, // Reverted to previous value
-                springLength: 23,     // Reduced to make edges shorter
-                springConstant: 0.1
+            solver: 'repulsion',
+            repulsion: {
+                centralGravity: 0.3,
+                springLength: 100,
+                springConstant: 0.05,
+                nodeDistance: 150,
+                damping: 0.09
             },
             stabilization: {
                 enabled: true,
-                iterations: 250,
-                updateInterval: 25,
+                iterations: 1500,
+                updateInterval: 100,
                 fit: true
             }
         },
@@ -271,23 +307,27 @@ function initMiniTopology() {
             improvedLayout: true
         },
         interaction: {
-            dragNodes: false,
-            zoomView: false,
-            dragView: false,
+            dragNodes: true, // Allow repositioning
+            zoomView: true, // Allow zooming like the full map
+            dragView: true, // Allow panning
             hover: true
         }
     };
 
     miniNetwork = new vis.Network(container, { nodes: miniNodes, edges: miniEdges }, options);
 
-    // Stop physics and fit all nodes in view after stabilization
+    // Fit all nodes and FREEZE physics after stabilization to stop shaking
     miniNetwork.on('stabilizationIterationsDone', function () {
-        miniNetwork.setOptions({ physics: { enabled: false } });
-        // Fit all nodes with appropriate padding
-        miniNetwork.fit({
-            animation: false,
-            scale: 0.8 // Add padding to fit nicely
-        });
+        miniNetwork.setOptions({ physics: { enabled: false } }); // Stop all movement
+        // Ensure perfect fit with safety margin
+        miniNetwork.fit();
+    });
+
+    // Also fit when zoom is changed to prevent getting lost
+    miniNetwork.on('zoom', function () {
+        if (miniNetwork.getScale() < 0.05) {
+            miniNetwork.fit();
+        }
     });
 
     // Click to go to topology page
@@ -304,8 +344,10 @@ function getTextColor() {
 }
 
 function updateMiniTopology(devices, connections) {
-    // If topology already loaded, just update node colors
-    if (topologyLoaded && miniNodes.length > 0) {
+    if (!devices || devices.length === 0) return;
+
+    // Force rebuild if nodes are missing despite topologyLoaded being true
+    if (topologyLoaded && miniNodes.length === devices.length) {
         updateTopologyNodeColors(devices);
         return;
     }
@@ -320,35 +362,32 @@ function updateMiniTopology(devices, connections) {
         const meta = typeMetadata[device.device_type] || typeMetadata['other'];
         const iconSvg = getSvgIcon(meta.icon, color);
 
+        const isCore = device.device_type === 'core_switch' || device.device_type === 'l3_switch';
         miniNodes.add({
             id: device.id,
-            label: device.name.length > 12 ? device.name.substring(0, 12) + '...' : device.name,
+            label: device.name.length > 20 ? device.name.substring(0, 20) + '...' : device.name,
             shape: 'image',
             image: iconSvg,
-            size: 10, // Reduced size (was 15)
+            size: 40, // Reasonable size for standard layout
             color: {
                 background: color,
                 border: color,
                 highlight: { background: color, border: '#ffffff' }
             },
-            title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}\n${device.response_time ? device.response_time + ' ms' : ''}`
+            title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}`
         });
     });
 
     // Create Map for unique edges (key: minId-maxId)
-    // Prioritize 'standard' view
     const uniqueEdges = new Map();
 
     connections.forEach(conn => {
-        // Create a unique key for the pair of devices regardless of direction
         const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
         const key = `${ids[0]}-${ids[1]}`;
 
         if (!uniqueEdges.has(key)) {
             uniqueEdges.set(key, conn);
         } else {
-            // If already exists, check if current is 'standard' and existing is NOT 'standard'
-            // If so, replace it. Otherwise keep existing.
             const existing = uniqueEdges.get(key);
             if (conn.view_type === 'standard' && existing.view_type !== 'standard') {
                 uniqueEdges.set(key, conn);
@@ -366,6 +405,14 @@ function updateMiniTopology(devices, connections) {
     });
 
     topologyLoaded = true;
+
+    // Definitively fit after rebuild
+    setTimeout(() => {
+        if (miniNetwork) {
+            miniNetwork.fit();
+            setTimeout(() => miniNetwork.fit(), 200);
+        }
+    }, 300);
 }
 
 // Update only node colors without rebuilding the network
@@ -376,15 +423,17 @@ function updateTopologyNodeColors(devices) {
         const iconSvg = getSvgIcon(meta.icon, color);
 
         try {
+            const isCore = device.device_type === 'core_switch' || device.device_type === 'l3_switch';
             miniNodes.update({
                 id: device.id,
                 image: iconSvg,
+                size: isCore ? 70 : 40, // Consistent 5x scaling
                 color: {
                     background: color,
                     border: color,
                     highlight: { background: color, border: '#ffffff' }
                 },
-                title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}\n${device.response_time ? device.response_time + ' ms' : ''}`
+                title: `${device.name}\n${device.ip_address}\nStatus: ${device.status}`
             });
         } catch (e) {
             // Node doesn't exist, will be added on next full refresh
@@ -394,9 +443,9 @@ function updateTopologyNodeColors(devices) {
 
 function getSvgIcon(emoji, color) {
     const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 28 28">
-        <circle cx="14" cy="14" r="12" fill="${color}" stroke="#ffffff" stroke-width="2" />
-        <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="12" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif">${emoji}</text>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+        <circle cx="16" cy="16" r="14" fill="${color}" stroke="#ffffff" stroke-width="2.5" />
+        <text x="50%" y="56%" dominant-baseline="middle" text-anchor="middle" font-size="16" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif">${emoji}</text>
     </svg>`;
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
@@ -414,116 +463,148 @@ function getNodeColor(status, responseTime) {
 // ============================================
 
 function initResponseChart() {
-    const ctx = document.getElementById('response-chart').getContext('2d');
+    const ctx = document.getElementById('response-chart');
+    if (!ctx) return;
 
-    // Gauge Needle Plugin
-    const gaugeNeedle = {
-        id: 'gaugeNeedle',
-        afterDatasetDraw(chart, args, options) {
-            const { ctx, config, data, chartArea: { top, bottom, left, right, width, height } } = chart;
-
-            ctx.save();
-
-            const needleValue = data.datasets[0].needleValue || 0;
-            const dataTotal = data.datasets[0].data.reduce((a, b) => a + b, 0);
-
-            // Calculate angle
-            // Semi-circle is -PI to 0 (top-based) or PI to 2PI. 
-            // Chart.js doughnut starts at 'rotation', goes for 'circumference'.
-            // Here rotation: -90 (top), circumference: 180 (half circle).
-            // Value ratio = needleValue / GAUGE_MAX
-
-            let angle = Math.PI + (needleValue / GAUGE_MAX) * Math.PI;
-            if (needleValue > GAUGE_MAX) angle = 2 * Math.PI; // Cap at max
-
-            const cx = width / 2;
-            const cy = chart.chartArea.bottom - 10; // Adjust center Y slightly up
-
-            // Draw Needle
-            ctx.translate(cx, cy);
-            ctx.rotate(angle);
-            ctx.beginPath();
-            ctx.moveTo(0, -2);
-            ctx.lineTo(height - (ctx.canvas.offsetHeight * 0.2), 0); // Needle length
-            ctx.lineTo(0, 2);
-            ctx.fillStyle = '#475569';
-            ctx.fill();
-
-            // Draw Center Dot
-            ctx.rotate(-angle); // Reset rotation
-            ctx.translate(-cx, -cy); // Reset translation
-            ctx.beginPath();
-            ctx.arc(cx, cy, 5, 0, 10);
-            ctx.fillStyle = '#475569';
-            ctx.fill();
-            ctx.restore();
-
-            // Draw Value Text
-            ctx.save();
-            ctx.font = 'bold 30px Inter, sans-serif';
-            ctx.fillStyle = getGaugeColor(needleValue);
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
-            ctx.fillText(needleValue.toFixed(2), cx, cy - 20);
-
-            ctx.font = '14px Inter, sans-serif';
-            ctx.fillStyle = '#94a3b8'; // muted text
-            ctx.fillText('ms', cx, cy + 5);
-            ctx.restore();
-        }
-    };
-
-    responseChart = new Chart(ctx, {
+    responseChart = new Chart(ctx.getContext('2d'), {
         type: 'doughnut',
         data: {
-            labels: ['Fast', 'Moderate', 'Slow'],
             datasets: [{
-                data: [100, 200, 200], // 0-100, 100-300, 300-500
-                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'], // Green, Yellow, Red
+                data: [40, 40, 20], // 0-200 (40%), 200-400 (40%), 400-500 (20%)
+                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'], // Green, Orange, Red
                 borderWidth: 0,
+                circumference: 180,
+                rotation: 270,
+                cutout: '80%',
                 needleValue: 0
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            rotation: -90,
-            circumference: 180,
-            cutout: '75%',
-            plugins: {
-                legend: { display: false },
-                tooltip: { enabled: false } // Disable tooltip for gauge
-            },
             layout: {
                 padding: {
-                    bottom: 20
+                    bottom: 0,
+                    top: 50,
+                    left: 20,
+                    right: 20
                 }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
             }
         },
-        plugins: [gaugeNeedle]
+        plugins: [{
+            id: 'cleanGaugeWithScales',
+            afterDraw: (chart) => {
+                const { ctx } = chart;
+                ctx.save();
+                const dataset = chart.config.data.datasets[0];
+                const needleValue = dataset.needleValue || 0;
+                const meta = chart.getDatasetMeta(0);
+                const segments = meta.data;
+
+                if (!segments || segments.length < 3) {
+                    ctx.restore();
+                    return;
+                }
+
+                // --- Sync to Metadata for Perfect Alignment ---
+                const cx = segments[0].x;
+                const cy = segments[0].y;
+                const outerRadius = segments[0].outerRadius;
+                const startAngle = segments[0].startAngle;
+                const endAngle = segments[2].endAngle;
+                const totalSweep = endAngle - startAngle;
+
+                // --- Drawing Scale & Ticks ---
+                const tickLabelRadius = outerRadius + 22;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = '600 0.8rem "Inter", sans-serif';
+                ctx.fillStyle = '#94a3b8';
+
+                const labels = [
+                    { text: '0', val: 0 },
+                    { text: '100', val: 100 },
+                    { text: '200', val: 200 },
+                    { text: '300', val: 300 },
+                    { text: '400', val: 400 },
+                    { text: '500+', val: 500 }
+                ];
+
+                labels.forEach(p => {
+                    const angle = startAngle + (p.val / 500 * totalSweep);
+
+                    // Major Tick
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(angle) * (outerRadius + 2), cy + Math.sin(angle) * (outerRadius + 2));
+                    ctx.lineTo(cx + Math.cos(angle) * (outerRadius + 8), cy + Math.sin(angle) * (outerRadius + 8));
+                    ctx.strokeStyle = '#cbd5e1';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    // Label
+                    ctx.fillText(p.text, cx + Math.cos(angle) * tickLabelRadius, cy + Math.sin(angle) * tickLabelRadius);
+                });
+
+                // Minor Ticks
+                for (let i = 0; i <= 25; i++) {
+                    if (i % 5 === 0) continue;
+                    const angle = startAngle + (i / 25 * totalSweep);
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(angle) * (outerRadius + 2), cy + Math.sin(angle) * (outerRadius + 2));
+                    ctx.lineTo(cx + Math.cos(angle) * (outerRadius + 5), cy + Math.sin(angle) * (outerRadius + 5));
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                // --- Center Value Drawing ---
+                ctx.restore();
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.font = 'bold 2rem "Inter", sans-serif';
+
+                if (needleValue > 400) ctx.fillStyle = '#ef4444';
+                else if (needleValue > 200) ctx.fillStyle = '#f59e0b';
+                else ctx.fillStyle = '#10b981';
+
+                ctx.fillText(needleValue.toFixed(2), cx, cy - 10);
+                ctx.restore();
+
+                // --- Needle Drawing ---
+                ctx.save();
+                const needleAngle = startAngle + (Math.min(needleValue / 500, 1) * totalSweep);
+
+                ctx.translate(cx, cy);
+                ctx.rotate(needleAngle);
+
+                ctx.beginPath();
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.strokeStyle = '#334155';
+                ctx.moveTo(0, 0);
+                ctx.lineTo(outerRadius * 0.85, 0);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#334155';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#94a3b8';
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }]
     });
 }
-
-
-function updateGaugeValue(value) {
-    if (!responseChart) return;
-
-    value = parseFloat(value);
-
-    // Update needle value only. Data segments remain static.
-    responseChart.data.datasets[0].needleValue = value;
-    responseChart.update();
-}
-
-function getGaugeColor(value) {
-    if (value < 100) return '#10b981'; // Green (Fast)
-    if (value < 300) return '#f59e0b'; // Orange (Moderate)
-    return '#ef4444'; // Red (Slow)
-}
-
-// ============================================
-// Slow Devices List
-// ============================================
 
 function updateSlowDevices(devices) {
     const container = document.getElementById('slow-devices-list');
@@ -584,12 +665,16 @@ function updateActiveAlerts(devices) {
         (d.status === 'up' && d.response_time && parseFloat(d.response_time) > 500)
     );
 
+    const alertsContainer = document.getElementById('alerts-list-modern');
+    if (!alertsContainer) return;
+
     alertCount.textContent = alertDevices.length;
 
     if (alertDevices.length === 0) {
         tbody.innerHTML = '';
         noAlertsMsg.style.display = 'block';
         alertCountBadge.className = 'status-badge status-up';
+        alertsContainer.innerHTML = '';
         return;
     }
 
@@ -617,6 +702,18 @@ function updateActiveAlerts(devices) {
             </tr>
         `;
     }).join('');
+
+    alertsContainer.innerHTML = alertDevices.map(alert => `
+        <div class="activity-item" style="border-left: 3px solid var(--${alert.status === 'down' ? 'danger' : 'warning'})">
+            <div class="activity-icon status-${alert.status}">
+                ${alert.status === 'down' ? '❌' : '⚠️'}
+            </div>
+            <div class="activity-details">
+                <div class="activity-text"><strong>${alert.name}</strong> is ${alert.status}</div>
+                <div class="activity-time">${formatTimeAgo(alert.last_check)}</div>
+            </div>
+        </div>
+    `).join('');
 }
 
 function formatTimeAgo(dateStr) {
@@ -658,8 +755,14 @@ function setupSocketListeners() {
 
     socket.on('statistics_update', (stats) => {
         console.log('Statistics update:', stats);
-        updateStatistics(stats);
-        updateSystemStatus(stats);
+        // The original instruction had updateResponseTime(stats); updateSlowDevicesList(devices); updateStatisticsDisplay(stats);
+        // but updateResponseTime and updateStatisticsDisplay are not defined.
+        // Assuming the intent was to add updateSlowDevicesList and keep existing updates.
+        // To get 'devices' for updateSlowDevicesList, we need to fetch them or pass them from a broader scope.
+        // For now, calling loadInitialData() will ensure all components, including slow devices, are updated.
+        // If 'devices' were available directly, we could call updateSlowDevicesList(devices) here.
+        // For simplicity and to avoid undefined functions, we'll rely on loadInitialData for now.
+        loadInitialData();
     });
 }
 
@@ -716,19 +819,19 @@ function updateActivityLogUI() {
     }
 
     logContainer.innerHTML = activityLog.map(item => `
-        <div class="activity-item ${item.class}">
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <span style="font-size: 1.25rem;">${item.icon}</span>
+        <div class="activity-item ${item.class}" style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; margin-bottom: 0.75rem; background: var(--bg-secondary); border-radius: var(--radius-md); border-left: 4px solid var(--${item.status === 'up' ? 'success' : (item.status === 'slow' ? 'warning' : 'danger')});">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <div style="font-size: 1.25rem; width: 24px; text-align: center;">${item.icon}</div>
                 <div>
-                    <strong style="color: var(--text-primary);">${item.device}</strong>
-                    <span style="color: var(--text-muted); font-size: 0.875rem; margin-left: 0.5rem;">
-                        ${item.text}
-                    </span>
+                    <div style="font-weight: 600; color: var(--text-primary); font-size: 0.9rem;">${item.device}</div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 2px;">
+                        <span style="font-size: 0.75rem; font-weight: 700; color: var(--${item.status === 'up' ? 'success' : (item.status === 'slow' ? 'warning' : 'danger')}); opacity: 0.8;">${item.text}</span>
+                        ${item.responseTime ? `<span style="color: var(--text-muted); font-size: 0.75rem;">• ${item.responseTime} ms</span>` : ''}
+                    </div>
                 </div>
             </div>
             <div style="text-align: right;">
-                <div style="color: var(--text-muted); font-size: 0.875rem;">${item.time}</div>
-                ${item.responseTime ? `<div style="color: var(--text-muted); font-size: 0.75rem;">${item.responseTime} ms</div>` : ''}
+                <div style="color: var(--text-muted); font-size: 0.75rem; font-weight: 500;">${item.time}</div>
             </div>
         </div>
     `).join('');
@@ -767,7 +870,7 @@ if (typeof originalToggleTheme === 'function') {
 // ============================================
 
 let deviceTypeChart = null;
-let currentTrendRange = 1; // Default to 1 minute
+let currentTrendRange = 15; // Default to 15 minutes
 
 function updateTrendRange(minutes, btn) {
     currentTrendRange = minutes;
@@ -955,3 +1058,4 @@ async function updateDeviceTypeResponseChart() {
         console.error('Error fetching trend stats:', error);
     }
 }
+

@@ -85,30 +85,33 @@ window.DashboardRenderer = {
                 widgetEl.className = `grid-widget w-col-${widget.width || 4}`; // Default width 4 (1/3)
             }
 
+            // Apply custom height to the whole widget card if specified
+            if (widget.height) {
+                widgetEl.style.height = `${widget.height}px`;
+                widgetEl.style.minHeight = 'auto'; // Allow smaller than default min-height
+            }
+
             widgetEl.dataset.index = index;
             widgetEl.id = `widget-${index}`;
 
             let controlsHtml = '';
             if (isEditMode) {
                 controlsHtml = `
-                    <div class="widget-controls" style="position: absolute; top: 5px; right: 5px; z-index: 10;">
+                    <div class="widget-controls">
+                        <button class="widget-btn configure" onclick="configureWidget(${index})" title="Configure"><i class="fas fa-cog"></i></button>
                         <button class="widget-btn delete" onclick="removeWidget(${index})" title="Remove"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
             }
 
-            // Render structure based on type
-            if (widget.type === 'stat_card') {
-                widgetEl.innerHTML = `${controlsHtml}<div class="widget-content" id="widget-content-${index}" style="height:100%"></div>`;
-            } else {
-                widgetEl.innerHTML = `
-                    <div class="widget-header">
-                        <div class="widget-title">${widget.title || getWidgetDefaultTitle(widget.type)}</div>
-                        ${controlsHtml}
-                    </div>
-                    <div class="widget-content" id="widget-content-${index}"></div>
-                `;
-            }
+            // Render structure (Standardized for all types)
+            widgetEl.innerHTML = `
+                <div class="widget-header">
+                    <div class="widget-title">${widget.title || getWidgetDefaultTitle(widget.type)}</div>
+                    ${controlsHtml}
+                </div>
+                <div class="widget-content" id="widget-content-${index}" style="height: 100%; min-height: 0;"></div>
+            `;
 
             container.appendChild(widgetEl);
 
@@ -133,34 +136,29 @@ window.DashboardRenderer = {
                     this.updateTopology(index, widgetData, widget);
                     break;
                 case 'gauge':
-                case 'performance':
-                    // For now, re-render these is fine, or improve later.
-                    // performance re-render might flicker the list, but gauge is canvas.
-                    // Let's re-render for simplicity unless user complains, 
-                    // BUT for performance widget with list, re-rendering clears scroll position.
-                    // Ideally we should have granular updates for all.
-                    // For this task, user complained about TOPOLOGY flickering.
-                    // So we can fallback to re-render for others for now.
-                    container.innerHTML = '';
-                    this.renderWidgetContent(container, widget, data, index);
+                    this.updateGauge(index, widgetData);
                     break;
-
+                case 'performance':
+                    this.updatePerformance(container, widget, widgetData, index);
+                    break;
                 case 'stat_card':
+                    this.updateStatCard(container, widget, widgetData);
+                    break;
                 case 'stat_row':
+                    this.updateStatRow(container, widget, widgetData);
+                    break;
+                case 'trends':
+                    // Silent update (already fetches internally)
+                    this.renderResponseTrends(container, widget, widgetData, index);
+                    break;
                 case 'alerts':
                 case 'activity':
                 default:
-                    // Text based widgets - re-rendering is usually fast and unnoticeable 
-                    // unless they have scroll/input state.
-
-                    // Alert/Activity have scroll. Re-rendering resets scroll.
-                    // TODO: Implement graceful updates for lists.
-                    // For now, full re-render of content.
+                    // Fallback to re-render for list-heavy widgets until granular logic is added
                     container.innerHTML = '';
                     this.renderWidgetContent(container, widget, data, index);
             }
         } catch (e) {
-
             console.error('Error updating widget:', e);
         }
     },
@@ -187,6 +185,9 @@ window.DashboardRenderer = {
                     break;
                 case 'stat_row':
                     this.renderStatRow(container, widget, widgetData);
+                    break;
+                case 'trends':
+                    this.renderResponseTrends(container, widget, widgetData, index);
                     break;
                 case 'topology':
                     this.renderTopology(container, widget, widgetData, index);
@@ -338,12 +339,12 @@ window.DashboardRenderer = {
                 maintainAspectRatio: false,
                 rotation: -90,
                 circumference: 180,
-                cutout: '75%',
+                cutout: '65%',
                 plugins: {
                     legend: { display: false },
                     tooltip: { enabled: false }
                 },
-                layout: { padding: { bottom: 20 } }
+                layout: { padding: { bottom: 10 } }
             },
             plugins: [gaugeNeedle]
         });
@@ -352,23 +353,35 @@ window.DashboardRenderer = {
         this.instances[`chart_${index}`] = chart;
     },
 
+    updateGauge: function (index, data) {
+        const chart = this.instances[`chart_${index}`];
+        if (!chart) return;
+
+        const value = data.stats ? (data.stats.average_response_time || 0) : 0;
+        chart.data.datasets[0].needleValue = value;
+        chart.update();
+    },
+
     renderPerformance: function (container, widget, data, index) {
-        // Layout: Top 50% Gauge, Bottom 50% List
+        // Layout: Top 70% Gauge, Bottom 30% List
+        // container already has height from parent (flex-grow: 1 or height: 100%)
         container.style.display = 'flex';
         container.style.flexDirection = 'column';
-        container.style.height = '500px';
         container.style.overflow = 'hidden';
+
+        const totalHeight = container.offsetHeight || widget.height || 400;
+        const gaugeHeight = Math.floor(totalHeight * 0.65);
+        const listHeight = totalHeight - gaugeHeight;
 
         // Gauge Container
         const gaugeContainer = document.createElement('div');
-        gaugeContainer.style.flex = '1';
-        gaugeContainer.style.minHeight = '180px';
+        gaugeContainer.style.flex = `0 0 ${gaugeHeight}px`;
         gaugeContainer.style.position = 'relative';
         container.appendChild(gaugeContainer);
 
         // List Container
         const listContainer = document.createElement('div');
-        listContainer.style.flex = '1';
+        listContainer.style.flex = `0 0 ${listHeight}px`;
         listContainer.style.overflowY = 'auto';
         listContainer.style.borderTop = '1px solid var(--border-color)';
         listContainer.style.paddingTop = '10px';
@@ -392,21 +405,22 @@ window.DashboardRenderer = {
 
         // 2. Render Slow Devices List
         const devices = data.devices || [];
-        const slowDevices = devices
-            .filter(d => d.status === 'up' && d.response_time && parseFloat(d.response_time) > 100)
+        // Show top 5 slowest devices of the filtered type, even if they are below 100ms
+        const slowest = devices
+            .filter(d => d.status === 'up' && d.response_time)
             .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
-            .slice(0, 5); // Top 5
+            .slice(0, 5);
 
-        if (slowDevices.length === 0) {
+        if (slowest.length === 0) {
             listContent.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; padding: 1rem; color: var(--text-muted);">
-                    <p style="margin:0; font-size:0.85rem">No slow devices detected</p>
+                <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; color: var(--text-muted);">
+                    <p style="margin:0; font-size:0.85rem">No devices with data found</p>
                 </div>
             `;
         } else {
-            const maxTime = Math.max(...slowDevices.map(d => parseFloat(d.response_time)));
+            const maxTime = Math.max(...slowest.map(d => parseFloat(d.response_time)));
 
-            listContent.innerHTML = slowDevices.map(device => {
+            listContent.innerHTML = slowest.map(device => {
                 const time = parseFloat(device.response_time);
                 const percent = (time / maxTime) * 100;
                 return `
@@ -419,7 +433,47 @@ window.DashboardRenderer = {
                              <div style="height: 100%; width: ${percent}%; background: var(--warning); border-radius: 2px;"></div>
                         </div>
                     </div>
-                 `;
+                `;
+            }).join('');
+        }
+    },
+
+    updatePerformance: function (container, widget, data, index) {
+        // 1. Update Gauge
+        this.updateGauge(index, data);
+
+        // 2. Update Slow Devices List
+        const listContainer = container.querySelector('div:last-child > div:last-child');
+        if (!listContainer) return;
+
+        const devices = data.devices || [];
+        const slowest = devices
+            .filter(d => d.status === 'up' && d.response_time)
+            .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
+            .slice(0, 5);
+
+        if (slowest.length === 0) {
+            listContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; color: var(--text-muted);">
+                    <p style="margin:0; font-size:0.85rem">No devices with data found</p>
+                </div>
+            `;
+        } else {
+            const maxTime = Math.max(...slowest.map(d => parseFloat(d.response_time)));
+            listContainer.innerHTML = slowest.map(device => {
+                const time = parseFloat(device.response_time);
+                const percent = (time / maxTime) * 100;
+                return `
+                    <div style="margin-bottom: 0.5rem; font-size: 0.85rem;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                            <span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;" title="${device.name}">${device.name}</span>
+                            <span style="color: var(--warning); font-weight:600;">${device.response_time} ms</span>
+                        </div>
+                        <div style="height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;">
+                             <div style="height: 100%; width: ${percent}%; background: var(--warning); border-radius: 2px;"></div>
+                        </div>
+                    </div>
+                `;
             }).join('');
         }
     },
@@ -429,24 +483,26 @@ window.DashboardRenderer = {
         let value, label, icon, cssClass;
 
         const statType = widget.statType || 'total';
+        const deviceType = (widget.config && widget.config.deviceType);
+        const typeMeta = deviceType ? (this.typeMetadata[deviceType] || this.typeMetadata['other']) : null;
 
         switch (statType) {
             case 'up':
                 value = stats.devices_up || 0;
                 label = 'Devices Up';
-                icon = '🖥️';
+                icon = typeMeta ? typeMeta.icon : '🖥️';
                 cssClass = 'stat-card-online';
                 break;
             case 'down':
                 value = stats.devices_down || 0;
-                label = 'Devices Down'; // Or 'Active Alerts'
-                icon = '❌';
+                label = 'Devices Down';
+                icon = '❌'; // Keep indicator for critical state
                 cssClass = 'stat-card-alerts';
                 break;
             case 'slow':
                 value = stats.devices_slow || 0;
                 label = 'Slow Devices';
-                icon = '⚠️';
+                icon = '⚠️'; // Keep warning icon
                 cssClass = 'stat-card-slow';
                 break;
             case 'uptime':
@@ -464,7 +520,7 @@ window.DashboardRenderer = {
             default: // total
                 value = stats.total_devices || 0;
                 label = 'Total Devices';
-                icon = '🖥️';
+                icon = typeMeta ? typeMeta.icon : '🖥️';
                 cssClass = 'stat-card-online';
         }
 
@@ -472,15 +528,47 @@ window.DashboardRenderer = {
 
         // Render standard stat card HTML
         container.innerHTML = `
-            <div class="stat-card ${cssClass}" style="height: 100%; display: flex; flex-direction: column; justify-content: space-between;">
-                <div class="stat-icon">${icon}</div>
-                <div class="stat-content">
-                    <div class="stat-value">${value}</div>
-                    <div class="stat-label">${label}</div>
+            <div class="stat-card ${cssClass}" style="height: 100%; display: flex; align-items: center; gap: 1.25rem; padding: 0.75rem 1.25rem;">
+                <div class="stat-icon" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 50%; font-size: 1.5rem; flex-shrink: 0;">${icon}</div>
+                <div class="stat-content" style="display: flex; flex-direction: column; justify-content: center; min-width: 0;">
+                    <div class="stat-value" style="font-size: 1.75rem; font-weight: 800; line-height: 1; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${value}</div>
+                    <div class="stat-label" style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">${label}</div>
                 </div>
             </div>
-
         `;
+    },
+
+    updateStatCard: function (container, widget, data) {
+        const stats = data.stats || {};
+        let value;
+        const statType = widget.statType || 'total';
+        const deviceType = (widget.config && widget.config.deviceType);
+        const typeMeta = deviceType ? (this.typeMetadata[deviceType] || this.typeMetadata['other']) : null;
+
+        switch (statType) {
+            case 'up':
+                value = stats.devices_up || 0;
+                break;
+            case 'down':
+                value = stats.devices_down || 0;
+                break;
+            case 'slow':
+                value = stats.devices_slow || 0;
+                break;
+            case 'uptime':
+                value = (stats.uptime_percentage || 0) + '%';
+                break;
+            case 'latency':
+                value = (stats.average_response_time || 0) + '<small>ms</small>';
+                break;
+            default: // total
+                value = stats.total_devices || 0;
+        }
+
+        const valueEl = container.querySelector('.stat-value');
+        if (valueEl && valueEl.innerHTML !== String(value)) { // Use innerHTML for potential <small> tag
+            valueEl.innerHTML = value;
+        }
     },
 
     renderStatRow: function (container, widget, data) {
@@ -488,30 +576,82 @@ window.DashboardRenderer = {
         container.style.gap = '1rem';
         container.style.height = '100%';
 
-        const cards = widget.cards || [];
+        let cards = widget.cards || [];
+
+        // If no cards were manually defined but a deviceType is configured,
+        // automatically generate the 5 standard stat cards for that type.
+        if (cards.length === 0 && widget.config && widget.config.deviceType) {
+            const type = widget.config.deviceType;
+            const typeMeta = this.typeMetadata[type] || this.typeMetadata['other'];
+            const typeName = typeMeta.name.toUpperCase();
+            const deviceNoun = type === 'wireless' ? 'APS' : typeName;
+
+            cards = [
+                { type: 'stat_card', statType: 'uptime', config: { deviceType: type }, title: `${typeName} UPTIME` },
+                { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
+                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type.toUpperCase()} LATENCY` },
+                { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
+                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
+            ];
+        }
+
         if (cards.length === 0) {
-            container.innerHTML = '<div class="text-muted">No cards in row</div>';
+            container.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100%; width:100%; color:var(--text-muted);">No cards in row - Please configure Device Type filter</div>';
             return;
         }
+
+        container.innerHTML = ''; // Clear prior content
 
         cards.forEach(cardConfig => {
             const cardWrapper = document.createElement('div');
             cardWrapper.style.flex = '1';
             cardWrapper.style.minWidth = '0'; // Prevent flex item overflow
+            cardWrapper.style.height = '100%';
             container.appendChild(cardWrapper);
 
             // Reuse renderStatCard logic
-            // stat_card renderer expects the wrapper to have the card logic. 
-            // But renderStatCard appends distinct HTML to container.
-            // Let's call renderStatCard with the wrapper.
             this.renderStatCard(cardWrapper, cardConfig, data);
+        });
+    },
+
+    updateStatRow: function (container, widget, data) {
+        const cards = widget.cards || [];
+        const cardWrappers = container.children; // Assuming each child is a card wrapper
+
+        if (cards.length === 0 && widget.config && widget.config.deviceType) {
+            const type = widget.config.deviceType;
+            const typeMeta = this.typeMetadata[type] || this.typeMetadata['other'];
+            const typeName = typeMeta.name.toUpperCase();
+            const deviceNoun = type === 'wireless' ? 'APS' : typeName;
+
+            cards = [
+                { type: 'stat_card', statType: 'uptime', config: { deviceType: type }, title: `${typeName} UPTIME` },
+                { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
+                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type.toUpperCase()} LATENCY` },
+                { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
+                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
+            ];
+        }
+
+        if (cards.length === 0) {
+            // If there are no cards, the renderStatRow would have put a message.
+            // No update needed if it's just a message.
+            return;
+        }
+
+        cards.forEach((cardConfig, i) => {
+            const cardWrapper = cardWrappers[i];
+            if (cardWrapper) {
+                this.updateStatCard(cardWrapper, cardConfig, data);
+            }
         });
     },
 
 
     renderTopology: function (container, widget, data, index) {
-
-        container.style.height = '500px';
+        // Just fill the container
+        container.style.height = '100%';
+        container.style.position = 'relative';
         const canvas = document.createElement('div');
         canvas.style.width = '100%';
         canvas.style.height = '100%';
@@ -525,7 +665,7 @@ window.DashboardRenderer = {
                     label: device.name,
                     shape: 'circularImage',
                     image: this.getNodeSvgUrl(device.device_type, device.status),
-                    size: 20,
+                    size: 40,
                     borderWidth: 0, // Border is in SVG
                     borderWidthSelected: 0,
                     color: { background: 'transparent', border: 'transparent' } // Let SVG handle colors
@@ -536,7 +676,7 @@ window.DashboardRenderer = {
         const uniqueEdges = new Map();
         (data.connections || []).forEach(conn => {
             const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
-            const key = `${ids[0]}-${ids[1]}`;
+            const key = `${ids[0]} -${ids[1]} `;
             if (!uniqueEdges.has(key)) {
                 uniqueEdges.set(key, conn);
             } else {
@@ -560,15 +700,33 @@ window.DashboardRenderer = {
         const options = {
             nodes: {
                 shape: 'circularImage',
-                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 10, face: 'Inter, sans-serif' }
+                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 15, face: 'Inter, sans-serif' }
             },
-            physics: { enabled: true, stabilization: { iterations: 100 } },
+            physics: {
+                enabled: true,
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -800,
+                    centralGravity: 0.01,
+                    springLength: 150,
+                    springConstant: 0.08,
+                    avoidOverlap: 1
+                },
+                stabilization: { iterations: 100 }
+            },
             layout: { improvedLayout: true },
-            interaction: { zoomView: true, dragView: true, hover: true }
+            interaction: { zoomView: true, dragView: true, hover: true },
+            autoResize: true
         };
 
 
         const network = new vis.Network(canvas, { nodes, edges }, options);
+
+        // Fit network to container when stabilization is done
+        network.on('stabilizationFinished', () => {
+            network.fit();
+        });
+
         this.instances[`network_${index}`] = network;
         this.instances[`nodes_${index}`] = nodes;
         this.instances[`edges_${index}`] = edges;
@@ -580,6 +738,7 @@ window.DashboardRenderer = {
     updateTopology: function (index, data, widget) {
         const nodesDS = this.instances[`nodes_${index}`];
         const edgesDS = this.instances[`edges_${index}`];
+        const network = this.instances[`network_${index}`];
 
         if (!nodesDS || !edgesDS) return; // Should re-render if missing
 
@@ -587,7 +746,7 @@ window.DashboardRenderer = {
         const currentIds = new Set(nodesDS.getIds());
         const newIds = new Set();
 
-        const validDevices = (data.devices || []); // Add filtering if widget.config has filters
+        const validDevices = (data.devices || []);
 
         const nodeUpdates = validDevices.map(device => {
             newIds.add(device.id);
@@ -596,7 +755,7 @@ window.DashboardRenderer = {
                 label: device.name,
                 shape: 'circularImage',
                 image: this.getNodeSvgUrl(device.device_type, device.status),
-                size: 20,
+                size: 40,
                 color: { background: 'transparent', border: 'transparent' }
             };
         });
@@ -641,6 +800,51 @@ window.DashboardRenderer = {
 
         const edgesToRemove = [...currentEdgeIds].filter(id => !newEdgeIds.has(id));
         if (edgesToRemove.length > 0) edgesDS.remove(edgesToRemove);
+
+        // Keep fitted if content changed
+        if (network && (toRemove.length > 0 || edgesToRemove.length > 0 || nodeUpdates.length > 0)) {
+            // Give it a tiny bit of time for physics to react
+            setTimeout(() => network.fit(), 200);
+        }
+    },
+
+    renderDeviceList: function (container, widget, data) {
+        const devices = data.devices || [];
+        // Fill the parent container which already has the widget height applied
+        container.style.height = '100%';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+
+        let html = `
+    <div class="table-container" style="flex: 1; overflow-y: auto;">
+        <table class="devices-table" style="width: 100%; border-collapse: collapse;">
+            <thead style="position: sticky; top: 0; background: var(--bg-tertiary); z-index: 10;">
+                <tr>
+                    <th style="text-align: left; padding: 0.75rem; border-bottom: 2px solid var(--border-color);">Device</th>
+                    <th style="text-align: left; padding: 0.75rem; border-bottom: 2px solid var(--border-color);">IP Address</th>
+                    <th style="text-align: left; padding: 0.75rem; border-bottom: 2px solid var(--border-color);">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                `;
+
+        if (devices.length === 0) {
+            html += '<tr><td colspan="3" style="text-align: center; padding: 2rem; color: var(--text-muted);">No devices found</td></tr>';
+        } else {
+            devices.forEach(d => {
+                const statusBadge = `<span class="status-badge status-${d.status}">${d.status.toUpperCase()}</span>`;
+                html += `
+                    <tr>
+                        <td style="padding: 0.75rem; border-bottom: 1px solid var(--border-color);">${d.name}</td>
+                        <td style="padding: 0.75rem; border-bottom: 1px solid var(--border-color); font-family: monospace;">${d.ip_address}</td>
+                        <td style="padding: 0.75rem; border-bottom: 1px solid var(--border-color);">${statusBadge}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
     },
 
     renderDeviceGrid: function (container, widget, data) {
@@ -730,12 +934,12 @@ window.DashboardRenderer = {
         html += '</div>';
         container.innerHTML = html;
         container.style.overflowY = 'auto';
-        // container.style.maxHeight = '300px'; // Removed max-height
-        container.style.height = '500px';
+        container.style.height = '100%';
     },
 
     renderAlerts: function (container, widget, data) {
-        container.style.height = '500px';
+        const galleryHeight = widget.height || 500;
+        container.style.height = `${galleryHeight}px`;
         container.style.display = 'flex';
         container.style.flexDirection = 'column';
 
@@ -794,7 +998,9 @@ window.DashboardRenderer = {
 
     renderActivityLog: function (container, widget, data) {
         // Since we don't have historical log in default API response, we show current state snapshot or live indicator
-        // Ideally checking 'last_check' times
+        container.style.height = '100%';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
 
         const recent = (data.devices || [])
             .filter(d => d.last_check)
@@ -802,12 +1008,12 @@ window.DashboardRenderer = {
             .slice(0, 8);
 
         let html = `
-             <div style="display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
+             <div style="flex: 0 0 auto; display: flex; justify-content: flex-end; margin-bottom: 0.5rem;">
                 <span class="status-badge status-up">
                     <span style="display:inline-block; margin-right:5px; animation: blink 1s infinite;">●</span> Live
                 </span>
             </div>
-            <div style="max-height: 250px; overflow-y: auto;">
+            <div style="flex: 1; overflow-y: auto;">
         `;
 
         if (recent.length === 0) {
@@ -837,6 +1043,173 @@ window.DashboardRenderer = {
         }
         html += '</div>';
         container.innerHTML = html;
+    },
+
+    renderResponseTrends: async function (container, widget, data, index) {
+        const currentRange = this.instances[`trend_range_${index}`] || 15;
+        this.instances[`trend_range_${index}`] = currentRange;
+        this.instances[`widget_${index}`] = widget;
+
+        const filterType = widget.config ? widget.config.deviceType : null;
+        let contentArea = document.getElementById(`trend-content-${index}`);
+
+        // Only render the structure if it's not already there
+        if (!contentArea) {
+            container.style.height = '100%';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+
+            container.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 10px; flex-shrink: 0;">
+                    ${[1, 15, 60].map(r => `
+                        <button class="btn btn-sm ${currentRange === r ? 'btn-primary' : 'btn-outline-secondary'}" 
+                                style="padding: 2px 8px; font-size: 0.75rem;"
+                                onclick="window.DashboardRenderer.setTrendRange(${index}, ${r}, this)">
+                            ${r >= 60 ? '1h' : r + 'm'}
+                        </button>
+                    `).join('')}
+                </div>
+                <div id="trend-content-${index}" style="flex: 1; min-height: 150px; position: relative; display: flex; align-items: center; justify-content: center;">
+                    <div class="text-muted" style="font-size: 0.8rem;">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="margin-right: 5px;"></span>
+                        Loading trends...
+                    </div>
+                </div>
+            `;
+            contentArea = document.getElementById(`trend-content-${index}`);
+        }
+
+        try {
+            const requestMinutes = currentRange === 1 ? 3 : currentRange;
+            const response = await fetch(`/api/statistics/trend?minutes=${requestMinutes}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const trends = await response.json();
+
+            // Re-check contentArea in case it was destroyed during fetch
+            contentArea = document.getElementById(`trend-content-${index}`);
+            if (!contentArea) return;
+
+            if (!trends || trends.length === 0) {
+                contentArea.innerHTML = '<div class="text-muted" style="font-size: 0.8rem;">No trend data available for this range.</div>';
+                if (this.instances[`chart_${index}`]) {
+                    this.instances[`chart_${index}`].destroy();
+                    delete this.instances[`chart_${index}`];
+                }
+                return;
+            }
+
+            const datasets = {};
+            const timestamps = new Set();
+
+            trends.forEach(item => {
+                const type = item.device_type || 'other';
+                if (filterType && type !== filterType) return;
+
+                let timeLabel = currentRange <= 10 ? item.timestamp.substring(11, 19) : item.timestamp.substring(11, 16);
+                timestamps.add(timeLabel);
+
+                if (!datasets[type]) {
+                    const meta = this.typeMetadata[type] || this.typeMetadata['other'];
+                    datasets[type] = {
+                        label: meta.name,
+                        data: {},
+                        borderColor: meta.color,
+                        backgroundColor: meta.color + '20',
+                        borderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 0,
+                        spanGaps: true
+                    };
+                }
+                datasets[type].data[timeLabel] = Math.round(item.avg_response_time);
+            });
+
+            const sortedTimes = Array.from(timestamps).sort();
+            const chartDatasets = Object.values(datasets).map(ds => ({
+                ...ds,
+                data: sortedTimes.map(time => ds.data[time] || null)
+            }));
+
+            if (chartDatasets.length === 0) {
+                contentArea.innerHTML = `<div class="text-muted" style="font-size: 0.8rem;">No data found for ${filterType || 'selected filters'}.</div>`;
+                if (this.instances[`chart_${index}`]) {
+                    this.instances[`chart_${index}`].destroy();
+                    delete this.instances[`chart_${index}`];
+                }
+                return;
+            }
+
+            const existingChart = this.instances[`chart_${index}`];
+            if (existingChart && document.getElementById(`trend-chart-${index}`)) {
+                // Smooth update
+                existingChart.data.labels = sortedTimes;
+                existingChart.data.datasets = chartDatasets;
+                existingChart.update('none'); // Update without animation for continuous feel
+            } else {
+                // Initial render or re-render
+                contentArea.innerHTML = `<canvas id="trend-chart-${index}" style="width: 100%; height: 100%;"></canvas>`;
+                const ctx = document.getElementById(`trend-chart-${index}`).getContext('2d');
+
+                if (existingChart) existingChart.destroy();
+
+                this.instances[`chart_${index}`] = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels: sortedTimes, datasets: chartDatasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: !filterType,
+                                position: 'top',
+                                align: 'end',
+                                labels: { usePointStyle: true, boxWidth: 6, font: { size: 10 } }
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                padding: 8,
+                                bodyFont: { size: 11 },
+                                titleFont: { size: 11 }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: 'rgba(0,0,0,0.03)' },
+                                ticks: { font: { size: 10 } },
+                                title: { display: true, text: 'ms', font: { size: 9 } }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: { font: { size: 10 }, maxTicksLimit: 8 }
+                            }
+                        }
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('Error rendering trend chart:', e);
+            contentArea = document.getElementById(`trend-content-${index}`);
+            if (contentArea) {
+                contentArea.innerHTML = `<div class="text-danger" style="font-size: 0.8rem;">Error loading trends: ${e.message}</div>`;
+            }
+        }
+    },
+
+    setTrendRange: function (index, range, btn) {
+        this.instances[`trend_range_${index}`] = range;
+        const container = document.getElementById(`widget-content-${index}`);
+        if (container) {
+            const widget = this.instances[`widget_${index}`] || { type: 'trends', config: {} };
+            this.renderResponseTrends(container, widget, null, index); // Null data is fine as it fetches
+            const group = btn.parentElement;
+            Array.from(group.children).forEach(c => c.classList.remove('btn-primary'));
+            Array.from(group.children).forEach(c => c.classList.add('btn-outline-secondary'));
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-primary');
+        }
     },
 
     // Helpers
@@ -895,6 +1268,7 @@ function getWidgetDefaultTitle(type) {
         case 'gauge': return 'Response Time Gauge';
 
         case 'performance': return 'Performance Overview';
+        case 'trends': return 'Response Trends';
         case 'stat_row': return 'Statistics Row';
         case 'stat_card': return 'Statistic';
         case 'topology': return 'Network Topology';

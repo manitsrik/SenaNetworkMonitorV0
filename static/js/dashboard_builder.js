@@ -6,6 +6,7 @@ let currentLayout = [];
 let isEditMode = true;
 let dashboardId = document.getElementById('dashboard-id').value;
 let cachedData = null; // Store fetched data
+let configuringIndex = -1;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Load initial data once
@@ -49,10 +50,22 @@ function addWidget(type) {
         console.log('Adding widget:', type);
 
         // Add new widget to layout
+        let defaultWidth = 4;
+        if (type === 'stat_row') {
+            defaultWidth = 12;
+        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts') {
+            defaultWidth = 6;
+        }
+
+        let defaultHeight = 350;
+        if (type === 'stat_row') defaultHeight = 150;
+        if (type === 'stat_card') defaultHeight = 150;
+
         const newWidget = {
             type: type,
             title: getWidgetDefaultTitleLocal(type),
-            width: 4, // Default width
+            width: defaultWidth,
+            height: defaultHeight,
             config: {} // specific config
         };
 
@@ -159,10 +172,96 @@ function saveDashboard() {
 function getWidgetDefaultTitleLocal(type) {
     switch (type) {
         case 'gauge': return 'Response Time Gauge';
+        case 'performance': return 'Performance Overview';
+        case 'trends': return 'Response Trends';
         case 'stat_card': return 'Statistic';
+        case 'stat_row': return 'Statistics Summary';
         case 'topology': return 'Network Topology';
         case 'device_list': return 'Device List';
+        case 'device_grid': return 'Device Status Grid';
         case 'alerts': return 'Active Alerts';
+        case 'activity': return 'Recent Activity';
         default: return 'Widget';
     }
+}
+
+// Configuration Modal Logic
+function configureWidget(index) {
+    configuringIndex = index;
+    const widget = currentLayout[index];
+    const modal = document.getElementById('config-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+
+    modalTitle.textContent = `Configure ${widget.type.charAt(0).toUpperCase() + widget.type.slice(1)} Widget`;
+
+    // Get unique device types from cached data
+    const types = new Set();
+    if (cachedData && cachedData.devices) {
+        cachedData.devices.forEach(d => {
+            if (d.device_type) types.add(d.device_type);
+        });
+    }
+
+    // Build the form
+    let html = `
+        <div class="form-group" style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem;">Widget Title</label>
+            <input type="text" id="config-title" class="form-input" value="${widget.title || ''}" placeholder="Enter title...">
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem;">Filter by Device Type</label>
+            <select id="config-device-type" class="form-input">
+                <option value="">All Devices (No Filter)</option>
+    `;
+
+    const Renderer = window.DashboardRenderer || DashboardRenderer;
+    Array.from(types).sort().forEach(type => {
+        const meta = Renderer.typeMetadata[type] || { name: type };
+        const selected = (widget.config && widget.config.deviceType === type) ? 'selected' : '';
+        html += `<option value="${type}" ${selected}>${meta.name || type}</option>`;
+    });
+
+    html += `</select></div>`;
+
+    // Add layout controls (width and height)
+    html += `
+        <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+            <div class="form-group" style="flex: 1;">
+                <label style="display:block; margin-bottom: 0.5rem;">Width (Col 1-12)</label>
+                <input type="number" id="config-width" class="form-input" value="${widget.width || 4}" min="1" max="12">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label style="display:block; margin-bottom: 0.5rem;">Height (Pixels)</label>
+                <input type="number" id="config-height" class="form-input" value="${widget.height || 350}" min="50" step="10">
+            </div>
+        </div>
+    `;
+
+    modalBody.innerHTML = html;
+    modal.style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('config-modal').style.display = 'none';
+    configuringIndex = -1;
+}
+
+function saveWidgetConfig() {
+    if (configuringIndex === -1) return;
+
+    const widget = currentLayout[configuringIndex];
+    const newTitle = document.getElementById('config-title').value;
+    const newType = document.getElementById('config-device-type').value;
+    const newWidth = parseInt(document.getElementById('config-width').value);
+    const newHeight = parseInt(document.getElementById('config-height').value);
+
+    widget.title = newTitle || null;
+    widget.width = newWidth || 4;
+    widget.height = newHeight || (widget.type === 'stat_row' ? 150 : 350);
+    widget.config = widget.config || {};
+    widget.config.deviceType = newType || null;
+
+    renderGrid();
+    closeModal();
 }

@@ -239,7 +239,12 @@
         const tbody = document.getElementById('results-body');
         tbody.innerHTML = '';
 
-        const deviceTypes = ['unknown', 'server', 'router', 'switch', 'firewall', 'access_point', 'printer', 'workstation', 'cloud', 'iot'];
+        const deviceTypes = ['router', 'switch', 'server', 'firewall', 'wireless', 'website', 'dns', 'vmware', 'ippbx', 'cctv', 'vpnrouter', 'other'];
+        const deviceTypeLabels = {
+            'router': 'Router', 'switch': 'Switch', 'server': 'Server', 'firewall': 'Firewall',
+            'wireless': 'Wireless', 'website': 'Website', 'dns': 'DNS', 'vmware': 'VMware Server',
+            'ippbx': 'IP-PBX', 'cctv': 'CCTV', 'vpnrouter': 'VPN-Router Site', 'other': 'Other'
+        };
         const monitorTypes = ['ping', 'http', 'snmp', 'tcp', 'dns', 'ssl'];
 
         discoveredDevices.forEach((device, index) => {
@@ -250,7 +255,7 @@
             <td>${device.hostname || '<em style="color: var(--text-secondary)">No DNS</em>'}</td>
             <td>
                 <select class="device-type-select" data-index="${index}">
-                    ${deviceTypes.map(t => `<option value="${t}" ${t === device.device_type ? 'selected' : ''}>${t}</option>`).join('')}
+                    ${deviceTypes.map(t => `<option value="${t}" ${t === device.device_type ? 'selected' : ''}>${deviceTypeLabels[t] || t}</option>`).join('')}
                 </select>
             </td>
             <td>

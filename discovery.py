@@ -17,23 +17,29 @@ class DeviceDiscovery:
     # Common ports and their typical device/service types
     COMMON_PORTS = {
         22: ('ssh', 'server'),
-        23: ('telnet', 'network'),
-        53: ('dns', 'server'),
-        80: ('http', 'server'),
-        443: ('https', 'server'),
-        161: ('snmp', 'network'),
+        23: ('telnet', 'router'),
+        53: ('dns', 'dns'),
+        80: ('http', 'website'),
+        443: ('https', 'website'),
+        161: ('snmp', 'switch'),
         3306: ('mysql', 'server'),
         5432: ('postgresql', 'server'),
         3389: ('rdp', 'server'),
-        8080: ('http-alt', 'server'),
-        8443: ('https-alt', 'server'),
+        8080: ('http-alt', 'website'),
+        8443: ('https-alt', 'website'),
         21: ('ftp', 'server'),
         25: ('smtp', 'server'),
         110: ('pop3', 'server'),
         143: ('imap', 'server'),
         445: ('smb', 'server'),
-        514: ('syslog', 'network'),
-        179: ('bgp', 'network'),
+        514: ('syslog', 'router'),
+        179: ('bgp', 'router'),
+        5060: ('sip', 'ippbx'),
+        5061: ('sip-tls', 'ippbx'),
+        554: ('rtsp', 'cctv'),
+        8000: ('http-alt', 'server'),
+        902: ('vmware', 'vmware'),
+        443: ('https', 'website'),
     }
     
     def __init__(self, timeout=1, max_workers=50):
@@ -104,29 +110,44 @@ class DeviceDiscovery:
         return open_ports
     
     def guess_device_type(self, open_ports):
-        """Guess device type based on open ports"""
+        """Guess device type based on open ports
+        Uses types matching Devices page: router, switch, server, firewall,
+        wireless, website, dns, vmware, ippbx, cctv, vpnrouter, other
+        """
         if not open_ports:
-            return 'unknown'
+            return 'other'
         
         port_numbers = {p['port'] for p in open_ports}
+        
+        # VMware
+        if 902 in port_numbers:
+            return 'vmware'
+        
+        # IP-PBX
+        if 5060 in port_numbers or 5061 in port_numbers:
+            return 'ippbx'
+        
+        # CCTV
+        if 554 in port_numbers:
+            return 'cctv'
         
         # Network equipment indicators
         if 161 in port_numbers and 23 in port_numbers:
             return 'router'
-        if 161 in port_numbers:
-            return 'switch'
         if 179 in port_numbers:
             return 'router'
+        if 161 in port_numbers:
+            return 'switch'
         
-        # Printer
-        if 9100 in port_numbers or 515 in port_numbers:
-            return 'printer'
+        # DNS server
+        if 53 in port_numbers:
+            return 'dns'
         
-        # Web server
+        # Web server / website
         if 80 in port_numbers or 443 in port_numbers:
             if 3306 in port_numbers or 5432 in port_numbers:
                 return 'server'
-            return 'server'
+            return 'website'
         
         # Database server
         if 3306 in port_numbers or 5432 in port_numbers:
@@ -140,7 +161,7 @@ class DeviceDiscovery:
         if 22 in port_numbers:
             return 'server'
         
-        return 'unknown'
+        return 'other'
     
     def guess_monitor_type(self, open_ports):
         """Suggest the best monitor type based on open ports"""

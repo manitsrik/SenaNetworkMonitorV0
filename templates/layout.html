@@ -108,7 +108,7 @@
             <div class="sidebar-footer">
                 <div class="user-info">
                     <i class="fa-solid fa-circle-user"></i>
-                    <span>Admin</span>
+                    <span>{{ session.get('display_name') or session.get('username', 'User') }}</span>
                 </div>
                 <a href="/logout" class="logout-btn" title="Logout">
                     <i class="fa-solid fa-right-from-bracket"></i>

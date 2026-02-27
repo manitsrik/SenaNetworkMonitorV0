@@ -97,6 +97,12 @@
                     <i class="fa-solid fa-gear"></i>
                     <span>Settings</span>
                 </a>
+                {% if session.get('role') == 'admin' %}
+                <a href="/users" class="nav-item {% if active_page == 'users' %}active{% endif %}">
+                    <i class="fa-solid fa-users-gear"></i>
+                    <span>Users</span>
+                </a>
+                {% endif %}
             </div>
 
             <div class="sidebar-footer">

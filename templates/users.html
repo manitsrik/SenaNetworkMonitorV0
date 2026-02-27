@@ -11,44 +11,218 @@
     <!-- Page Header -->
     <div class="flex-between mb-2">
         <div>
-            <p class="text-muted">Manage users and role-based access control</p>
+            <p class="text-muted">Manage users, passwords, and role-based access control</p>
         </div>
         <button class="btn btn-primary" onclick="showAddUserModal()">
-            ➕ Add User
+            <i class="fa-solid fa-user-plus"></i> Add User
         </button>
     </div>
 
     <!-- Alert Message -->
     <div id="alert-message" class="alert" style="display: none;"></div>
 
-    <!-- Role Legend -->
+    <!-- Permission Matrix -->
     <div class="card mb-2">
-        <div class="card-body" style="padding: 0.75rem;">
-            <div style="display: flex; gap: 2rem; flex-wrap: wrap; justify-content: center;">
-                <span><span class="status-badge status-up">👑 Admin</span> Full access to all features</span>
-                <span><span class="status-badge status-slow">🔧 Operator</span> Can manage devices, view all
-                    data</span>
-                <span><span class="status-badge status-down">👁️ Viewer</span> Read-only access</span>
-            </div>
+        <div class="card-header" style="cursor: pointer;" onclick="togglePermMatrix()">
+            <h3 class="card-title"><i class="fa-solid fa-shield-halved"></i> Permission Matrix</h3>
+            <span id="perm-toggle-icon"><i class="fa-solid fa-chevron-down"></i></span>
+        </div>
+        <div id="perm-matrix" class="card-body" style="display: none; padding: 0; overflow-x: auto;">
+            <table class="perm-table">
+                <thead>
+                    <tr>
+                        <th style="min-width: 200px;">Permission</th>
+                        <th style="text-align: center; min-width: 100px;"><span
+                                class="role-badge role-admin">Admin</span></th>
+                        <th style="text-align: center; min-width: 100px;"><span
+                                class="role-badge role-operator">Operator</span></th>
+                        <th style="text-align: center; min-width: 100px;"><span
+                                class="role-badge role-viewer">Viewer</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-gauge-high"></i> Dashboard</td>
+                    </tr>
+                    <tr>
+                        <td>View dashboards</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Create/Edit dashboards</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Delete dashboards</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-server"></i> Devices</td>
+                    </tr>
+                    <tr>
+                        <td>View all devices</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Add/Edit devices</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Delete devices</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Import/Export CSV</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Check device now</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-radar"></i> Discovery</td>
+                    </tr>
+                    <tr>
+                        <td>Run subnet scan</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Add discovered devices</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-sitemap"></i> Topology</td>
+                    </tr>
+                    <tr>
+                        <td>View topology</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Add/Edit connections</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Manage sub-topologies</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-clock-rotate-left"></i> History & SLA</td>
+                    </tr>
+                    <tr>
+                        <td>View history data</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>View SLA reports</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-bell"></i> Alerts & Settings</td>
+                    </tr>
+                    <tr>
+                        <td>View alert settings</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Edit alert settings</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Test alerts</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Maintenance windows</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+
+                    <tr class="perm-section">
+                        <td colspan="4"><i class="fa-solid fa-users-gear"></i> Administration</td>
+                    </tr>
+                    <tr>
+                        <td>Manage users</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Reset user passwords</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="no">&#10007;</td>
+                        <td class="no">&#10007;</td>
+                    </tr>
+                    <tr>
+                        <td>Change own password</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                        <td class="yes">&#10003;</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
     <!-- Users Table -->
     <div class="card">
         <div class="card-header">
-            <h3 class="card-title">Users</h3>
-            <button class="btn btn-sm btn-secondary" onclick="loadUsers()">🔄 Refresh</button>
+            <h3 class="card-title"><i class="fa-solid fa-users"></i> Users <span id="user-count"
+                    class="count-badge">0</span></h3>
+            <button class="btn btn-sm btn-secondary" onclick="loadUsers()"><i class="fa-solid fa-rotate"></i>
+                Refresh</button>
         </div>
-        <div class="card-body" style="overflow-x: auto;">
-            <table class="table" id="users-table">
+        <div class="card-body" style="overflow-x: auto; padding: 0;">
+            <table class="users-table" id="users-table">
                 <thead>
                     <tr>
-                        <th>Username</th>
-                        <th>Display Name</th>
+                        <th>User</th>
                         <th>Email</th>
                         <th style="text-align: center;">Role</th>
                         <th style="text-align: center;">Status</th>
                         <th>Last Login</th>
+                        <th>Created</th>
                         <th style="text-align: center;">Actions</th>
                     </tr>
                 </thead>
@@ -66,54 +240,99 @@
 
 <!-- Add/Edit User Modal -->
 <div id="user-modal" class="modal">
-    <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-content" style="max-width: 560px;">
         <div class="modal-header">
-            <h3 id="modal-title">➕ Add User</h3>
+            <h3 id="modal-title"><i class="fa-solid fa-user-plus"></i> Add User</h3>
             <button class="modal-close" onclick="closeUserModal()">&times;</button>
         </div>
-        <form id="user-form" onsubmit="saveUser(event)" style="padding: 1rem;">
+        <form id="user-form" onsubmit="saveUser(event)" style="padding: 1.25rem;">
             <input type="hidden" id="edit-user-id">
 
-            <div class="form-group">
-                <label class="form-label">Username *</label>
-                <input type="text" id="user-username" class="form-input" required pattern="[a-zA-Z0-9_]+"
-                    title="Letters, numbers, and underscores only">
+            <!-- Username & Password row -->
+            <div style="display: flex; gap: 1rem;">
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Username *</label>
+                    <input type="text" id="user-username" class="form-input" required pattern="[a-zA-Z0-9_]+"
+                        title="Letters, numbers, and underscores only" placeholder="username">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Password <span id="password-hint" class="text-muted"
+                            style="font-size: 0.8rem;">(min 4 chars)</span></label>
+                    <div style="position: relative;">
+                        <input type="password" id="user-password" class="form-input" minlength="4"
+                            placeholder="********" style="padding-right: 2.5rem;">
+                        <button type="button" class="btn-icon toggle-password" onclick="togglePassword()"
+                            title="Toggle visibility"
+                            style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer;">
+                            <i class="fa-solid fa-eye" id="pw-icon"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">Password <span id="password-hint">(min 4 characters)</span></label>
-                <input type="password" id="user-password" class="form-input" minlength="4">
+            <!-- Display Name & Email row -->
+            <div style="display: flex; gap: 1rem;">
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Display Name</label>
+                    <input type="text" id="user-displayname" class="form-input" placeholder="Full name">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label class="form-label">Email</label>
+                    <input type="email" id="user-email" class="form-input" placeholder="user@example.com">
+                </div>
             </div>
 
-            <div class="form-group">
-                <label class="form-label">Display Name</label>
-                <input type="text" id="user-displayname" class="form-input" placeholder="Optional">
-            </div>
-
-            <div class="form-group">
-                <label class="form-label">Email</label>
-                <input type="email" id="user-email" class="form-input" placeholder="Optional">
-            </div>
-
+            <!-- Role Selection with Description -->
             <div class="form-group">
                 <label class="form-label">Role *</label>
-                <select id="user-role" class="form-input" required>
-                    <option value="viewer">👁️ Viewer (Read-only)</option>
-                    <option value="operator">🔧 Operator (Manage devices)</option>
-                    <option value="admin">👑 Admin (Full access)</option>
-                </select>
+                <div class="role-cards">
+                    <label class="role-card" onclick="selectRole('viewer')">
+                        <input type="radio" name="role" value="viewer" checked>
+                        <div class="role-card-inner">
+                            <div class="role-card-icon viewer"><i class="fa-solid fa-eye"></i></div>
+                            <div class="role-card-info">
+                                <strong>Viewer</strong>
+                                <small>Read-only access. Can view dashboards, devices, history, and SLA reports.</small>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="role-card" onclick="selectRole('operator')">
+                        <input type="radio" name="role" value="operator">
+                        <div class="role-card-inner">
+                            <div class="role-card-icon operator"><i class="fa-solid fa-wrench"></i></div>
+                            <div class="role-card-info">
+                                <strong>Operator</strong>
+                                <small>Can manage devices, topology, alerts, discovery, and maintenance.</small>
+                            </div>
+                        </div>
+                    </label>
+                    <label class="role-card" onclick="selectRole('admin')">
+                        <input type="radio" name="role" value="admin">
+                        <div class="role-card-inner">
+                            <div class="role-card-icon admin"><i class="fa-solid fa-crown"></i></div>
+                            <div class="role-card-info">
+                                <strong>Admin</strong>
+                                <small>Full access. Manage users, dashboards, and all system settings.</small>
+                            </div>
+                        </div>
+                    </label>
+                </div>
             </div>
 
+            <!-- Active Toggle (edit only) -->
             <div class="form-group" id="active-group" style="display: none;">
-                <label class="form-label">
-                    <input type="checkbox" id="user-active" checked>
-                    Account Active
+                <label class="toggle-label">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="user-active" checked>
+                        <span class="toggle-slider"></span>
+                    </span>
+                    <span>Account Active</span>
                 </label>
             </div>
 
-            <div class="flex gap-1" style="margin-top: 1rem;">
+            <div class="flex gap-1" style="margin-top: 1.25rem;">
                 <button type="submit" class="btn btn-primary" style="flex: 1;">
-                    💾 Save
+                    <i class="fa-solid fa-floppy-disk"></i> Save
                 </button>
                 <button type="button" class="btn btn-secondary" onclick="closeUserModal()">
                     Cancel
@@ -122,28 +341,325 @@
         </form>
     </div>
 </div>
+
+<style>
+    /* Permission Matrix */
+    .perm-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .perm-table th,
+    .perm-table td {
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .perm-table th {
+        background: var(--bg-secondary);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+    }
+
+    .perm-table td.yes {
+        text-align: center;
+        color: var(--success);
+        font-weight: 700;
+        font-size: 1rem;
+    }
+
+    .perm-table td.no {
+        text-align: center;
+        color: var(--danger);
+        opacity: 0.5;
+        font-size: 1rem;
+    }
+
+    .perm-section td {
+        background: var(--bg-tertiary);
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-secondary);
+        padding: 0.6rem 0.75rem !important;
+    }
+
+    .perm-section td i {
+        margin-right: 0.4rem;
+    }
+
+    .role-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+
+    .role-admin {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .role-operator {
+        background: rgba(234, 179, 8, 0.15);
+        color: #eab308;
+    }
+
+    .role-viewer {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+
+    /* Users Table */
+    .users-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .users-table th,
+    .users-table td {
+        padding: 0.65rem 0.8rem;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+    }
+
+    .users-table th {
+        background: var(--bg-secondary);
+        font-weight: 600;
+    }
+
+    .users-table tr:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .user-info-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .user-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: white;
+        flex-shrink: 0;
+    }
+
+    .user-details {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .user-details strong {
+        font-size: 0.9rem;
+    }
+
+    .user-details small {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+    }
+
+    .count-badge {
+        background: var(--primary);
+        color: white;
+        padding: 0.15rem 0.5rem;
+        border-radius: 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+
+    /* Role Cards in Modal */
+    .role-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .role-card {
+        cursor: pointer;
+    }
+
+    .role-card input[type="radio"] {
+        display: none;
+    }
+
+    .role-card-inner {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 0.85rem;
+        border: 2px solid var(--border-color);
+        border-radius: 8px;
+        transition: all 0.2s;
+    }
+
+    .role-card input:checked+.role-card-inner {
+        border-color: var(--primary);
+        background: rgba(var(--primary-rgb, 59, 130, 246), 0.08);
+    }
+
+    .role-card:hover .role-card-inner {
+        border-color: var(--primary);
+    }
+
+    .role-card-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .role-card-icon.viewer {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+
+    .role-card-icon.operator {
+        background: rgba(234, 179, 8, 0.15);
+        color: #eab308;
+    }
+
+    .role-card-icon.admin {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+
+    .role-card-info strong {
+        display: block;
+        margin-bottom: 0.15rem;
+    }
+
+    .role-card-info small {
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+        line-height: 1.3;
+    }
+
+    /* Toggle Switch */
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+    }
+
+    .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        transition: 0.3s;
+    }
+
+    .toggle-slider::before {
+        content: "";
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 2px;
+        bottom: 2px;
+        background: white;
+        border-radius: 50%;
+        transition: 0.3s;
+    }
+
+    .toggle-switch input:checked+.toggle-slider {
+        background: var(--success);
+        border-color: var(--success);
+    }
+
+    .toggle-switch input:checked+.toggle-slider::before {
+        transform: translateX(20px);
+    }
+
+    /* Action buttons */
+    .action-btn {
+        padding: 0.3rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: 0.8rem;
+        transition: all 0.15s;
+    }
+
+    .action-btn:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    .action-btn.danger:hover {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+        border-color: var(--danger);
+    }
+</style>
 {% endblock %}
 
 {% block scripts %}
-<!-- Users Script -->
 <script>
-    // Load users on page load
     document.addEventListener('DOMContentLoaded', loadUsers);
 
     let usersData = [];
+
+    function togglePermMatrix() {
+        const el = document.getElementById('perm-matrix');
+        const icon = document.getElementById('perm-toggle-icon');
+        if (el.style.display === 'none') {
+            el.style.display = 'block';
+            icon.innerHTML = '<i class="fa-solid fa-chevron-up"></i>';
+        } else {
+            el.style.display = 'none';
+            icon.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
+        }
+    }
 
     async function loadUsers() {
         try {
             const response = await fetch('/api/users');
             usersData = await response.json();
+            document.getElementById('user-count').textContent = usersData.length;
             renderUsers();
         } catch (error) {
             console.error('Error loading users:', error);
             document.getElementById('users-tbody').innerHTML = `
-                    <tr><td colspan="7" style="text-align: center; color: var(--danger); padding: 2rem;">
-                        Error loading users
-                    </td></tr>
-                `;
+                <tr><td colspan="7" style="text-align: center; color: var(--danger); padding: 2rem;">
+                    Error loading users
+                </td></tr>`;
         }
     }
 
@@ -151,71 +667,80 @@
         const tbody = document.getElementById('users-tbody');
 
         if (!usersData || usersData.length === 0) {
-            tbody.innerHTML = `
-                    <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-                        No users found
-                    </td></tr>
-                `;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                No users found</td></tr>`;
             return;
         }
 
         tbody.innerHTML = usersData.map(user => {
-            const roleClass = getRoleClass(user.role);
-            const roleIcon = getRoleIcon(user.role);
-            const statusClass = user.is_active ? 'status-up' : 'status-down';
-            const statusText = user.is_active ? 'Active' : 'Disabled';
-            const lastLogin = user.last_login
-                ? new Date(user.last_login).toLocaleString('th-TH')
-                : 'Never';
+            const roleClass = { admin: 'role-admin', operator: 'role-operator', viewer: 'role-viewer' }[user.role] || 'role-viewer';
+            const roleIcon = { admin: 'fa-crown', operator: 'fa-wrench', viewer: 'fa-eye' }[user.role] || 'fa-eye';
+            const roleLabel = { admin: 'Admin', operator: 'Operator', viewer: 'Viewer' }[user.role] || 'Viewer';
+            const statusBadge = user.is_active
+                ? '<span class="status-badge status-up">Active</span>'
+                : '<span class="status-badge status-down">Disabled</span>';
+            const lastLogin = user.last_login ? new Date(user.last_login).toLocaleString('th-TH') : '<em style="color:var(--text-secondary)">Never</em>';
+            const created = user.created_at ? new Date(user.created_at).toLocaleDateString('th-TH') : '-';
+            const initials = (user.display_name || user.username).substring(0, 2).toUpperCase();
+            const colors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
+            const bgColor = colors[user.id % colors.length];
 
-            return `
-                    <tr>
-                        <td><strong>${user.username}</strong></td>
-                        <td>${user.display_name || '-'}</td>
-                        <td>${user.email || '-'}</td>
-                        <td style="text-align: center;">
-                            <span class="status-badge ${roleClass}">${roleIcon} ${user.role}</span>
-                        </td>
-                        <td style="text-align: center;">
-                            <span class="status-badge ${statusClass}">${statusText}</span>
-                        </td>
-                        <td style="font-size: 0.85rem; color: var(--text-muted);">${lastLogin}</td>
-                        <td style="text-align: center;">
-                            <button class="btn btn-sm btn-secondary" onclick="editUser(${user.id})" title="Edit">
-                                ✏️
-                            </button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteUser(${user.id}, '${user.username}')" title="Delete">
-                                🗑️
-                            </button>
-                        </td>
-                    </tr>
-                `;
+            return `<tr>
+                <td>
+                    <div class="user-info-cell">
+                        <div class="user-avatar" style="background: ${bgColor};">${initials}</div>
+                        <div class="user-details">
+                            <strong>${user.username}</strong>
+                            <small>${user.display_name || ''}</small>
+                        </div>
+                    </div>
+                </td>
+                <td>${user.email || '<span style="color:var(--text-secondary)">-</span>'}</td>
+                <td style="text-align: center;">
+                    <span class="role-badge ${roleClass}"><i class="fa-solid ${roleIcon}"></i> ${roleLabel}</span>
+                </td>
+                <td style="text-align: center;">${statusBadge}</td>
+                <td style="font-size: 0.82rem;">${lastLogin}</td>
+                <td style="font-size: 0.82rem;">${created}</td>
+                <td style="text-align: center;">
+                    <button class="action-btn" onclick="editUser(${user.id})" title="Edit">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button class="action-btn danger" onclick="deleteUser(${user.id}, '${user.username}')" title="Delete">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
         }).join('');
     }
 
-    function getRoleClass(role) {
-        switch (role) {
-            case 'admin': return 'status-up';
-            case 'operator': return 'status-slow';
-            default: return 'status-down';
-        }
+    function selectRole(role) {
+        document.querySelector(`input[name="role"][value="${role}"]`).checked = true;
     }
 
-    function getRoleIcon(role) {
-        switch (role) {
-            case 'admin': return '👑';
-            case 'operator': return '🔧';
-            default: return '👁️';
+    function togglePassword() {
+        const input = document.getElementById('user-password');
+        const icon = document.getElementById('pw-icon');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'fa-solid fa-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'fa-solid fa-eye';
         }
     }
 
     function showAddUserModal() {
-        document.getElementById('modal-title').textContent = '➕ Add User';
+        document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-user-plus"></i> Add User';
         document.getElementById('edit-user-id').value = '';
         document.getElementById('user-form').reset();
         document.getElementById('user-password').required = true;
-        document.getElementById('password-hint').textContent = '(min 4 characters) *';
+        document.getElementById('user-password').type = 'password';
+        document.getElementById('pw-icon').className = 'fa-solid fa-eye';
+        document.getElementById('password-hint').textContent = '(required, min 4 chars)';
         document.getElementById('active-group').style.display = 'none';
+        document.getElementById('user-username').disabled = false;
+        selectRole('viewer');
         document.getElementById('user-modal').classList.add('active');
     }
 
@@ -223,22 +748,26 @@
         const user = usersData.find(u => u.id === userId);
         if (!user) return;
 
-        document.getElementById('modal-title').textContent = '✏️ Edit User';
+        document.getElementById('modal-title').innerHTML = '<i class="fa-solid fa-user-pen"></i> Edit User';
         document.getElementById('edit-user-id').value = userId;
         document.getElementById('user-username').value = user.username;
+        document.getElementById('user-username').disabled = true;
         document.getElementById('user-password').value = '';
         document.getElementById('user-password').required = false;
-        document.getElementById('password-hint').textContent = '(leave empty to keep current)';
+        document.getElementById('user-password').type = 'password';
+        document.getElementById('pw-icon').className = 'fa-solid fa-eye';
+        document.getElementById('password-hint').textContent = '(leave empty to keep)';
         document.getElementById('user-displayname').value = user.display_name || '';
         document.getElementById('user-email').value = user.email || '';
-        document.getElementById('user-role').value = user.role;
         document.getElementById('user-active').checked = user.is_active;
         document.getElementById('active-group').style.display = 'block';
+        selectRole(user.role);
         document.getElementById('user-modal').classList.add('active');
     }
 
     function closeUserModal() {
         document.getElementById('user-modal').classList.remove('active');
+        document.getElementById('user-username').disabled = false;
     }
 
     async function saveUser(event) {
@@ -247,21 +776,18 @@
         const userId = document.getElementById('edit-user-id').value;
         const isEdit = !!userId;
 
+        const selectedRole = document.querySelector('input[name="role"]:checked');
+
         const data = {
             username: document.getElementById('user-username').value,
             display_name: document.getElementById('user-displayname').value || null,
             email: document.getElementById('user-email').value || null,
-            role: document.getElementById('user-role').value
+            role: selectedRole ? selectedRole.value : 'viewer'
         };
 
         const password = document.getElementById('user-password').value;
-        if (password) {
-            data.password = password;
-        }
-
-        if (isEdit) {
-            data.is_active = document.getElementById('user-active').checked;
-        }
+        if (password) data.password = password;
+        if (isEdit) data.is_active = document.getElementById('user-active').checked;
 
         try {
             const response = await fetch(isEdit ? `/api/users/${userId}` : '/api/users', {
@@ -275,7 +801,7 @@
             if (result.success) {
                 closeUserModal();
                 loadUsers();
-                showAlert(isEdit ? 'User updated!' : 'User created!', 'success');
+                showAlert(isEdit ? 'User updated successfully!' : 'User created successfully!', 'success');
             } else {
                 showAlert('Error: ' + (result.error || 'Unknown error'), 'danger');
             }
@@ -286,13 +812,10 @@
     }
 
     async function deleteUser(userId, username) {
-        if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+        if (!confirm(`Delete user "${username}"?\n\nThis action cannot be undone.`)) return;
 
         try {
-            const response = await fetch(`/api/users/${userId}`, {
-                method: 'DELETE'
-            });
-
+            const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
             const result = await response.json();
 
             if (result.success) {
@@ -312,18 +835,14 @@
         alertDiv.className = `alert alert-${type}`;
         alertDiv.textContent = message;
         alertDiv.style.display = 'block';
-
         if (type === 'success') {
             setTimeout(() => { alertDiv.style.display = 'none'; }, 3000);
         }
     }
 
-    // Handle modal click outside
     document.addEventListener('click', (event) => {
         const modal = document.getElementById('user-modal');
-        if (event.target === modal) {
-            closeUserModal();
-        }
+        if (event.target === modal) closeUserModal();
     });
 </script>
 {% endblock %}

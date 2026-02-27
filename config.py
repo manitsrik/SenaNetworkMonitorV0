@@ -8,8 +8,16 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
     # Database settings
-    DATABASE_PATH = 'network_monitor.db'
+    DB_TYPE = os.environ.get('DB_TYPE') or 'postgresql'  # 'sqlite' or 'postgresql'
+    DATABASE_PATH = 'network_monitor.db'  # SQLite fallback path
     RETENTION_DAYS = 30 # Keep 30 days of history
+    
+    # PostgreSQL settings
+    PG_HOST = os.environ.get('PG_HOST') or 'localhost'
+    PG_PORT = int(os.environ.get('PG_PORT') or 5432)
+    PG_DATABASE = os.environ.get('PG_DATABASE') or 'network_monitor'
+    PG_USER = os.environ.get('PG_USER') or 'netmonitor'
+    PG_PASSWORD = os.environ.get('PG_PASSWORD') or 'netmonitor_password'
     
     # Monitoring settings
     PING_INTERVAL = 30  # seconds between ping checks

@@ -1,0 +1,345 @@
+{% extends "layout.html" %}
+{% set active_page = 'discovery' %}
+
+{% block title %}Device Discovery - Network Monitor{% endblock %}
+{% block page_title %}Device Discovery{% endblock %}
+
+{% block content %}
+<div class="discovery-page">
+    <!-- Scan Configuration Card -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="card-header">
+            <h3><i class="fa-solid fa-magnifying-glass"></i> Subnet Scanner</h3>
+        </div>
+        <div class="card-body">
+            <div style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label class="form-label">Subnet (CIDR)</label>
+                    <input type="text" id="subnet-input" class="form-input" placeholder="e.g. 192.168.1.0/24" value="">
+                </div>
+                <div>
+                    <button id="scan-btn" class="btn btn-primary" onclick="startScan()">
+                        <i class="fa-solid fa-play"></i> Start Scan
+                    </button>
+                </div>
+            </div>
+            <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">
+                <i class="fa-solid fa-info-circle"></i>
+                Scans the subnet using ICMP ping, reverse DNS lookup, and common port detection.
+                Already-monitored IPs are automatically skipped.
+            </div>
+
+            <!-- Progress Bar -->
+            <div id="scan-progress-area" style="display: none; margin-top: 1rem;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                    <span id="scan-status-text">Scanning...</span>
+                    <span id="scan-progress-text">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div id="scan-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Card -->
+    <div class="card" id="results-card" style="display: none;">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3><i class="fa-solid fa-list-check"></i> Discovered Devices (<span id="results-count">0</span>)</h3>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-sm" onclick="selectAll()">
+                    <i class="fa-solid fa-check-double"></i> Select All
+                </button>
+                <button class="btn btn-sm" onclick="deselectAll()">
+                    <i class="fa-solid fa-xmark"></i> Deselect All
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="addSelected()">
+                    <i class="fa-solid fa-plus"></i> Add Selected to Monitoring
+                </button>
+            </div>
+        </div>
+        <div class="card-body" style="padding: 0;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;"><input type="checkbox" id="select-all-checkbox"
+                                onchange="toggleSelectAll(this)"></th>
+                        <th>IP Address</th>
+                        <th>Hostname</th>
+                        <th>Device Type</th>
+                        <th>Monitor Type</th>
+                        <th>Open Ports</th>
+                        <th>Name</th>
+                    </tr>
+                </thead>
+                <tbody id="results-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Summary Card (after scan) -->
+    <div class="card" id="summary-card" style="display: none; margin-top: 1rem;">
+        <div class="card-body">
+            <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                <div class="stat-mini">
+                    <span class="stat-label">Total Scanned</span>
+                    <span class="stat-value" id="stat-scanned">0</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-label">Skipped (Monitored)</span>
+                    <span class="stat-value" id="stat-skipped">0</span>
+                </div>
+                <div class="stat-mini">
+                    <span class="stat-label">Discovered</span>
+                    <span class="stat-value" id="stat-discovered" style="color: var(--success);">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .progress-bar-track {
+        width: 100%;
+        height: 8px;
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--primary), var(--primary-light, #60a5fa));
+        border-radius: 4px;
+        transition: width 0.3s ease;
+    }
+
+    .stat-mini {
+        text-align: center;
+    }
+
+    .stat-mini .stat-label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-mini .stat-value {
+        display: block;
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 0.6rem 0.8rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.875rem;
+    }
+
+    .data-table th {
+        background: var(--bg-secondary);
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+    }
+
+    .data-table tr:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .port-badge {
+        display: inline-block;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin: 0.1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+    }
+
+    .device-type-select,
+    .monitor-type-select,
+    .name-input {
+        padding: 0.3rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.85rem;
+    }
+
+    .name-input {
+        width: 150px;
+    }
+
+    .btn-sm {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.8rem;
+    }
+</style>
+
+<script>
+    let discoveredDevices = [];
+
+    async function startScan() {
+        const subnet = document.getElementById('subnet-input').value.trim();
+        if (!subnet) {
+            alert('Please enter a subnet (e.g., 192.168.1.0/24)');
+            return;
+        }
+
+        const btn = document.getElementById('scan-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning...';
+
+        document.getElementById('scan-progress-area').style.display = 'block';
+        document.getElementById('results-card').style.display = 'none';
+        document.getElementById('summary-card').style.display = 'none';
+
+        try {
+            const response = await fetch('/api/discovery/scan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subnet: subnet })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                discoveredDevices = data.devices || [];
+                renderResults(data);
+            } else {
+                alert('Scan failed: ' + (data.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-play"></i> Start Scan';
+
+            document.getElementById('scan-progress-area').style.display = 'none';
+        }
+    }
+
+    function renderResults(data) {
+        document.getElementById('results-count').textContent = discoveredDevices.length;
+        document.getElementById('stat-scanned').textContent = data.total_scanned || 0;
+        document.getElementById('stat-skipped').textContent = data.total_skipped || 0;
+        document.getElementById('stat-discovered').textContent = data.discovered || 0;
+
+        const tbody = document.getElementById('results-body');
+        tbody.innerHTML = '';
+
+        const deviceTypes = ['unknown', 'server', 'router', 'switch', 'firewall', 'access_point', 'printer', 'workstation', 'cloud', 'iot'];
+        const monitorTypes = ['ping', 'http', 'snmp', 'tcp', 'dns', 'ssl'];
+
+        discoveredDevices.forEach((device, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+            <td><input type="checkbox" class="device-checkbox" data-index="${index}" checked></td>
+            <td><strong>${device.ip_address}</strong></td>
+            <td>${device.hostname || '<em style="color: var(--text-secondary)">No DNS</em>'}</td>
+            <td>
+                <select class="device-type-select" data-index="${index}">
+                    ${deviceTypes.map(t => `<option value="${t}" ${t === device.device_type ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+            </td>
+            <td>
+                <select class="monitor-type-select" data-index="${index}">
+                    ${monitorTypes.map(t => `<option value="${t}" ${t === device.monitor_type ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+            </td>
+            <td>${(device.open_ports || []).map(p => `<span class="port-badge">${p.port}/${p.service}</span>`).join(' ') || '-'}</td>
+            <td><input type="text" class="name-input" data-index="${index}" value="${device.name || device.ip_address}"></td>
+        `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('results-card').style.display = 'block';
+        document.getElementById('summary-card').style.display = 'block';
+    }
+
+    function selectAll() {
+        document.querySelectorAll('.device-checkbox').forEach(cb => cb.checked = true);
+        document.getElementById('select-all-checkbox').checked = true;
+    }
+
+    function deselectAll() {
+        document.querySelectorAll('.device-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('select-all-checkbox').checked = false;
+    }
+
+    function toggleSelectAll(el) {
+        document.querySelectorAll('.device-checkbox').forEach(cb => cb.checked = el.checked);
+    }
+
+    async function addSelected() {
+        const selectedDevices = [];
+
+        document.querySelectorAll('.device-checkbox:checked').forEach(cb => {
+            const idx = parseInt(cb.dataset.index);
+            const device = discoveredDevices[idx];
+
+            // Get user-modified values
+            const nameInput = document.querySelector(`.name-input[data-index="${idx}"]`);
+            const typeSelect = document.querySelector(`.device-type-select[data-index="${idx}"]`);
+            const monitorSelect = document.querySelector(`.monitor-type-select[data-index="${idx}"]`);
+
+            selectedDevices.push({
+                ip_address: device.ip_address,
+                name: nameInput ? nameInput.value : device.name,
+                device_type: typeSelect ? typeSelect.value : device.device_type,
+                monitor_type: monitorSelect ? monitorSelect.value : device.monitor_type
+            });
+        });
+
+        if (selectedDevices.length === 0) {
+            alert('No devices selected');
+            return;
+        }
+
+        if (!confirm(`Add ${selectedDevices.length} device(s) to monitoring?`)) return;
+
+        try {
+            const response = await fetch('/api/discovery/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ devices: selectedDevices })
+            });
+
+            const result = await response.json();
+
+            let msg = `Added: ${result.added}`;
+            if (result.failed > 0) {
+                msg += `\nFailed: ${result.failed}`;
+                if (result.errors && result.errors.length > 0) {
+                    msg += '\n\n' + result.errors.join('\n');
+                }
+            }
+            alert(msg);
+
+            // Remove successfully added devices from the list
+            if (result.added > 0) {
+                const addedIPs = new Set(selectedDevices.map(d => d.ip_address));
+                discoveredDevices = discoveredDevices.filter(d => !addedIPs.has(d.ip_address));
+                renderResults({
+                    total_scanned: document.getElementById('stat-scanned').textContent,
+                    total_skipped: document.getElementById('stat-skipped').textContent,
+                    discovered: discoveredDevices.length
+                });
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+</script>
+{% endblock %}

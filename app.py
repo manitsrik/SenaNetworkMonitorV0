@@ -11,6 +11,7 @@ from monitor import NetworkMonitor
 from alerter import Alerter
 from telegram_bot import TelegramBot
 from scheduler_reports import ReportGenerator
+from discovery import DeviceDiscovery
 from config import Config
 import atexit
 import os
@@ -32,6 +33,7 @@ monitor = NetworkMonitor(db)
 alerter = Alerter(db)
 telegram_bot = TelegramBot(db)
 report_generator = ReportGenerator(db)
+discovery = DeviceDiscovery()
 monitor.alerter = alerter
 
 # Store shared instances in app.config for Blueprint access
@@ -40,6 +42,7 @@ app.config['MONITOR'] = monitor
 app.config['ALERTER'] = alerter
 app.config['SOCKETIO'] = socketio
 app.config['REPORT_GENERATOR'] = report_generator
+app.config['DISCOVERY'] = discovery
 
 # ============================================================================
 # Register Blueprints

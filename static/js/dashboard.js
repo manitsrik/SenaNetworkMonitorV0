@@ -30,6 +30,7 @@ const typeMetadata = {
     'website': { icon: '🌍', name: 'Websites', color: '#8b5cf6' },
     'vmware': { icon: '🖥️', name: 'VMware', color: '#22c55e' },
     'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
+    'cctv': { icon: '📹', name: 'CCTV', color: '#06b6d4' },
     'vpnrouter': { icon: '🔒', name: 'VPN Router', color: '#a855f7' },
     'dns': { icon: '🔍', name: 'DNS', color: '#0ea5e9' },
     'other': { icon: '⚙️', name: 'Other', color: '#94a3b8' }

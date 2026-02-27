@@ -130,42 +130,75 @@ function renderGrid() {
 }
 
 function saveDashboard() {
-    const name = document.getElementById('dashboard-name').value;
-    const isPublic = document.getElementById('dashboard-public').value;
+    try {
+        const nameInput = document.getElementById('dashboard-name');
+        const publicInput = document.getElementById('dashboard-public');
 
-    if (!name.trim()) {
-        alert('Please enter a dashboard name');
-        return;
-    }
+        if (!nameInput) {
+            throw new Error('Dashboard name input element not found');
+        }
 
-    const payload = {
-        name: name,
-        is_public: parseInt(isPublic),
-        layout_config: currentLayout,
-        description: '' // Optional
-    };
+        const name = nameInput.value;
+        const isPublic = publicInput ? publicInput.value : "0";
 
-    const method = dashboardId ? 'PUT' : 'POST';
-    const url = dashboardId ? `/api/dashboards/${dashboardId}` : '/api/dashboards';
+        if (!name.trim()) {
+            alert('Please enter a dashboard name');
+            return;
+        }
 
-    fetch(url, {
-        method: method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                alert('Dashboard saved successfully!');
-                window.location.href = '/dashboards';
-            } else {
-                alert('Error saving dashboard: ' + (data.error || 'Unknown error'));
-            }
+        console.log('Preparing to save dashboard:', name);
+        console.log('Current layout:', currentLayout);
+
+        // Deep copy layout and ensure no DOM elements or circular refs are present
+        // This is a common cause of JSON.stringify failures
+        let layoutToSave;
+        try {
+            layoutToSave = JSON.parse(JSON.stringify(currentLayout));
+        } catch (e) {
+            console.error('Circular reference or invalid data in layout:', e);
+            throw new Error('Failed to prepare dashboard data: ' + e.message);
+        }
+
+        const payload = {
+            name: name,
+            is_public: parseInt(isPublic),
+            layout_config: layoutToSave,
+            description: ''
+        };
+
+        const method = dashboardId ? 'PUT' : 'POST';
+        const url = dashboardId ? `/api/dashboards/${dashboardId}` : '/api/dashboards';
+
+        console.log(`Sending ${method} request to ${url}...`);
+
+        fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         })
-        .catch(err => {
-            console.error(err);
-            alert('Error saving dashboard');
-        });
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`Server responded with status ${res.status}: ${res.statusText}`);
+                }
+                return res.json();
+            })
+            .then(data => {
+                console.log('Save response:', data);
+                if (data.success) {
+                    alert('Dashboard saved successfully!');
+                    window.location.href = '/dashboards';
+                } else {
+                    alert('Error saving dashboard: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                console.error('Fetch error:', err);
+                alert('Connection error while saving: ' + err.message);
+            });
+    } catch (criticalError) {
+        console.error('Critical oversight in saveDashboard:', criticalError);
+        alert('Could not save dashboard: ' + criticalError.message);
+    }
 }
 
 // Local fallback just in case

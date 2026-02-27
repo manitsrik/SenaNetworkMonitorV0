@@ -151,7 +151,10 @@ def logout():
 @login_required
 def index():
     """Dashboard page"""
-    return render_template('index.html')
+    # Fetch Main Status dashboard (ID 1)
+    # If it doesn't exist, it will be None and index.html handles it
+    main_dashboard = db.get_dashboard(1)
+    return render_template('index.html', dashboard=main_dashboard)
 
 @app.route('/topology')
 @login_required

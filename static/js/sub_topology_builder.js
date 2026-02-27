@@ -704,6 +704,7 @@ function getDeviceIcon(deviceType) {
         'website': '🌐',
         'vmware': '🖴',
         'ippbx': '☎️',
+        'cctv': '📹',
         'vpnrouter': '🔒',
         'dns': '🔍',
         'printer': '🖨️',

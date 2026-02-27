@@ -25,6 +25,22 @@ const locationTypeLabels = {
     'on-premise': 'On-Premise'
 };
 
+// Device type metadata for better naming and icons
+const deviceTypeMetadata = {
+    'router': { name: 'Router', icon: '🌐' },
+    'switch': { name: 'Switch', icon: '🔀' },
+    'server': { name: 'Server', icon: '🖥️' },
+    'firewall': { name: 'Firewall', icon: '🛡️' },
+    'wireless': { name: 'Wireless', icon: '📶' },
+    'website': { name: 'Website', icon: '🌐' },
+    'dns': { name: 'DNS', icon: '🔍' },
+    'vmware': { name: 'VMware Server', icon: '🖴' },
+    'ippbx': { name: 'IP-PBX', icon: '☎️' },
+    'cctv': { name: 'CCTV', icon: '📹' },
+    'vpnrouter': { name: 'VPN Router Site', icon: '🔒' },
+    'other': { name: 'Other', icon: '⚙️' }
+};
+
 // Initialize devices page
 document.addEventListener('DOMContentLoaded', () => {
     loadDevices();
@@ -128,19 +144,28 @@ function formatDateTime(dateStr) {
 
 // Populate filter options dynamically
 function populateFilterOptions(devices) {
-    // Get unique values
-    const types = getUniqueValues(devices, 'device_type');
+    // Get unique types from data AND include all predefined types
+    const dataTypes = getUniqueValues(devices, 'device_type');
+    const predefinedTypes = Object.keys(deviceTypeMetadata);
+    const allPossibleTypes = [...new Set([...predefinedTypes, ...dataTypes])].sort();
+
     const locations = getUniqueValues(devices, 'location');
 
     // Populate Type filter
     const typeFilter = document.getElementById('filter-type');
     const currentType = typeFilter.value;
     typeFilter.innerHTML = '<option value="">All Types</option>';
-    types.forEach(type => {
+
+    allPossibleTypes.forEach(type => {
         if (type) {
+            const meta = deviceTypeMetadata[type];
             const option = document.createElement('option');
             option.value = type;
-            option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            if (meta) {
+                option.textContent = `${meta.name}`;
+            } else {
+                option.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            }
             typeFilter.appendChild(option);
         }
     });

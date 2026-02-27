@@ -9,6 +9,7 @@ class Config:
     
     # Database settings
     DATABASE_PATH = 'network_monitor.db'
+    RETENTION_DAYS = 30 # Keep 30 days of history
     
     # Monitoring settings
     PING_INTERVAL = 30  # seconds between ping checks

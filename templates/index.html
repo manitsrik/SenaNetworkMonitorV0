@@ -1,169 +1,115 @@
 {% extends "layout.html" %}
-
-{% block title %}Network Monitor - Dashboard{% endblock %}
-
-{% block page_title %}Dashboard{% endblock %}
-
 {% set active_page = 'dashboard' %}
 
+{% block title %}Network Monitor - Main Status{% endblock %}
+
+{% block page_title %}Main Status{% endblock %}
+
+{% block header_actions %}
+{% if session.role == 'admin' %}
+<a href="/dashboard/1/edit" class="btn btn-xs btn-primary">
+    <i class="fa-solid fa-pen-to-square"></i> Edit Dashboard
+</a>
+{% endif %}
+{% endblock %}
+
 {% block content %}
-<div class="dashboard-container">
-    <!-- Statistics Cards - Top Row -->
-    <div class="stats-row">
-        <div class="stat-card stat-card-uptime">
-            <div class="stat-icon">✅</div>
-            <div class="stat-content">
-                <div class="stat-value" id="uptime-percentage">0%</div>
-                <div class="stat-label">Network Uptime</div>
-            </div>
-        </div>
-        <div class="stat-card stat-card-online">
-            <div class="stat-icon">🖥️</div>
-            <div class="stat-content">
-                <div class="stat-value"><span id="devices-up">0</span>/<span id="total-devices">0</span></div>
-                <div class="stat-label">Devices Online</div>
-            </div>
-        </div>
-        <div class="stat-card stat-card-latency">
-            <div class="stat-icon">⚡</div>
-            <div class="stat-content">
-                <div class="stat-value"><span id="avg-response-time">0</span><small>ms</small></div>
-                <div class="stat-label">Avg Latency</div>
-            </div>
-        </div>
-        <div class="stat-card stat-card-slow">
-            <div class="stat-icon">⚠️</div>
-            <div class="stat-content">
-                <div class="stat-value" id="devices-slow">0</div>
-                <div class="stat-label">Slow Devices</div>
-            </div>
-        </div>
-        <div class="stat-card stat-card-alerts">
-            <div class="stat-icon">🔔</div>
-            <div class="stat-content">
-                <div class="stat-value" id="devices-down">0</div>
-                <div class="stat-label">Active Alerts</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Main Dashboard Premium Layout (2 Columns) -->
-    <div class="dashboard-main-columns">
-        <!-- LEFT COLUMN: Metrics & Alerts -->
-        <div class="col-left">
-            <!-- Response Time & Slow Devices -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h3 class="card-title">Avg Latency & Slow Devices</h3>
-                    <a href="/history" class="btn btn-sm btn-secondary">Full View</a>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container" style="height: 180px; margin-bottom: 1.5rem;">
-                        <canvas id="response-chart"></canvas>
-                    </div>
-
-                    <div class="top-slow-section">
-                        <h4 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.75rem;">Top Slow Devices</h4>
-                        <div id="slow-devices-list" class="slow-devices-container">
-                            <p class="text-muted" style="font-size: 0.8rem; text-align: center;">No slow devices
-                                detected</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Average Response Time by Type (Trends) -->
-            <div class="dashboard-card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3 class="card-title">📊 Response Trends</h3>
-                    <div class="btn-group btn-group-sm" role="group">
-                        <button type="button" class="btn btn-outline-secondary"
-                            onclick="updateTrendRange(1, this)">1m</button>
-                        <button type="button" class="btn btn-outline-secondary active"
-                            onclick="updateTrendRange(15, this)">15m</button>
-                        <button type="button" class="btn btn-outline-secondary"
-                            onclick="updateTrendRange(60, this)">1h</button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container" style="height: 220px;">
-                        <canvas id="device-type-response-chart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Active Alerts -->
-            <div class="dashboard-card">
-                <div class="card-header">
-                    <h3 class="card-title">🚨 Active Alerts</h3>
-                    <span id="alert-count-badge" class="status-badge status-down">
-                        <span id="alert-count">0</span> alerts
-                    </span>
-                </div>
-                <div class="card-body">
-                    <div id="alerts-table-container">
-                        <div id="alerts-list-modern" class="activity-log-modern">
-                            <!-- Populated by JS -->
-                        </div>
-                        <p id="no-alerts-msg" class="text-center text-muted" style="padding: 1.5rem;">
-                            ✅ All systems operational
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- RIGHT COLUMN: Topology, Status & Activity -->
-        <div class="col-right">
-            <!-- Topology Map -->
-            <div class="dashboard-card" style="flex: 1; min-height: 350px;">
-                <div class="card-header">
-                    <h3 class="card-title">🗺️ Network Topology</h3>
-                    <a href="/topology" class="btn btn-sm btn-primary">Open Maps</a>
-                </div>
-                <div class="card-body" style="height: calc(100% - 60px);">
-                    <div id="mini-topology" style="height: 100%; border-radius: 0.75rem; overflow: hidden;"></div>
-                </div>
-            </div>
-
-            <!-- Bottom Row in Right Column -->
-            <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 1.5rem;">
-                <!-- Device Status by Type -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <h3 class="card-title">📊 Device Status</h3>
-                    </div>
-                    <div class="card-body">
-                        <div id="device-type-stats" class="device-type-grid" style="grid-template-columns: 1fr;">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Recent Activity -->
-                <div class="dashboard-card">
-                    <div class="card-header">
-                        <h3 class="card-title">📋 Recent Activity</h3>
-                        <span class="status-badge status-up">Live</span>
-                    </div>
-                    <div class="card-body">
-                        <div id="activity-log" style="max-height: 300px; overflow-y: auto;">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
+<div class="dashboard-container" style="padding-top: 0.25rem;">
+    <div id="grid-canvas" class="grid-canvas">
+        <!-- Dashboard content will be loaded dynamically -->
+        <div
+            style="display:flex; align-items:center; justify-content:center; height:300px; width:100%; grid-column: span 12;">
+            <div class="text-center">
+                <i class="fa-solid fa-circle-notch fa-spin fa-2x text-primary mb-3"></i>
+                <p class="text-muted">Loading components...</p>
             </div>
         </div>
     </div>
 </div>
-</div>
+
+<!-- Hidden Input for logic -->
+<input type="hidden" id="dashboard-id" value="1">
 {% endblock %}
 
 {% block scripts %}
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<!-- Vis.js Network for Mini Topology -->
+<!-- Vis.js Network for Topology -->
 <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-<!-- Dashboard Script -->
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<!-- Shared Renderer Library -->
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=editable_main"></script>
+
+<script>
+    let currentDashboard = null;
+    let currentData = { devices: [], stats: {}, connections: [] };
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const dashboardId = document.getElementById('dashboard-id').value;
+        if (!dashboardId) return;
+
+        try {
+            // Load everything in parallel
+            const [configResponse, devices, stats, topology] = await Promise.all([
+                fetch(`/api/dashboards/${dashboardId}`),
+                fetch('/api/devices').then(r => r.json()),
+                fetch('/api/statistics').then(r => r.json()),
+                fetch('/api/topology').then(r => r.json())
+            ]);
+
+            if (!configResponse.ok) throw new Error('Dashboard not found in database');
+            currentDashboard = await configResponse.json();
+            currentData = { devices, stats, connections: topology.connections };
+
+            render();
+
+            // Setup Socket.IO for live updates
+            const socket = io();
+            socket.on('status_update', () => loadData().then(render));
+            socket.on('statistics_update', (stats) => {
+                currentData.stats = stats;
+                render();
+            });
+            socket.on('topology_updated', () => loadData().then(render));
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            document.getElementById('grid-canvas').innerHTML = `
+                <div style="grid-column: span 12;" class="alert alert-danger">
+                    <h4>Error loading Main Status dashboard</h4>
+                    <p>${error.message}</p>
+                    <p>Please ensure initialize_main_dashboard.py has been run.</p>
+                </div>`;
+        }
+    });
+
+    async function loadData() {
+        try {
+            const [devices, stats, topology] = await Promise.all([
+                fetch('/api/devices').then(r => r.json()),
+                fetch('/api/statistics').then(r => r.json()),
+                fetch('/api/topology').then(r => r.json())
+            ]);
+            currentData = { devices, stats, connections: topology.connections };
+        } catch (e) {
+            console.error("Error fetching data:", e);
+        }
+    }
+
+    function render() {
+        if (!currentDashboard) return;
+        const container = document.getElementById('grid-canvas');
+
+        if (typeof DashboardRenderer === 'undefined') {
+            setTimeout(render, 100);
+            return;
+        }
+
+        try {
+            DashboardRenderer.renderDashboard(container, currentDashboard.layout_config, currentData, false);
+        } catch (e) {
+            console.error('Error in renderDashboard:', e);
+            container.innerHTML = `<div style="grid-column: span 12;" class="alert alert-danger">Error rendering dashboard: ${e.message}</div>`;
+        }
+    }
+</script>
 {% endblock %}

@@ -17,6 +17,7 @@ window.DashboardRenderer = {
         'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
         'vpnrouter': { icon: '🔒', name: 'VPN Router', color: '#a855f7' },
         'dns': { icon: '🔍', name: 'DNS', color: '#0ea5e9' },
+        'cctv': { icon: '📹', name: 'CCTV', color: '#14b8a6' },
         'other': { icon: '⚙️', name: 'Other', color: '#94a3b8' }
     },
 
@@ -69,20 +70,25 @@ window.DashboardRenderer = {
             const widgetEl = document.createElement('div');
 
             // Determine class configuration
-            // Check if widget is a 'stat_card' row item or a regular grid item
-            // The stat cards in the main dashboard are NOT in the main 12-col grid, they are in a separate flex/grid row.
-            // But here we are rendering everything into one grid container.
-            // We can emulate the row by making stat cards take small width.
+            widgetEl.setAttribute('data-type', widget.type);
 
             if (widget.type === 'stat_card') {
                 // Remove the default card styling for stat cards to use the specific stat-card class
-                widgetEl.className = `stat-card-wrapper w-col-${widget.width || 2}`;
+                let widthClass = widget.width || 2;
+                if (typeof widthClass === 'number' || !widthClass.startsWith('w-col-')) {
+                    widthClass = `w-col-${widthClass}`;
+                }
+                widgetEl.className = `stat-card-wrapper ${widthClass}`;
                 widgetEl.style.padding = '0';
                 widgetEl.style.border = 'none';
                 widgetEl.style.background = 'transparent';
                 widgetEl.style.boxShadow = 'none';
             } else {
-                widgetEl.className = `grid-widget w-col-${widget.width || 4}`; // Default width 4 (1/3)
+                let widthClass = widget.width || 4; // Default width 4 (1/3)
+                if (typeof widthClass === 'number' || !widthClass.startsWith('w-col-')) {
+                    widthClass = `w-col-${widthClass}`;
+                }
+                widgetEl.className = `grid-widget ${widthClass}`;
             }
 
             // Apply custom height to the whole widget card if specified
@@ -104,13 +110,14 @@ window.DashboardRenderer = {
                 `;
             }
 
+            const flexDir = widget.type === 'stat_row' ? 'row' : 'column';
             // Render structure (Standardized for all types)
             widgetEl.innerHTML = `
                 <div class="widget-header">
                     <div class="widget-title">${widget.title || getWidgetDefaultTitle(widget.type)}</div>
                     ${controlsHtml}
                 </div>
-                <div class="widget-content" id="widget-content-${index}" style="height: 100%; min-height: 0;"></div>
+                <div class="widget-content" id="widget-content-${index}" style="height: calc(100% - 2rem); min-height: 0; position: relative; display: flex; flex-direction: ${flexDir};"></div>
             `;
 
             container.appendChild(widgetEl);
@@ -217,6 +224,8 @@ window.DashboardRenderer = {
      * Filter data by device type and recalculate statistics
      */
     filterData: function (originalData, deviceType) {
+        if (!deviceType) return originalData;
+
         // filter devices
         const devices = (originalData.devices || []).filter(d =>
             (d.device_type || 'other').toLowerCase() === deviceType.toLowerCase()
@@ -263,92 +272,123 @@ window.DashboardRenderer = {
     // ===================================
 
     renderGauge: function (container, widget, data, index) {
+        container.style.flex = '1';
+        container.style.minHeight = '0';
+        container.style.position = 'relative';
+        container.style.padding = '10px';
+
         const canvas = document.createElement('canvas');
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
         canvas.style.width = '100%';
         canvas.style.height = '100%';
         container.appendChild(canvas);
 
         const ctx = canvas.getContext('2d');
-        const GAUGE_MAX = 500;
+        const GAUGE_MAX = 500; // Aligned with SLOW_RESPONSE_THRESHOLD in config.py
         const value = data.stats ? (data.stats.average_response_time || 0) : 0;
 
-        // Reuse gauge logic
         const gaugeNeedle = {
             id: 'gaugeNeedle',
             afterDatasetDraw(chart, args, options) {
                 const { ctx, config, data, chartArea: { top, bottom, left, right, width, height } } = chart;
                 ctx.save();
                 const needleValue = data.datasets[0].needleValue || 0;
-                let angle = Math.PI + (needleValue / GAUGE_MAX) * Math.PI;
-                if (needleValue > GAUGE_MAX) angle = 2 * Math.PI;
 
-                const cx = width / 2;
-                const cy = chart.chartArea.bottom - 10;
+                // Use actual chart center from data element
+                const meta = chart.getDatasetMeta(0).data[0];
+                const cx = meta.x;
+                const cy = meta.y;
+                const innerRadius = meta.innerRadius;
+                const outerRadius = meta.outerRadius;
 
+                // Scale needle to GAUGE_MAX
+                let angle = Math.PI + (Math.min(needleValue, GAUGE_MAX) / GAUGE_MAX) * Math.PI;
+
+                // Ticks and Labels
+                const ticks = [0, 100, 250, 400, 500];
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '600 11px Inter, sans-serif';
+
+                ticks.forEach(t => {
+                    const tAngle = Math.PI + (t / GAUGE_MAX) * Math.PI;
+                    // Position labels outside the inner arc
+                    const tx = cx + Math.cos(tAngle) * (innerRadius - 20);
+                    const ty = cy + Math.sin(tAngle) * (innerRadius - 20);
+                    ctx.fillText(t, tx, ty);
+
+                    // Small ticks on the arc
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(tAngle) * innerRadius, cy + Math.sin(tAngle) * innerRadius);
+                    ctx.lineTo(cx + Math.cos(tAngle) * (innerRadius - 6), cy + Math.sin(tAngle) * (innerRadius - 6));
+                    ctx.strokeStyle = '#cbd5e1';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                });
+
+                // Value Text (Centered below the needle axis)
+                ctx.font = '800 36px Inter, sans-serif';
+                ctx.fillStyle = '#1e293b';
+                ctx.textAlign = 'center';
+                ctx.fillText(needleValue.toFixed(2), cx, cy + 35);
+
+                // Needle
+                ctx.save();
                 ctx.translate(cx, cy);
                 ctx.rotate(angle);
+
+                // Needle Body
                 ctx.beginPath();
-                ctx.moveTo(0, -2);
-                ctx.lineTo(height - (ctx.canvas.offsetHeight * 0.2), 0);
-                ctx.lineTo(0, 2);
-                ctx.fillStyle = '#475569';
+                ctx.moveTo(0, -3);
+                ctx.lineTo(outerRadius - 5, 0);
+                ctx.lineTo(0, 3);
+                ctx.fillStyle = '#334155';
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = 'rgba(0,0,0,0.4)';
                 ctx.fill();
 
+                // Needle Cap
                 ctx.rotate(-angle);
-                ctx.translate(-cx, -cy);
                 ctx.beginPath();
-                ctx.arc(cx, cy, 5, 0, 10);
-                ctx.fillStyle = '#475569';
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fillStyle = '#1e293b';
+                ctx.strokeStyle = '#f1f5f9';
+                ctx.lineWidth = 2;
                 ctx.fill();
+                ctx.stroke();
+
                 ctx.restore();
-
-                // Value Text
-                ctx.save();
-                ctx.font = 'bold 24px Inter, sans-serif';
-                ctx.fillStyle = DashboardRenderer.getGaugeColor(needleValue);
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'bottom';
-                ctx.fillText(needleValue.toFixed(2), cx, cy - 20);
-
-                ctx.font = '12px Inter, sans-serif';
-                ctx.fillStyle = '#94a3b8';
-                ctx.fillText('ms', cx, cy + 5);
                 ctx.restore();
             }
         };
 
-
-        const renderValue = value > GAUGE_MAX ? GAUGE_MAX : value;
-
-
         const chart = new Chart(ctx, {
             type: 'doughnut',
-
             data: {
-                labels: ['Fast', 'Moderate', 'Slow'],
                 datasets: [{
-                    data: [100, 200, 200], // 0-100, 100-300, 300-500
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444'], // Green, Yellow, Red
+                    data: [50, 50, 50, 50],
+                    backgroundColor: ['#10b981', '#f59e0b', '#fb923c', '#ef4444'],
                     borderWidth: 0,
                     needleValue: value
                 }]
             },
-
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 rotation: -90,
                 circumference: 180,
-                cutout: '65%',
+                cutout: '80%',
                 plugins: {
                     legend: { display: false },
                     tooltip: { enabled: false }
                 },
-                layout: { padding: { bottom: 10 } }
+                layout: { padding: { top: 30, bottom: 60, left: 10, right: 10 } }
             },
             plugins: [gaugeNeedle]
         });
-
 
         this.instances[`chart_${index}`] = chart;
     },
@@ -356,21 +396,19 @@ window.DashboardRenderer = {
     updateGauge: function (index, data) {
         const chart = this.instances[`chart_${index}`];
         if (!chart) return;
-
         const value = data.stats ? (data.stats.average_response_time || 0) : 0;
         chart.data.datasets[0].needleValue = value;
         chart.update();
     },
 
     renderPerformance: function (container, widget, data, index) {
-        // Layout: Top 70% Gauge, Bottom 30% List
-        // container already has height from parent (flex-grow: 1 or height: 100%)
         container.style.display = 'flex';
         container.style.flexDirection = 'column';
         container.style.overflow = 'hidden';
+        container.style.padding = '0';
 
         const totalHeight = container.offsetHeight || widget.height || 400;
-        const gaugeHeight = Math.floor(totalHeight * 0.65);
+        const gaugeHeight = Math.floor(totalHeight * 0.60);
         const listHeight = totalHeight - gaugeHeight;
 
         // Gauge Container
@@ -379,58 +417,60 @@ window.DashboardRenderer = {
         gaugeContainer.style.position = 'relative';
         container.appendChild(gaugeContainer);
 
-        // List Container
-        const listContainer = document.createElement('div');
-        listContainer.style.flex = `0 0 ${listHeight}px`;
-        listContainer.style.overflowY = 'auto';
-        listContainer.style.borderTop = '1px solid var(--border-color)';
-        listContainer.style.paddingTop = '10px';
-        container.appendChild(listContainer);
+        // List Outer Container (Nested Card feel)
+        const listWrapper = document.createElement('div');
+        listWrapper.style.flex = '1';
+        listWrapper.style.padding = '0 15px 15px 15px';
+        listWrapper.style.display = 'flex';
+        listWrapper.style.flexDirection = 'column';
+        container.appendChild(listWrapper);
 
-        // Header for List
-        const listHeader = document.createElement('h4');
-        listHeader.textContent = 'Top Slow Devices';
-        listHeader.style.fontSize = '0.9rem';
-        listHeader.style.marginBottom = '0.5rem';
-        listHeader.style.padding = '0 1rem';
+        const listContainer = document.createElement('div');
+        listContainer.style.flex = '1';
+        listContainer.style.overflowY = 'auto';
+        listContainer.style.background = 'var(--bg-glass)';
+        listContainer.style.backdropFilter = 'blur(10px)';
+        listContainer.style.border = '1px solid var(--border-color)';
+        listContainer.style.borderRadius = '12px';
+        listContainer.style.padding = '12px';
+        listWrapper.appendChild(listContainer);
+
+        // Header
+        const listHeader = document.createElement('div');
+        listHeader.style.display = 'flex';
+        listHeader.style.justifyContent = 'space-between';
+        listHeader.style.alignItems = 'center';
+        listHeader.style.marginBottom = '12px';
+        listHeader.innerHTML = '<span style="font-weight:700; font-size:0.95rem; color: #1e293b;">Top Slow Devices</span>';
         listContainer.appendChild(listHeader);
 
-        // Content for List
+        // Content
         const listContent = document.createElement('div');
-        listContent.style.padding = '0 1rem';
         listContainer.appendChild(listContent);
 
-        // 1. Render Gauge
         this.renderGauge(gaugeContainer, widget, data, index);
 
-        // 2. Render Slow Devices List
         const devices = data.devices || [];
-        // Show top 5 slowest devices of the filtered type, even if they are below 100ms
         const slowest = devices
             .filter(d => d.status === 'up' && d.response_time)
             .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
             .slice(0, 5);
 
         if (slowest.length === 0) {
-            listContent.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; color: var(--text-muted);">
-                    <p style="margin:0; font-size:0.85rem">No devices with data found</p>
-                </div>
-            `;
+            listContent.innerHTML = `<p style="text-align:center; color:var(--text-muted); font-size:0.85rem">No data</p>`;
         } else {
             const maxTime = Math.max(...slowest.map(d => parseFloat(d.response_time)));
-
             listContent.innerHTML = slowest.map(device => {
                 const time = parseFloat(device.response_time);
-                const percent = (time / maxTime) * 100;
+                const percent = Math.min((time / maxTime) * 100, 100);
                 return `
-                    <div style="margin-bottom: 0.5rem; font-size: 0.85rem;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                            <span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;" title="${device.name}">${device.name}</span>
-                            <span style="color: var(--warning); font-weight:600;">${device.response_time} ms</span>
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; align-items: center;">
+                            <span style="font-weight:600; font-size:0.9rem; color: #334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${device.name}</span>
+                            <span style="font-weight:700; color: #d97706; font-size:0.9rem;">${time.toFixed(2)} ms</span>
                         </div>
-                        <div style="height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;">
-                             <div style="height: 100%; width: ${percent}%; background: var(--warning); border-radius: 2px;"></div>
+                        <div style="height: 6px; background: #f1f5f9; border-radius: 3px; position: relative;">
+                            <div style="height: 100%; width: ${percent}%; background: linear-gradient(90deg, #f59e0b, #d97706); border-radius: 3px;"></div>
                         </div>
                     </div>
                 `;
@@ -573,23 +613,24 @@ window.DashboardRenderer = {
 
     renderStatRow: function (container, widget, data) {
         container.style.display = 'flex';
+        container.style.setProperty('flex-direction', 'row', 'important');
+        container.style.setProperty('flex-wrap', 'nowrap', 'important');
         container.style.gap = '1rem';
         container.style.height = '100%';
 
         let cards = widget.cards || [];
 
-        // If no cards were manually defined but a deviceType is configured,
-        // automatically generate the 5 standard stat cards for that type.
-        if (cards.length === 0 && widget.config && widget.config.deviceType) {
-            const type = widget.config.deviceType;
-            const typeMeta = this.typeMetadata[type] || this.typeMetadata['other'];
-            const typeName = typeMeta.name.toUpperCase();
-            const deviceNoun = type === 'wireless' ? 'APS' : typeName;
+        // If no cards were manually defined, automatically generate the 5 standard stat cards.
+        if (cards.length === 0) {
+            const type = widget.config ? widget.config.deviceType : null;
+            const typeMeta = type ? (this.typeMetadata[type] || this.typeMetadata['other']) : null;
+            const typeName = typeMeta ? typeMeta.name.toUpperCase() : 'NETWORK';
+            const deviceNoun = type === 'wireless' ? 'APS' : (type ? typeName : 'DEVICES');
 
             cards = [
                 { type: 'stat_card', statType: 'uptime', config: { deviceType: type }, title: `${typeName} UPTIME` },
                 { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
-                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type.toUpperCase()} LATENCY` },
+                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type ? type.toUpperCase() : 'NET'} LATENCY` },
                 { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
                 { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
             ];
@@ -604,6 +645,7 @@ window.DashboardRenderer = {
 
         cards.forEach(cardConfig => {
             const cardWrapper = document.createElement('div');
+            cardWrapper.className = 'stat-row-item';
             cardWrapper.style.flex = '1';
             cardWrapper.style.minWidth = '0'; // Prevent flex item overflow
             cardWrapper.style.height = '100%';
@@ -615,19 +657,23 @@ window.DashboardRenderer = {
     },
 
     updateStatRow: function (container, widget, data) {
-        const cards = widget.cards || [];
+        container.style.display = 'flex';
+        container.style.setProperty('flex-direction', 'row', 'important');
+        container.style.setProperty('flex-wrap', 'nowrap', 'important');
+        let cards = widget.cards || [];
         const cardWrappers = container.children; // Assuming each child is a card wrapper
 
-        if (cards.length === 0 && widget.config && widget.config.deviceType) {
-            const type = widget.config.deviceType;
-            const typeMeta = this.typeMetadata[type] || this.typeMetadata['other'];
-            const typeName = typeMeta.name.toUpperCase();
-            const deviceNoun = type === 'wireless' ? 'APS' : typeName;
+        // If no cards were manually defined, automatically generate the 5 standard stat cards.
+        if (cards.length === 0) {
+            const type = widget.config ? widget.config.deviceType : null;
+            const typeMeta = type ? (this.typeMetadata[type] || this.typeMetadata['other']) : null;
+            const typeName = typeMeta ? typeMeta.name.toUpperCase() : 'NETWORK';
+            const deviceNoun = type === 'wireless' ? 'APS' : (type ? typeName : 'DEVICES');
 
             cards = [
                 { type: 'stat_card', statType: 'uptime', config: { deviceType: type }, title: `${typeName} UPTIME` },
                 { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
-                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type.toUpperCase()} LATENCY` },
+                { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type ? type.toUpperCase() : 'NET'} LATENCY` },
                 { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
                 { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
             ];
@@ -665,10 +711,10 @@ window.DashboardRenderer = {
                     label: device.name,
                     shape: 'circularImage',
                     image: this.getNodeSvgUrl(device.device_type, device.status),
-                    size: 40,
-                    borderWidth: 0, // Border is in SVG
+                    size: 400, // Increased 10x (from 40)
+                    borderWidth: 0,
                     borderWidthSelected: 0,
-                    color: { background: 'transparent', border: 'transparent' } // Let SVG handle colors
+                    color: { background: 'transparent', border: 'transparent' }
                 };
             })
         );
@@ -692,7 +738,7 @@ window.DashboardRenderer = {
                 id: conn.id,
                 from: conn.device_id,
                 to: conn.connected_to,
-                width: 1.5,
+                width: 5, // Increased from 1.5
                 color: { color: 'rgba(148, 163, 184, 0.6)' }
             }))
         );
@@ -700,19 +746,19 @@ window.DashboardRenderer = {
         const options = {
             nodes: {
                 shape: 'circularImage',
-                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 15, face: 'Inter, sans-serif' }
+                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 100, face: 'Inter, sans-serif' }
             },
             physics: {
                 enabled: true,
                 solver: 'forceAtlas2Based',
                 forceAtlas2Based: {
-                    gravitationalConstant: -800,
-                    centralGravity: 0.01,
-                    springLength: 150,
+                    gravitationalConstant: -10000, // Stronger repulsion for huge nodes
+                    centralGravity: 0.005,
+                    springLength: 1200, // Significantly longer springs
                     springConstant: 0.08,
                     avoidOverlap: 1
                 },
-                stabilization: { iterations: 100 }
+                stabilization: { iterations: 150 }
             },
             layout: { improvedLayout: true },
             interaction: { zoomView: true, dragView: true, hover: true },
@@ -755,7 +801,7 @@ window.DashboardRenderer = {
                 label: device.name,
                 shape: 'circularImage',
                 image: this.getNodeSvgUrl(device.device_type, device.status),
-                size: 40,
+                size: 400, // Consistency with 10x scale
                 color: { background: 'transparent', border: 'transparent' }
             };
         });
@@ -879,7 +925,7 @@ window.DashboardRenderer = {
             }
         });
 
-        let html = '<div class="device-type-grid" style="grid-template-columns: 1fr;">';
+        let html = '<div class="device-type-grid">';
 
         if (Object.keys(devicesByType).length === 0) {
             html += '<p class="text-muted text-center" style="padding:1rem">No devices</p>';
@@ -1058,6 +1104,7 @@ window.DashboardRenderer = {
             container.style.height = '100%';
             container.style.display = 'flex';
             container.style.flexDirection = 'column';
+            container.style.overflow = 'hidden';
 
             container.innerHTML = `
                 <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 10px; flex-shrink: 0;">
@@ -1069,7 +1116,7 @@ window.DashboardRenderer = {
                         </button>
                     `).join('')}
                 </div>
-                <div id="trend-content-${index}" style="flex: 1; min-height: 150px; position: relative; display: flex; align-items: center; justify-content: center;">
+                <div id="trend-content-${index}" style="flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
                     <div class="text-muted" style="font-size: 0.8rem;">
                         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="margin-right: 5px;"></span>
                         Loading trends...
@@ -1148,7 +1195,7 @@ window.DashboardRenderer = {
                 existingChart.update('none'); // Update without animation for continuous feel
             } else {
                 // Initial render or re-render
-                contentArea.innerHTML = `<canvas id="trend-chart-${index}" style="width: 100%; height: 100%;"></canvas>`;
+                contentArea.innerHTML = `<canvas id="trend-chart-${index}" style="position: absolute; top:0; left:0; width: 100%; height: 100%;"></canvas>`;
                 const ctx = document.getElementById(`trend-chart-${index}`).getContext('2d');
 
                 if (existingChart) existingChart.destroy();
@@ -1223,17 +1270,17 @@ window.DashboardRenderer = {
         if (status === 'up') color = '#10b981'; // success
         else if (status === 'down') color = '#ef4444'; // danger
 
-        // Generate SVG
+        // High-resolution SVG for 10x nodes
         const svgString = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
                 <defs>
                     <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-                         <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.2)"/>
+                         <feDropShadow dx="0" dy="10" stdDeviation="15" flood-color="rgba(0,0,0,0.3)"/>
                     </filter>
                 </defs>
-                <circle cx="20" cy="20" r="18" fill="white" stroke="${color}" stroke-width="3" filter="url(#shadow)"/>
-                <circle cx="20" cy="20" r="13" fill="${color}" opacity="0.1"/>
-                <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif" font-size="20">${icon}</text>
+                <circle cx="200" cy="200" r="180" fill="white" stroke="${color}" stroke-width="20" filter="url(#shadow)"/>
+                <circle cx="200" cy="200" r="130" fill="${color}" opacity="0.1"/>
+                <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif" font-size="220">${icon}</text>
             </svg>
         `.trim();
 

@@ -36,6 +36,7 @@ const subZoneColors = {
     'website': { color: 'rgba(236, 72, 153, 0.12)', borderColor: '#ec4899', label: '🌐 Website' },
     'vmware': { color: 'rgba(34, 197, 94, 0.12)', borderColor: '#22c55e', label: '🖴 VMware' },
     'ippbx': { color: 'rgba(168, 85, 247, 0.12)', borderColor: '#a855f7', label: '☎️ IP PBX' },
+    'cctv': { color: 'rgba(6, 182, 212, 0.12)', borderColor: '#06b6d4', label: '📹 CCTV' },
     'vpnrouter': { color: 'rgba(20, 184, 166, 0.12)', borderColor: '#14b8a6', label: '🔒 VPN Router' },
     'dns': { color: 'rgba(249, 115, 22, 0.12)', borderColor: '#f97316', label: '🔍 DNS' },
     'other': { color: 'rgba(107, 114, 128, 0.12)', borderColor: '#6b7280', label: '⚙️ Other' }
@@ -889,6 +890,7 @@ function getDeviceIcon(deviceType) {
         'website': '🌐',
         'vmware': '🖴',
         'ippbx': '☎️',
+        'cctv': '📹',
         'vpnrouter': '🔒',
         'dns': '🔍',
         'other': '⚙️'

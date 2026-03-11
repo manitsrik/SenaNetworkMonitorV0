@@ -743,27 +743,22 @@ function setupSocketListeners() {
     });
 
     let debounceTimer;
-    socket.on('status_update', (device) => {
-        console.log('Status update:', device);
-        addActivityLog(device);
-
-        // Debounce reload to update all components once per batch
+    const debouncedReload = () => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
             loadInitialData();
-        }, 1000);
+        }, 1200);
+    };
+
+    socket.on('status_update', (device) => {
+        // Prevent console spam
+        // console.log('Status update:', device);
+        addActivityLog(device);
+        debouncedReload();
     });
 
     socket.on('statistics_update', (stats) => {
-        console.log('Statistics update:', stats);
-        // The original instruction had updateResponseTime(stats); updateSlowDevicesList(devices); updateStatisticsDisplay(stats);
-        // but updateResponseTime and updateStatisticsDisplay are not defined.
-        // Assuming the intent was to add updateSlowDevicesList and keep existing updates.
-        // To get 'devices' for updateSlowDevicesList, we need to fetch them or pass them from a broader scope.
-        // For now, calling loadInitialData() will ensure all components, including slow devices, are updated.
-        // If 'devices' were available directly, we could call updateSlowDevicesList(devices) here.
-        // For simplicity and to avoid undefined functions, we'll rely on loadInitialData for now.
-        loadInitialData();
+        debouncedReload();
     });
 }
 

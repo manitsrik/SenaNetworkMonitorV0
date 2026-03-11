@@ -1,13 +1,14 @@
 """
 Auto Device Discovery Module
-Scans network subnets to find active hosts using ping sweep,
+Scans network subnets to find active hosts using TCP port probing,
 DNS reverse lookup, and common port detection.
+
+Uses a single flat eventlet GreenPool (no nesting) for fast,
+non-blocking scanning that keeps Flask responsive.
 """
-import subprocess
 import socket
 import ipaddress
-import concurrent.futures
-import platform
+import eventlet
 from datetime import datetime
 
 
@@ -39,13 +40,16 @@ class DeviceDiscovery:
         554: ('rtsp', 'cctv'),
         8000: ('http-alt', 'server'),
         902: ('vmware', 'vmware'),
-        443: ('https', 'website'),
     }
+
+    # Quick-check ports for liveness (only the most common 4)
+    QUICK_PORTS = [80, 443, 22, 3389]
     
-    def __init__(self, timeout=1, max_workers=50):
+    def __init__(self, timeout=0.5, max_workers=100):
         self.timeout = timeout
         self.max_workers = max_workers
         self._is_scanning = False
+        self._cancel_requested = False
         self._scan_progress = 0
         self._scan_total = 0
         self._scan_results = []
@@ -60,52 +64,63 @@ class DeviceDiscovery:
             return 0
         return int(self._scan_progress / self._scan_total * 100)
     
-    def ping_host(self, ip):
-        """Ping a single host, return True if alive"""
+    def cancel_scan(self):
+        """Request scan cancellation. Workers will stop on next iteration."""
+        self._cancel_requested = True
+    
+    def _tcp_connect(self, ip_str, port, timeout=None):
+        """Try a single TCP connect. Returns True if port is open."""
+        t = timeout or self.timeout
         try:
-            param = '-n' if platform.system().lower() == 'windows' else '-c'
-            timeout_param = '-w' if platform.system().lower() == 'windows' else '-W'
-            timeout_val = str(self.timeout * 1000) if platform.system().lower() == 'windows' else str(self.timeout)
-            
-            result = subprocess.run(
-                ['ping', param, '1', timeout_param, timeout_val, str(ip)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=self.timeout + 2
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, Exception):
-            return False
+            with eventlet.Timeout(t, False):
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(t)
+                result = sock.connect_ex((ip_str, port))
+                sock.close()
+                return result == 0
+        except Exception:
+            pass
+        return False
+    
+    def check_host_alive(self, ip_str):
+        """
+        Fast host liveness check - sequential TCP connect to a few ports.
+        No nested GreenPool; runs inside a single worker green thread.
+        Returns True as soon as any port responds.
+        """
+        for port in self.QUICK_PORTS:
+            if self._cancel_requested:
+                return False
+            if self._tcp_connect(ip_str, port, timeout=0.2):
+                return True
+        return False
     
     def resolve_hostname(self, ip):
-        """Reverse DNS lookup for an IP"""
+        """Reverse DNS lookup for an IP with timeout guard."""
         try:
-            hostname, _, _ = socket.gethostbyaddr(str(ip))
-            return hostname
-        except (socket.herror, socket.gaierror, OSError):
+            with eventlet.Timeout(1, False):
+                hostname, _, _ = socket.gethostbyaddr(str(ip))
+                return hostname
+        except Exception:
             return None
+        return None
     
     def scan_ports(self, ip, ports=None):
-        """Scan common ports on a host"""
+        """Scan common ports sequentially. No nested GreenPool."""
         if ports is None:
             ports = list(self.COMMON_PORTS.keys())
         
         open_ports = []
         for port in ports:
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.5)
-                result = sock.connect_ex((str(ip), port))
-                if result == 0:
-                    port_info = self.COMMON_PORTS.get(port, ('unknown', 'unknown'))
-                    open_ports.append({
-                        'port': port,
-                        'service': port_info[0],
-                        'device_type_hint': port_info[1]
-                    })
-                sock.close()
-            except (socket.timeout, OSError):
-                pass
+            if self._cancel_requested:
+                break
+            if self._tcp_connect(str(ip), port, timeout=0.5):
+                port_info = self.COMMON_PORTS.get(port, ('unknown', 'unknown'))
+                open_ports.append({
+                    'port': port,
+                    'service': port_info[0],
+                    'device_type_hint': port_info[1]
+                })
         
         return open_ports
     
@@ -119,45 +134,28 @@ class DeviceDiscovery:
         
         port_numbers = {p['port'] for p in open_ports}
         
-        # VMware
         if 902 in port_numbers:
             return 'vmware'
-        
-        # IP-PBX
         if 5060 in port_numbers or 5061 in port_numbers:
             return 'ippbx'
-        
-        # CCTV
         if 554 in port_numbers:
             return 'cctv'
-        
-        # Network equipment indicators
         if 161 in port_numbers and 23 in port_numbers:
             return 'router'
         if 179 in port_numbers:
             return 'router'
         if 161 in port_numbers:
             return 'switch'
-        
-        # DNS server
         if 53 in port_numbers:
             return 'dns'
-        
-        # Web server / website
         if 80 in port_numbers or 443 in port_numbers:
             if 3306 in port_numbers or 5432 in port_numbers:
                 return 'server'
             return 'website'
-        
-        # Database server
         if 3306 in port_numbers or 5432 in port_numbers:
             return 'server'
-        
-        # Windows desktop/server
         if 3389 in port_numbers:
             return 'server'
-        
-        # SSH server
         if 22 in port_numbers:
             return 'server'
         
@@ -176,46 +174,43 @@ class DeviceDiscovery:
         return 'ping'
     
     def _scan_single_host(self, ip):
-        """Scan a single IP address"""
-        ip_str = str(ip)
-        
-        # Step 1: Ping
-        is_alive = self.ping_host(ip_str)
-        self._scan_progress += 1
-        
-        if not is_alive:
+        """Scan a single IP. Never raises - returns None on error or cancel."""
+        if self._cancel_requested:
             return None
-        
-        # Step 2: Reverse DNS
-        hostname = self.resolve_hostname(ip_str)
-        
-        # Step 3: Port scan
-        open_ports = self.scan_ports(ip_str)
-        
-        # Step 4: Guess device type and monitor type
-        device_type = self.guess_device_type(open_ports)
-        monitor_type = self.guess_monitor_type(open_ports)
-        
-        return {
-            'ip_address': ip_str,
-            'hostname': hostname,
-            'name': hostname or ip_str,
-            'device_type': device_type,
-            'monitor_type': monitor_type,
-            'open_ports': open_ports,
-            'discovered_at': datetime.now().isoformat()
-        }
+        ip_str = str(ip)
+        try:
+            is_alive = self.check_host_alive(ip_str)
+            self._scan_progress += 1
+            
+            # Yield to event loop so Flask can serve requests
+            eventlet.sleep(0)
+            
+            if not is_alive or self._cancel_requested:
+                return None
+            
+            hostname = self.resolve_hostname(ip_str)
+            open_ports = self.scan_ports(ip_str)
+            
+            device_type = self.guess_device_type(open_ports)
+            monitor_type = self.guess_monitor_type(open_ports)
+            
+            return {
+                'ip_address': ip_str,
+                'hostname': hostname,
+                'name': hostname or ip_str,
+                'device_type': device_type,
+                'monitor_type': monitor_type,
+                'open_ports': open_ports,
+                'discovered_at': datetime.now().isoformat()
+            }
+        except Exception:
+            self._scan_progress += 1
+            return None
     
     def scan_subnet(self, subnet_str, skip_ips=None):
         """
         Scan an entire subnet for active hosts.
-        
-        Args:
-            subnet_str: CIDR notation subnet (e.g., "192.168.1.0/24")
-            skip_ips: Set of IPs to skip (already monitored)
-        
-        Returns:
-            List of discovered device dicts
+        Uses a single flat GreenPool - no nesting.
         """
         if self._is_scanning:
             return {'error': 'A scan is already running'}
@@ -225,34 +220,31 @@ class DeviceDiscovery:
         except ValueError as e:
             return {'error': f'Invalid subnet: {e}'}
         
-        # Get list of IPs to scan (skip network and broadcast)
         hosts = list(network.hosts())
-        
-        # Filter out already-monitored IPs
         skip_set = set(skip_ips or [])
         hosts_to_scan = [h for h in hosts if str(h) not in skip_set]
         
         self._is_scanning = True
+        self._cancel_requested = False
         self._scan_progress = 0
         self._scan_total = len(hosts_to_scan)
         self._scan_results = []
         
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = {executor.submit(self._scan_single_host, ip): ip for ip in hosts_to_scan}
-                
-                for future in concurrent.futures.as_completed(futures):
-                    try:
-                        result = future.result(timeout=30)
-                        if result:
-                            self._scan_results.append(result)
-                    except Exception:
-                        pass
+            pool = eventlet.GreenPool(self.max_workers)
+            for result in pool.imap(self._scan_single_host, hosts_to_scan):
+                if result:
+                    self._scan_results.append(result)
+                if self._cancel_requested:
+                    break
+            
+            self._scan_results.sort(
+                key=lambda d: ipaddress.ip_address(d['ip_address']))
+        except Exception:
+            pass
         finally:
             self._is_scanning = False
-        
-        # Sort by IP
-        self._scan_results.sort(key=lambda d: ipaddress.ip_address(d['ip_address']))
+            self._cancel_requested = False
         
         return {
             'success': True,

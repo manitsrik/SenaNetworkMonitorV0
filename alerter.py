@@ -196,6 +196,59 @@ This is an automated message from Network Monitor.
         else:
             return {'success': False, 'error': f"All attempts failed: {'; '.join(errors)}"}
     
+    def send_webhook(self, subject, message, device=None, event_type=None):
+        """
+        Send webhook notification via HTTP POST
+        Sends JSON payload to the configured webhook URL
+        Returns: dict with 'success' and 'error' (if failed)
+        """
+        try:
+            webhook_url = self._get_setting('webhook_url', '')
+            if not webhook_url:
+                return {'success': False, 'error': 'Webhook URL not configured'}
+
+            payload = {
+                'subject': subject,
+                'message': message,
+                'event_type': event_type or 'unknown',
+                'timestamp': datetime.now().isoformat(),
+                'source': 'NetMonitor'
+            }
+
+            if device:
+                payload['device'] = {
+                    'id': device.get('id'),
+                    'name': device.get('name', 'Unknown'),
+                    'ip_address': device.get('ip_address', ''),
+                    'device_type': device.get('device_type', ''),
+                    'status': device.get('status', '')
+                }
+
+            # Custom headers (optional)
+            webhook_secret = self._get_setting('webhook_secret', '')
+            headers = {'Content-Type': 'application/json'}
+            if webhook_secret:
+                headers['X-Webhook-Secret'] = webhook_secret
+
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
+
+            if response.status_code < 300:
+                return {'success': True}
+            else:
+                return {'success': False, 'error': f'HTTP {response.status_code}: {response.text[:200]}'}
+
+        except requests.exceptions.Timeout:
+            return {'success': False, 'error': 'Webhook request timed out'}
+        except requests.exceptions.ConnectionError as e:
+            return {'success': False, 'error': f'Connection error: {str(e)[:200]}'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
     def should_alert(self, device_id, event_type):
         """
         Check if we should send an alert (rate limiting and maintenance check)
@@ -343,5 +396,7 @@ This is an automated message from Network Monitor.
             return self.send_line_notify(f"🧪 Test Alert\n\n{test_message}")
         elif channel == 'telegram':
             return self.send_telegram(f"🧪 *Test Alert*\n\n{test_message}")
+        elif channel == 'webhook':
+            return self.send_webhook("🧪 Test Alert", test_message, event_type='test')
         else:
             return {'success': False, 'error': f'Unknown channel: {channel}'}

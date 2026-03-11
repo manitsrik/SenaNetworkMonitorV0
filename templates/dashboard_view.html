@@ -4,7 +4,15 @@
 
 {% block page_title %}<span id="dashboard-title">Loading...</span>{% endblock %}
 
-{% set active_page = 'dashboards' %}
+{% set active_page = 'dashboard_view' %}
+
+{% block header_actions %}
+{% if session.role == 'admin' %}
+<a href="/dashboard/{{ dashboard_id }}/edit" class="btn btn-xs btn-primary">
+    <i class="fa-solid fa-pen-to-square"></i> Edit Dashboard
+</a>
+{% endif %}
+{% endblock %}
 
 {% block head %}
 <style>
@@ -67,19 +75,11 @@
 {% endblock %}
 
 {% block content %}
-<div class="header-actions"
-    style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: start;">
-    <div>
-        <!-- Title is in header now, just description here if needed -->
-        <p id="dashboard-desc" class="text-muted"></p>
+<div class="dashboard-container" style="padding-top: 0.25rem;">
+    <p id="dashboard-desc" class="text-muted" style="display:none;"></p>
+    <div id="grid-canvas" class="grid-canvas">
+        <!-- Widgets will be loaded here -->
     </div>
-    <div class="text-muted" style="font-size: 0.875rem;">
-        <span class="status-dot online"></span> Live
-    </div>
-</div>
-
-<div id="grid-canvas" class="grid-canvas">
-    <!-- Widgets will be loaded here -->
 </div>
 
 <!-- Hidden Input for logic -->
@@ -183,19 +183,20 @@
         console.log('Connected to server');
     });
 
-    socket.on('status_update', (data) => {
-        // Re-fetch data and render
-        loadData().then(render);
-    });
+    let debounceTimer;
+    const debouncedReload = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => loadData().then(render), 800);
+    };
+
+    socket.on('status_update', debouncedReload);
 
     socket.on('statistics_update', (stats) => {
         currentData.stats = stats;
         render();
     });
 
-    socket.on('topology_updated', () => {
-        loadData().then(render);
-    });
+    socket.on('topology_updated', debouncedReload);
 
 </script>
 {% endblock %}

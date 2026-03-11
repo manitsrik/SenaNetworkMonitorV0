@@ -64,12 +64,18 @@
 
             // Setup Socket.IO for live updates
             const socket = io();
-            socket.on('status_update', () => loadData().then(render));
+            let debounceTimer;
+            const debouncedReload = () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => loadData().then(render), 800);
+            };
+
+            socket.on('status_update', debouncedReload);
             socket.on('statistics_update', (stats) => {
                 currentData.stats = stats;
                 render();
             });
-            socket.on('topology_updated', () => loadData().then(render));
+            socket.on('topology_updated', debouncedReload);
 
         } catch (error) {
             console.error('Error loading dashboard:', error);
@@ -85,9 +91,9 @@
     async function loadData() {
         try {
             const [devices, stats, topology] = await Promise.all([
-                fetch('/api/devices').then(r => r.json()),
-                fetch('/api/statistics').then(r => r.json()),
-                fetch('/api/topology').then(r => r.json())
+                fetch(`/api/devices?_t=${Date.now()}`).then(r => r.json()),
+                fetch(`/api/statistics?_t=${Date.now()}`).then(r => r.json()),
+                fetch(`/api/topology?_t=${Date.now()}`).then(r => r.json())
             ]);
             currentData = { devices, stats, connections: topology.connections };
         } catch (e) {

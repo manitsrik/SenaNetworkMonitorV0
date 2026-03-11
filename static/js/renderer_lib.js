@@ -307,11 +307,12 @@ window.DashboardRenderer = {
                 let angle = Math.PI + (Math.min(needleValue, GAUGE_MAX) / GAUGE_MAX) * Math.PI;
 
                 // Ticks and Labels
+                const isLight = document.documentElement.getAttribute('data-theme') === 'light';
                 const ticks = [0, 100, 250, 400, 500];
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = '600 11px Inter, sans-serif';
+                ctx.fillStyle = isLight ? '#64748b' : '#94a3b8'; // Adjusted for better contrast
+                ctx.font = '600 14px Inter, sans-serif';
 
                 ticks.forEach(t => {
                     const tAngle = Math.PI + (t / GAUGE_MAX) * Math.PI;
@@ -324,14 +325,14 @@ window.DashboardRenderer = {
                     ctx.beginPath();
                     ctx.moveTo(cx + Math.cos(tAngle) * innerRadius, cy + Math.sin(tAngle) * innerRadius);
                     ctx.lineTo(cx + Math.cos(tAngle) * (innerRadius - 6), cy + Math.sin(tAngle) * (innerRadius - 6));
-                    ctx.strokeStyle = '#cbd5e1';
+                    ctx.strokeStyle = isLight ? '#cbd5e1' : '#475569';
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 });
 
                 // Value Text (Centered below the needle axis)
-                ctx.font = '800 36px Inter, sans-serif';
-                ctx.fillStyle = '#1e293b';
+                ctx.font = '800 48px Inter, sans-serif';
+                ctx.fillStyle = isLight ? '#1e293b' : '#f8fafc';
                 ctx.textAlign = 'center';
                 ctx.fillText(needleValue.toFixed(2), cx, cy + 35);
 
@@ -354,8 +355,8 @@ window.DashboardRenderer = {
                 ctx.rotate(-angle);
                 ctx.beginPath();
                 ctx.arc(0, 0, 8, 0, Math.PI * 2);
-                ctx.fillStyle = '#1e293b';
-                ctx.strokeStyle = '#f1f5f9';
+                ctx.fillStyle = isLight ? '#1e293b' : '#f8fafc';
+                ctx.strokeStyle = isLight ? '#f1f5f9' : '#1e1b4b';
                 ctx.lineWidth = 2;
                 ctx.fill();
                 ctx.stroke();
@@ -441,7 +442,7 @@ window.DashboardRenderer = {
         listHeader.style.justifyContent = 'space-between';
         listHeader.style.alignItems = 'center';
         listHeader.style.marginBottom = '12px';
-        listHeader.innerHTML = '<span style="font-weight:700; font-size:0.95rem; color: #1e293b;">Top Slow Devices</span>';
+        listHeader.innerHTML = '<span style="font-weight:700; font-size:1.1rem; color: var(--text-primary);">Top Slow Devices</span>';
         listContainer.appendChild(listHeader);
 
         // Content
@@ -466,10 +467,10 @@ window.DashboardRenderer = {
                 return `
                     <div style="margin-bottom: 12px;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 6px; align-items: center;">
-                            <span style="font-weight:600; font-size:0.9rem; color: #334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${device.name}</span>
-                            <span style="font-weight:700; color: #d97706; font-size:0.9rem;">${time.toFixed(2)} ms</span>
+                            <span style="font-weight:600; font-size:1.0rem; color: var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${device.name}</span>
+                            <span style="font-weight:700; color: #d97706; font-size:1.0rem;">${time.toFixed(2)} ms</span>
                         </div>
-                        <div style="height: 6px; background: #f1f5f9; border-radius: 3px; position: relative;">
+                        <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; position: relative;">
                             <div style="height: 100%; width: ${percent}%; background: linear-gradient(90deg, #f59e0b, #d97706); border-radius: 3px;"></div>
                         </div>
                     </div>
@@ -504,7 +505,7 @@ window.DashboardRenderer = {
                 const time = parseFloat(device.response_time);
                 const percent = (time / maxTime) * 100;
                 return `
-                    <div style="margin-bottom: 0.5rem; font-size: 0.85rem;">
+                    <div style="margin-bottom: 0.5rem; font-size: 0.95rem;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                             <span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;" title="${device.name}">${device.name}</span>
                             <span style="color: var(--warning); font-weight:600;">${device.response_time} ms</span>
@@ -572,7 +573,7 @@ window.DashboardRenderer = {
                 <div class="stat-icon" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 50%; font-size: 1.5rem; flex-shrink: 0;">${icon}</div>
                 <div class="stat-content" style="display: flex; flex-direction: column; justify-content: center; min-width: 0;">
                     <div class="stat-value" style="font-size: 1.75rem; font-weight: 800; line-height: 1; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${value}</div>
-                    <div class="stat-label" style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">${label}</div>
+                    <div class="stat-label" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">${label}</div>
                 </div>
             </div>
         `;
@@ -705,13 +706,14 @@ window.DashboardRenderer = {
 
         const nodes = new vis.DataSet(
             (data.devices || []).map(device => {
-                // Remove color logic here as it is handled in SVG
+                const rt = device.response_time !== null && device.response_time !== undefined ? `${device.response_time} ms` : 'N/A';
                 return {
                     id: device.id,
                     label: device.name,
+                    title: `Device: ${device.name}\nStatus: ${device.status.toUpperCase()}\nLocation: ${device.location || 'N/A'}\nResponse: ${rt}`,
                     shape: 'circularImage',
                     image: this.getNodeSvgUrl(device.device_type, device.status),
-                    size: 400, // Increased 10x (from 40)
+                    size: 100, // Balanced size for many nodes
                     borderWidth: 0,
                     borderWidthSelected: 0,
                     color: { background: 'transparent', border: 'transparent' }
@@ -746,21 +748,29 @@ window.DashboardRenderer = {
         const options = {
             nodes: {
                 shape: 'circularImage',
-                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 100, face: 'Inter, sans-serif' }
+                font: { color: document.documentElement.getAttribute('data-theme') === 'light' ? '#0f172a' : '#f1f5f9', size: 30, face: 'Inter, sans-serif' }
             },
             physics: {
                 enabled: true,
-                solver: 'forceAtlas2Based',
-                forceAtlas2Based: {
-                    gravitationalConstant: -10000, // Stronger repulsion for huge nodes
-                    centralGravity: 0.005,
-                    springLength: 1200, // Significantly longer springs
-                    springConstant: 0.08,
+                solver: 'barnesHut',
+                barnesHut: {
+                    gravitationalConstant: -8000, 
+                    centralGravity: 0.3, // Updated per user request
+                    springLength: 250, // Updated per user request
+                    springConstant: 0.05,
+                    damping: 0.09,
                     avoidOverlap: 1
                 },
-                stabilization: { iterations: 150 }
+                stabilization: { 
+                    iterations: 5000,
+                    updateInterval: 100
+                }
             },
-            layout: { improvedLayout: true },
+            layout: { 
+                improvedLayout: true,
+                randomSeed: 2,
+                hierarchical: false
+            },
             interaction: { zoomView: true, dragView: true, hover: true },
             autoResize: true
         };
@@ -768,10 +778,44 @@ window.DashboardRenderer = {
 
         const network = new vis.Network(canvas, { nodes, edges }, options);
 
-        // Fit network to container when stabilization is done
-        network.on('stabilizationFinished', () => {
-            network.fit();
+        // Hover events for enlargement
+        network.on('hoverNode', (params) => {
+            nodes.update({
+                id: params.node,
+                size: 150,
+                font: { size: 50 }
+            });
+            canvas.style.cursor = 'pointer';
         });
+
+        network.on('blurNode', (params) => {
+            nodes.update({
+                id: params.node,
+                size: 100,
+                font: { size: 30 }
+            });
+            canvas.style.cursor = 'default';
+        });
+
+        // Fit network and stop physics when stabilization is done
+        const stopPhysics = () => {
+            if (network.stabilized) return;
+            console.log('Topology stabilized, locking physics.');
+            network.setOptions({ physics: false });
+            network.fit();
+            network.stabilized = true; // Flag to prevent re-fitting in updateTopology
+        };
+
+        network.on('stabilizationFinished', stopPhysics);
+        network.on('stabilizationIterationsDone', stopPhysics);
+
+        // Fallback: Force stop physics after 5 seconds
+        setTimeout(() => {
+            if (!network.stabilized) {
+                console.log('Physics fallback: Locking movement.');
+                stopPhysics();
+            }
+        }, 5000);
 
         this.instances[`network_${index}`] = network;
         this.instances[`nodes_${index}`] = nodes;
@@ -796,12 +840,14 @@ window.DashboardRenderer = {
 
         const nodeUpdates = validDevices.map(device => {
             newIds.add(device.id);
+            const rt = device.response_time !== null && device.response_time !== undefined ? `${device.response_time} ms` : 'N/A';
             return {
                 id: device.id,
                 label: device.name,
+                title: `Device: ${device.name}\nStatus: ${device.status.toUpperCase()}\nLocation: ${device.location || 'N/A'}\nResponse: ${rt}`,
                 shape: 'circularImage',
                 image: this.getNodeSvgUrl(device.device_type, device.status),
-                size: 400, // Consistency with 10x scale
+                size: 100,
                 color: { background: 'transparent', border: 'transparent' }
             };
         });
@@ -847,9 +893,8 @@ window.DashboardRenderer = {
         const edgesToRemove = [...currentEdgeIds].filter(id => !newEdgeIds.has(id));
         if (edgesToRemove.length > 0) edgesDS.remove(edgesToRemove);
 
-        // Keep fitted if content changed
-        if (network && (toRemove.length > 0 || edgesToRemove.length > 0 || nodeUpdates.length > 0)) {
-            // Give it a tiny bit of time for physics to react
+        // Only fit if NOT yet stabilized (initial load) or if nodes were removed/added significantly
+        if (network && !network.stabilized && (toRemove.length > 0 || edgesToRemove.length > 0 || nodeUpdates.length > 0)) {
             setTimeout(() => network.fit(), 200);
         }
     },
@@ -1092,7 +1137,7 @@ window.DashboardRenderer = {
     },
 
     renderResponseTrends: async function (container, widget, data, index) {
-        const currentRange = this.instances[`trend_range_${index}`] || 15;
+        const currentRange = this.instances[`trend_range_${index}`] || 60;
         this.instances[`trend_range_${index}`] = currentRange;
         this.instances[`widget_${index}`] = widget;
 
@@ -1108,11 +1153,11 @@ window.DashboardRenderer = {
 
             container.innerHTML = `
                 <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 10px; flex-shrink: 0;">
-                    ${[1, 15, 60].map(r => `
+                    ${[15, 60, 180].map(r => `
                         <button class="btn btn-sm ${currentRange === r ? 'btn-primary' : 'btn-outline-secondary'}" 
                                 style="padding: 2px 8px; font-size: 0.75rem;"
                                 onclick="window.DashboardRenderer.setTrendRange(${index}, ${r}, this)">
-                            ${r >= 60 ? '1h' : r + 'm'}
+                            ${r >= 180 ? '3h' : r >= 60 ? '1h' : r + 'm'}
                         </button>
                     `).join('')}
                 </div>
@@ -1127,8 +1172,11 @@ window.DashboardRenderer = {
         }
 
         try {
-            const requestMinutes = currentRange === 1 ? 3 : currentRange;
-            const response = await fetch(`/api/statistics/trend?minutes=${requestMinutes}`);
+            // Add margin to requested minutes to ensure we always get data even with monitoring gaps
+            let requestMinutes = currentRange;
+            if (currentRange <= 15) requestMinutes = 30;
+            else if (currentRange <= 60) requestMinutes = 90;
+            const response = await fetch(`/api/statistics/trend?minutes=${requestMinutes}&_t=${Date.now()}`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const trends = await response.json();
 
@@ -1136,62 +1184,128 @@ window.DashboardRenderer = {
             contentArea = document.getElementById(`trend-content-${index}`);
             if (!contentArea) return;
 
-            if (!trends || trends.length === 0) {
-                contentArea.innerHTML = '<div class="text-muted" style="font-size: 0.8rem;">No trend data available for this range.</div>';
-                if (this.instances[`chart_${index}`]) {
-                    this.instances[`chart_${index}`].destroy();
-                    delete this.instances[`chart_${index}`];
-                }
-                return;
+            // Optional: fallback to empty array if undefined
+            const safeTrends = trends || [];
+
+            // --- Added Padding Logic ---
+            const pointsToDisplay = 50;
+            const now = new Date();
+            const start = new Date(now.getTime() - currentRange * 60 * 1000);
+            const stepMs = (now.getTime() - start.getTime()) / pointsToDisplay;
+
+            const timeBuckets = [];
+            const isShortRange = currentRange <= 10;
+
+            // Generate exact 50 linear buckets for X-axis labels
+            for (let i = 0; i < pointsToDisplay; i++) {
+                const bucketTime = new Date(start.getTime() + (i * stepMs));
+                const isoString = new Date(bucketTime.getTime() - (bucketTime.getTimezoneOffset() * 60000)).toISOString();
+                const timeLabel = isShortRange ? isoString.substring(11, 19) : isoString.substring(11, 16);
+                timeBuckets.push({
+                    time: bucketTime.getTime(),
+                    label: timeLabel
+                });
             }
+            // ---------------------------
 
             const datasets = {};
-            const timestamps = new Set();
 
-            trends.forEach(item => {
+            // Ensure empty datasets for all types if no filter
+            if (!filterType) {
+                Object.keys(this.typeMetadata).forEach(type => {
+                    const meta = this.typeMetadata[type];
+                    datasets[type] = {
+                        label: meta.name,
+                        data: [], // Use empty array to store {x,y} points
+                        borderColor: meta.color,
+                        backgroundColor: meta.color + '20',
+                        borderWidth: 2,
+                        tension: 0, // Jagged look
+                        fill: true,
+                        pointRadius: 1, // Ensure single points are visible
+                        spanGaps: true // Span gaps across the true timeline
+                    };
+                });
+            } else {
+                const meta = this.typeMetadata[filterType] || this.typeMetadata['other'];
+                datasets[filterType] = {
+                    label: meta.name,
+                    data: [],
+                    borderColor: meta.color,
+                    backgroundColor: meta.color + '20',
+                    borderWidth: 2,
+                    tension: 0,
+                    fill: true,
+                    pointRadius: 1,
+                    spanGaps: true
+                };
+            }
+
+            // Fill with actual data using {x, y} coordinate mapping
+            safeTrends.forEach(item => {
                 const type = item.device_type || 'other';
                 if (filterType && type !== filterType) return;
-
-                let timeLabel = currentRange <= 10 ? item.timestamp.substring(11, 19) : item.timestamp.substring(11, 16);
-                timestamps.add(timeLabel);
 
                 if (!datasets[type]) {
                     const meta = this.typeMetadata[type] || this.typeMetadata['other'];
                     datasets[type] = {
                         label: meta.name,
-                        data: {},
+                        data: Array(pointsToDisplay).fill(null),
                         borderColor: meta.color,
                         backgroundColor: meta.color + '20',
                         borderWidth: 2,
-                        tension: 0.4,
+                        tension: 0,
                         fill: true,
-                        pointRadius: 0,
+                        pointRadius: 1,
                         spanGaps: true
                     };
                 }
-                datasets[type].data[timeLabel] = Math.round(item.avg_response_time);
+
+                // Parse "YYYY-MM-DD HH:MM:SS" manually to avoid browser timezone/ISO parsing bugs
+                const parts = item.timestamp.split(/[- :]/);
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1; // 0-indexed month
+                const day = parseInt(parts[2], 10);
+                const hours = parseInt(parts[3] || 0, 10);
+                const minutes = parseInt(parts[4] || 0, 10);
+                const seconds = parseInt(parts[5] || 0, 10);
+
+                // This guarantees the timestamp is treated as explicitly local Browser time, matching our X-axis bounds
+                const itemTime = new Date(year, month, day, hours, minutes, seconds).getTime();
+
+                // Only push points within our viewing window (allowing 5 mins grace for timezone slop)
+                if (itemTime >= start.getTime() - (5 * 60000)) {
+                    // Find closest matching label for categorical X-axis using strict math
+                    let closestIndex = Math.floor((itemTime - start.getTime()) / stepMs);
+
+                    // Clamp to valid array bounds (0 to 49)
+                    if (closestIndex < 0) closestIndex = 0;
+                    if (closestIndex >= pointsToDisplay) closestIndex = pointsToDisplay - 1;
+
+                    // Directly assign value to the mathematical array position instead of pushing categorical X strings
+                    datasets[type].data[closestIndex] = Math.round(item.avg_response_time);
+                }
             });
 
-            const sortedTimes = Array.from(timestamps).sort();
-            const chartDatasets = Object.values(datasets).map(ds => ({
-                ...ds,
-                data: sortedTimes.map(time => ds.data[time] || null)
-            }));
+            // Extract the labels
+            const sortedTimes = timeBuckets.map(b => b.label);
 
-            if (chartDatasets.length === 0) {
-                contentArea.innerHTML = `<div class="text-muted" style="font-size: 0.8rem;">No data found for ${filterType || 'selected filters'}.</div>`;
-                if (this.instances[`chart_${index}`]) {
-                    this.instances[`chart_${index}`].destroy();
-                    delete this.instances[`chart_${index}`];
-                }
-                return;
-            }
+            const chartDatasets = Object.values(datasets);
+
+
 
             const existingChart = this.instances[`chart_${index}`];
             if (existingChart && document.getElementById(`trend-chart-${index}`)) {
-                // Smooth update
+                // Smooth literal update for live WebSocket ticks
                 existingChart.data.labels = sortedTimes;
-                existingChart.data.datasets = chartDatasets;
+
+                // Deep mutation to force Chart.js to recognize array changes
+                existingChart.data.datasets.forEach((dataset, i) => {
+                    if (chartDatasets[i]) {
+                        dataset.data = chartDatasets[i].data;
+                    }
+                });
+
                 existingChart.update('none'); // Update without animation for continuous feel
             } else {
                 // Initial render or re-render

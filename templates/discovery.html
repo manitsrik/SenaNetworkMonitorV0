@@ -17,9 +17,13 @@
                     <label class="form-label">Subnet (CIDR)</label>
                     <input type="text" id="subnet-input" class="form-input" placeholder="e.g. 192.168.1.0/24" value="">
                 </div>
-                <div>
+                <div style="display: flex; gap: 0.5rem;">
                     <button id="scan-btn" class="btn btn-primary" onclick="startScan()">
                         <i class="fa-solid fa-play"></i> Start Scan
+                    </button>
+                    <button id="reset-btn" class="btn btn-secondary" onclick="forceResetScan()"
+                        title="Use this if the scanner gets stuck">
+                        <i class="fa-solid fa-rotate-right"></i> Force Reset
                     </button>
                 </div>
             </div>
@@ -205,27 +209,69 @@
         document.getElementById('results-card').style.display = 'none';
         document.getElementById('summary-card').style.display = 'none';
 
+        // Reset progress visually
+        document.getElementById('scan-progress-text').textContent = '0%';
+        document.getElementById('scan-progress-bar').style.width = '0%';
+        document.getElementById('scan-status-text').textContent = 'Starting scan...';
+
+        // Poll for progress indicator
+        const progressInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/discovery/status');
+                const status = await res.json();
+                if (status && status.is_scanning) {
+                    const percent = status.progress || 0;
+                    document.getElementById('scan-progress-text').textContent = percent + '%';
+                    document.getElementById('scan-progress-bar').style.width = percent + '%';
+                    document.getElementById('scan-status-text').textContent = `Scanning: ${status.scanned || 0} / ${status.total || 0} IPs`;
+                }
+            } catch (e) { }
+        }, 1000);
+
         try {
-            const response = await fetch('/api/discovery/scan', {
+            // Step 1: POST to start the background scan (returns immediately)
+            const startResp = await fetch('/api/discovery/scan', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ subnet: subnet })
             });
+            const startData = await startResp.json();
+            if (!startData.success) {
+                alert('Scan failed to start: ' + (startData.error || 'Unknown error'));
+                return;
+            }
 
-            const data = await response.json();
+            // Step 2: Wait until the background scan finishes by polling /status
+            document.getElementById('scan-status-text').textContent = 'Scan running...';
+            await new Promise((resolve) => {
+                const pollDone = setInterval(async () => {
+                    try {
+                        const res = await fetch('/api/discovery/status');
+                        const status = await res.json();
+                        if (!status.is_scanning) {
+                            clearInterval(pollDone);
+                            resolve();
+                        }
+                    } catch (e) { clearInterval(pollDone); resolve(); }
+                }, 1500);
+            });
 
+            // Step 3: Fetch the completed results
+            document.getElementById('scan-status-text').textContent = 'Loading results...';
+            const resultsResp = await fetch('/api/discovery/results');
+            const data = await resultsResp.json();
             if (data.success) {
                 discoveredDevices = data.devices || [];
-                renderResults(data);
+                renderResults({ total_scanned: data.discovered, total_skipped: 0, discovered: data.discovered });
             } else {
-                alert('Scan failed: ' + (data.error || 'Unknown error'));
+                alert('Could not fetch results: ' + (data.error || 'Unknown error'));
             }
         } catch (err) {
             alert('Error: ' + err.message);
         } finally {
+            clearInterval(progressInterval);
             btn.disabled = false;
             btn.innerHTML = '<i class="fa-solid fa-play"></i> Start Scan';
-
             document.getElementById('scan-progress-area').style.display = 'none';
         }
     }
@@ -344,6 +390,35 @@
             }
         } catch (err) {
             alert('Error: ' + err.message);
+        }
+    }
+
+    async function forceResetScan() {
+        if (!confirm('Are you sure you want to forcibly reset the scanner? Use this only if the scan is stuck.')) return;
+
+        try {
+            const btn = document.getElementById('reset-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting...';
+
+            const response = await fetch('/api/discovery/reset', { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success) {
+                alert('Success: ' + result.message);
+                // Reset UI state implicitly
+                document.getElementById('scan-btn').disabled = false;
+                document.getElementById('scan-btn').innerHTML = '<i class="fa-solid fa-play"></i> Start Scan';
+                document.getElementById('scan-progress-area').style.display = 'none';
+            } else {
+                alert('Failed to reset: ' + (result.error || 'Unknown error'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            const btn = document.getElementById('reset-btn');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Force Reset';
         }
     }
 </script>

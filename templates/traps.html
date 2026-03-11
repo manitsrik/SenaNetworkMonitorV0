@@ -1,0 +1,226 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - SNMP Traps{% endblock %}
+
+{% block page_title %}SNMP Traps{% endblock %}
+
+{% set active_page = 'traps' %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Stats Cards -->
+    <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="card" style="padding: 1rem; text-align: center;">
+            <div style="color: var(--text-muted); font-size: 0.875rem;">Total Traps</div>
+            <div id="stat-total" style="font-size: 1.8rem; font-weight: bold; color: var(--primary);">0</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+            <div style="color: var(--text-muted); font-size: 0.875rem;">🔴 Critical</div>
+            <div id="stat-critical" style="font-size: 1.8rem; font-weight: bold; color: var(--danger);">0</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+            <div style="color: var(--text-muted); font-size: 0.875rem;">⚠️ Warning</div>
+            <div id="stat-warning" style="font-size: 1.8rem; font-weight: bold; color: var(--warning, #f59e0b);">0</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+            <div style="color: var(--text-muted); font-size: 0.875rem;">📬 Unread</div>
+            <div id="stat-unack" style="font-size: 1.8rem; font-weight: bold; color: var(--info, #3b82f6);">0</div>
+        </div>
+    </div>
+
+    <!-- Actions & Filters -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Trap Log</h3>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-sm btn-primary" onclick="loadTraps()">🔄 Refresh</button>
+                <button class="btn btn-sm" style="background: var(--success); color: white;" onclick="ackAll()">✅ Ack
+                    All</button>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Filters -->
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: flex-end;">
+                <div style="flex: 1; min-width: 150px;">
+                    <label class="form-label">Severity</label>
+                    <select id="filter-severity" class="form-select" onchange="loadTraps()">
+                        <option value="">All</option>
+                        <option value="critical">🔴 Critical</option>
+                        <option value="warning">⚠️ Warning</option>
+                        <option value="info">ℹ️ Info</option>
+                    </select>
+                </div>
+                <div style="flex: 1; min-width: 150px;">
+                    <label class="form-label">Status</label>
+                    <select id="filter-ack" class="form-select" onchange="loadTraps()">
+                        <option value="">All</option>
+                        <option value="false">Unacknowledged</option>
+                        <option value="true">Acknowledged</option>
+                    </select>
+                </div>
+                <div style="flex: 2; min-width: 200px;">
+                    <label class="form-label">Source IP</label>
+                    <input type="text" id="filter-source" class="form-input" placeholder="e.g., 172.22.20.201"
+                        oninput="debounceLoad()">
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Source</th>
+                            <th>Device</th>
+                            <th>Trap</th>
+                            <th>Severity</th>
+                            <th>Details</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="traps-table-body">
+                        <tr>
+                            <td colspan="7" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                                Loading traps...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
+                <span id="trap-count" style="color: var(--text-muted); font-size: 0.875rem;">0 traps</span>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button id="prev-btn" class="btn btn-sm btn-secondary" onclick="prevPage()" disabled>← Prev</button>
+                    <span id="page-info" style="line-height: 2; color: var(--text-muted); font-size: 0.875rem;">Page
+                        1</span>
+                    <button id="next-btn" class="btn btn-sm btn-secondary" onclick="nextPage()" disabled>Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const PAGE_SIZE = 50;
+    let currentPage = 0;
+    let totalTraps = 0;
+    let debounceTimer = null;
+
+    function debounceLoad() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(loadTraps, 400);
+    }
+
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/traps/stats');
+            const stats = await res.json();
+            document.getElementById('stat-total').textContent = stats.total || 0;
+            document.getElementById('stat-critical').textContent = stats.critical || 0;
+            document.getElementById('stat-warning').textContent = stats.warning || 0;
+            document.getElementById('stat-unack').textContent = stats.unacknowledged || 0;
+        } catch (e) {
+            console.error('Failed to load stats:', e);
+        }
+    }
+
+    async function loadTraps() {
+        const severity = document.getElementById('filter-severity').value;
+        const ack = document.getElementById('filter-ack').value;
+        const source = document.getElementById('filter-source').value.trim();
+
+        let url = `/api/traps?limit=${PAGE_SIZE}&offset=${currentPage * PAGE_SIZE}`;
+        if (severity) url += `&severity=${severity}`;
+        if (ack) url += `&acknowledged=${ack}`;
+        if (source) url += `&source_ip=${encodeURIComponent(source)}`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            totalTraps = data.total;
+            renderTraps(data.traps);
+            updatePagination();
+            loadStats();
+        } catch (e) {
+            console.error('Failed to load traps:', e);
+        }
+    }
+
+    function renderTraps(traps) {
+        const tbody = document.getElementById('traps-table-body');
+        if (!traps.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+            No traps found</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = traps.map(t => {
+            const time = t.received_at ? new Date(t.received_at).toLocaleString() : '';
+            const sevColors = { critical: 'var(--danger)', warning: 'var(--warning, #f59e0b)', info: 'var(--info, #3b82f6)' };
+            const sevIcons = { critical: '🔴', warning: '⚠️', info: 'ℹ️' };
+            const ackClass = t.acknowledged ? 'opacity: 0.5;' : '';
+
+            let details = '';
+            if (t.varbinds) {
+                try {
+                    const vb = JSON.parse(t.varbinds);
+                    details = vb.slice(0, 2).map(v => `${v.oid}: ${v.value}`).join('<br>');
+                    if (vb.length > 2) details += `<br><small>+${vb.length - 2} more</small>`;
+                } catch (e) { details = ''; }
+            }
+
+            return `<tr style="${ackClass}">
+            <td style="white-space: nowrap; font-size: 0.85rem;">${time}</td>
+            <td><code>${t.source_ip}</code></td>
+            <td>${t.device_name || '-'}</td>
+            <td style="font-weight: 500;">${t.trap_name || t.trap_oid || '-'}</td>
+            <td><span style="color: ${sevColors[t.severity] || 'var(--text)'}; font-weight: 600;">
+                ${sevIcons[t.severity] || ''} ${t.severity}</span></td>
+            <td style="font-size: 0.8rem; max-width: 250px; overflow: hidden;">${details}</td>
+            <td style="white-space: nowrap;">
+                ${!t.acknowledged ? `<button class="btn btn-sm btn-primary" onclick="ackTrap(${t.id})" title="Acknowledge">✅</button>` : '<span style="color: var(--text-muted);">✓</span>'}
+                <button class="btn btn-sm" style="background: var(--danger); color: white; margin-left: 0.25rem;" onclick="deleteTrap(${t.id})" title="Delete">🗑</button>
+            </td>
+        </tr>`;
+        }).join('');
+    }
+
+    function updatePagination() {
+        const totalPages = Math.ceil(totalTraps / PAGE_SIZE);
+        document.getElementById('trap-count').textContent = `${totalTraps} traps`;
+        document.getElementById('page-info').textContent = `Page ${currentPage + 1}/${Math.max(1, totalPages)}`;
+        document.getElementById('prev-btn').disabled = currentPage === 0;
+        document.getElementById('next-btn').disabled = (currentPage + 1) >= totalPages;
+    }
+
+    function prevPage() { if (currentPage > 0) { currentPage--; loadTraps(); } }
+    function nextPage() { currentPage++; loadTraps(); }
+
+    async function ackTrap(id) {
+        await fetch(`/api/traps/${id}/ack`, { method: 'POST' });
+        loadTraps();
+    }
+
+    async function ackAll() {
+        if (!confirm('Acknowledge all traps?')) return;
+        await fetch('/api/traps/ack-all', { method: 'POST' });
+        loadTraps();
+    }
+
+    async function deleteTrap(id) {
+        if (!confirm('Delete this trap?')) return;
+        await fetch(`/api/traps/${id}`, { method: 'DELETE' });
+        loadTraps();
+    }
+
+    // Initial load + auto-refresh
+    loadTraps();
+    setInterval(loadTraps, 15000);
+</script>
+{% endblock %}

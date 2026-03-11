@@ -365,6 +365,8 @@ function handleSubTopoFullscreenChange() {
 // Socket.IO for Live Updates
 // ========================================
 function setupSocketListeners() {
+    let debounceTimer;
+
     socket.on('status_update', (data) => {
         if (!subTopoData) return;
         const device = subTopoData.devices.find(d => d.id === data.id);
@@ -406,7 +408,10 @@ function setupSocketListeners() {
             }
         });
 
-        updateStats();
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            updateStats();
+        }, 300);
     });
 }
 

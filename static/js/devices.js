@@ -261,6 +261,13 @@ function showAddDeviceModal() {
     document.getElementById('snmp-community').value = 'public';
     document.getElementById('snmp-port').value = '161';
     document.getElementById('snmp-version').value = '2c';
+    // Reset SNMP v3 fields
+    document.getElementById('snmp-v3-username').value = '';
+    document.getElementById('snmp-v3-auth-protocol').value = 'SHA';
+    document.getElementById('snmp-v3-auth-password').value = '';
+    document.getElementById('snmp-v3-priv-protocol').value = 'AES128';
+    document.getElementById('snmp-v3-priv-password').value = '';
+    document.getElementById('snmp-v3-settings').style.display = 'none';
     // Reset TCP port to default
     document.getElementById('tcp-port').value = '80';
     // Reset DNS query domain to default
@@ -302,6 +309,7 @@ function updateIPFieldLabel() {
         ipInput.removeAttribute('pattern');
         ipHint.textContent = 'Enter IP address for SNMP monitoring';
         snmpSettings.style.display = 'block';
+        updateSnmpVersionFields();
     } else if (monitorType === 'tcp') {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
@@ -328,6 +336,21 @@ function closeDeviceModal() {
     editingDeviceId = null;
 }
 
+// Toggle SNMP v3 fields based on selected version
+function updateSnmpVersionFields() {
+    const snmpVersion = document.getElementById('snmp-version').value;
+    const v3Settings = document.getElementById('snmp-v3-settings');
+    const communityField = document.getElementById('snmp-community').closest('.form-group');
+
+    if (snmpVersion === '3') {
+        v3Settings.style.display = 'block';
+        if (communityField) communityField.style.display = 'none';
+    } else {
+        v3Settings.style.display = 'none';
+        if (communityField) communityField.style.display = 'block';
+    }
+}
+
 // Edit device
 async function editDevice(deviceId) {
     try {
@@ -349,6 +372,13 @@ async function editDevice(deviceId) {
             document.getElementById('snmp-community').value = device.snmp_community || 'public';
             document.getElementById('snmp-port').value = device.snmp_port || 161;
             document.getElementById('snmp-version').value = device.snmp_version || '2c';
+
+            // Load SNMP v3 settings
+            document.getElementById('snmp-v3-username').value = device.snmp_v3_username || '';
+            document.getElementById('snmp-v3-auth-protocol').value = device.snmp_v3_auth_protocol || 'SHA';
+            document.getElementById('snmp-v3-auth-password').value = device.snmp_v3_auth_password || '';
+            document.getElementById('snmp-v3-priv-protocol').value = device.snmp_v3_priv_protocol || 'AES128';
+            document.getElementById('snmp-v3-priv-password').value = device.snmp_v3_priv_password || '';
 
             // Load TCP port
             document.getElementById('tcp-port').value = device.tcp_port || 80;
@@ -412,6 +442,15 @@ async function saveDevice(event) {
             deviceData.snmp_community = getElementValue('snmp-community', 'public');
             deviceData.snmp_port = parseInt(getElementValue('snmp-port', '161')) || 161;
             deviceData.snmp_version = getElementValue('snmp-version', '2c');
+
+            // Add SNMP v3 settings if v3 is selected
+            if (deviceData.snmp_version === '3') {
+                deviceData.snmp_v3_username = getElementValue('snmp-v3-username', '');
+                deviceData.snmp_v3_auth_protocol = getElementValue('snmp-v3-auth-protocol', 'SHA');
+                deviceData.snmp_v3_auth_password = getElementValue('snmp-v3-auth-password', '');
+                deviceData.snmp_v3_priv_protocol = getElementValue('snmp-v3-priv-protocol', 'AES128');
+                deviceData.snmp_v3_priv_password = getElementValue('snmp-v3-priv-password', '');
+            }
         }
 
         // Add TCP port if TCP monitor type is selected
@@ -528,8 +567,10 @@ function setupSocketListeners() {
         console.log('Connected to server');
     });
 
+    let debounceTimer;
     socket.on('status_update', (data) => {
-        console.log('Status update:', data);
+        // Prevent console spam
+        // console.log('Status update:', data);
 
         // Update graph in real-time if modal is open
         if (currentGraphDeviceId === data.id) {
@@ -544,7 +585,11 @@ function setupSocketListeners() {
             allDevices[deviceIndex].last_check = data.last_check;
         }
 
-        filterDevices(); // Re-render table with updated status
+        // Debounce table re-rendering
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            filterDevices(); // Re-render table with updated status
+        }, 500);
     });
 
     socket.on('device_deleted', (data) => {
@@ -592,6 +637,9 @@ async function showSnmpDetails(deviceId) {
                 </p>
             `;
 
+            // Load custom OIDs
+            loadCustomOids(deviceId);
+
             modal.classList.add('active');
         }
     } catch (error) {
@@ -604,6 +652,158 @@ async function showSnmpDetails(deviceId) {
 function closeSnmpModal() {
     document.getElementById('snmp-modal').classList.remove('active');
     currentSnmpDeviceId = null;
+}
+
+// ============================================================================
+// Custom SNMP OID Functions
+// ============================================================================
+
+// Load custom OIDs for a device
+async function loadCustomOids(deviceId) {
+    const container = document.getElementById('custom-oids-container');
+    try {
+        const response = await fetch(`/api/snmp/${deviceId}/custom-oids`);
+        const data = await response.json();
+
+        if (!data.oids || data.oids.length === 0) {
+            container.innerHTML = `
+                <p style="color: var(--text-muted); text-align: center; padding: 0.75rem; font-size: 0.85rem;">
+                    No custom OIDs configured. Click "Add OID" to get started.
+                </p>`;
+            return;
+        }
+
+        let html = `
+            <table style="width: 100%; font-size: 0.85rem;">
+                <thead>
+                    <tr style="background: var(--glass-bg);">
+                        <th style="padding: 0.5rem; text-align: left;">Name</th>
+                        <th style="padding: 0.5rem; text-align: left;">OID</th>
+                        <th style="padding: 0.5rem; text-align: right;">Value</th>
+                        <th style="padding: 0.5rem; text-align: center;">Updated</th>
+                        <th style="padding: 0.5rem; text-align: center; width: 40px;"></th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        data.oids.forEach(oid => {
+            const lastChecked = oid.last_checked ? formatDateTime(oid.last_checked) : 'Never';
+            const valueDisplay = oid.last_value !== null && oid.last_value !== undefined
+                ? `${oid.last_value}${oid.unit ? ' ' + oid.unit : ''}`
+                : '<span style="color: var(--text-muted);">—</span>';
+
+            html += `
+                <tr style="border-bottom: 1px solid var(--glass-border);">
+                    <td style="padding: 0.5rem;"><strong>${oid.name}</strong></td>
+                    <td style="padding: 0.5rem;"><code style="font-size: 0.8rem;">${oid.oid}</code></td>
+                    <td style="padding: 0.5rem; text-align: right; font-weight: 600;">${valueDisplay}</td>
+                    <td style="padding: 0.5rem; text-align: center; color: var(--text-muted); font-size: 0.8rem;">${lastChecked}</td>
+                    <td style="padding: 0.5rem; text-align: center;">
+                        <button class="btn btn-sm btn-danger" style="padding: 0.15rem 0.35rem; font-size: 0.75rem;" onclick="deleteCustomOid(${oid.id})" title="Delete">
+                            🗑️
+                        </button>
+                    </td>
+                </tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (error) {
+        console.error('Error loading custom OIDs:', error);
+        container.innerHTML = '<p style="color: var(--danger); text-align: center; padding: 0.5rem;">Error loading custom OIDs</p>';
+    }
+}
+
+// Toggle add OID form
+function toggleAddOidForm() {
+    const form = document.getElementById('add-oid-form');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    if (form.style.display === 'block') {
+        document.getElementById('new-oid-value').focus();
+    }
+}
+
+// Add a custom OID
+async function addCustomOid() {
+    if (!currentSnmpDeviceId) return;
+
+    const oid = document.getElementById('new-oid-value').value.trim();
+    const name = document.getElementById('new-oid-name').value.trim();
+    const unit = document.getElementById('new-oid-unit').value.trim();
+
+    if (!oid || !name) {
+        alert('OID and Name are required.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/snmp/${currentSnmpDeviceId}/custom-oids`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ oid, name, unit })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            document.getElementById('new-oid-value').value = '';
+            document.getElementById('new-oid-name').value = '';
+            document.getElementById('new-oid-unit').value = '';
+            document.getElementById('add-oid-form').style.display = 'none';
+            loadCustomOids(currentSnmpDeviceId);
+        } else {
+            alert('Error: ' + (result.error || 'Failed to add OID'));
+        }
+    } catch (error) {
+        console.error('Error adding custom OID:', error);
+        alert('Error adding OID.');
+    }
+}
+
+// Delete a custom OID
+async function deleteCustomOid(oidId) {
+    if (!confirm('Delete this custom OID?')) return;
+
+    try {
+        const response = await fetch(`/api/snmp/custom-oids/${oidId}`, { method: 'DELETE' });
+        const result = await response.json();
+        if (result.success) {
+            loadCustomOids(currentSnmpDeviceId);
+        } else {
+            alert('Error deleting OID.');
+        }
+    } catch (error) {
+        console.error('Error deleting custom OID:', error);
+        alert('Error deleting OID.');
+    }
+}
+
+// Query all custom OIDs (live SNMP query)
+async function queryCustomOids() {
+    if (!currentSnmpDeviceId) return;
+
+    const btn = document.getElementById('query-oids-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Querying...';
+
+    try {
+        const response = await fetch(`/api/snmp/${currentSnmpDeviceId}/custom-oids/query`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.results && data.results.length > 0) {
+            // Reload to show updated values
+            loadCustomOids(currentSnmpDeviceId);
+        } else {
+            alert(data.message || 'No custom OIDs to query.');
+        }
+    } catch (error) {
+        console.error('Error querying custom OIDs:', error);
+        alert('Error querying OIDs.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Query All';
+    }
 }
 
 // ============================================================================
@@ -775,7 +975,7 @@ function formatBytes(bytes) {
 let currentGraphDeviceId = null;
 let responseTimeChart = null;
 let graphHistoryData = [];
-const MAX_GRAPH_POINTS = 50;
+let currentGraphMinutes = 60;
 const SLOW_THRESHOLD = 500; // ms
 
 // Show device graph modal
@@ -797,6 +997,19 @@ async function showDeviceGraph(deviceId) {
 
     // Show modal
     document.getElementById('graph-modal').classList.add('active');
+
+    // Highlight the correct period button based on currentGraphMinutes
+    const modal = document.getElementById('graph-modal');
+    modal.querySelectorAll('.period-btn').forEach(btn => {
+        const onclickAttr = btn.getAttribute('onclick');
+        if (onclickAttr && onclickAttr.includes(`setGraphPeriod(${currentGraphMinutes},`)) {
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-primary');
+        } else {
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-outline-secondary');
+        }
+    });
 
     // Load history and create chart
     await loadGraphHistory(deviceId);
@@ -828,19 +1041,64 @@ function updateGraphCurrentStatus(device) {
 // Load graph history data
 async function loadGraphHistory(deviceId) {
     try {
-        const response = await fetch(`/api/devices/${deviceId}/history?limit=${MAX_GRAPH_POINTS}`);
+        // Fetch sampled data (50 points) for the selected minutes
+        const response = await fetch(`/api/devices/${deviceId}/history?minutes=${currentGraphMinutes}&sample=50&limit=3000`);
         const history = await response.json();
 
-        // Reverse to get chronological order (oldest first)
-        graphHistoryData = history.reverse().map(h => ({
-            time: new Date(h.checked_at),
-            value: h.response_time
-        }));
+        // Sort chronologically by time, stripping Flask's naive GMT assignment
+        graphHistoryData = history.map(h => {
+            let timeStr = h.checked_at;
+            if (typeof timeStr === 'string' && timeStr.endsWith(' GMT')) {
+                timeStr = timeStr.replace(' GMT', '');
+            }
+            return {
+                time: new Date(timeStr),
+                value: h.response_time
+            };
+        }).sort((a, b) => a.time - b.time);
 
         updateGraphStatistics();
     } catch (error) {
         console.error('Error loading graph history:', error);
         graphHistoryData = [];
+    }
+}
+
+/**
+ * Set the graph period by updating the minutes and refreshing data
+ * @param {number} minutes - Number of minutes to fetch
+ * @param {HTMLElement} btn - The button that was clicked
+ */
+async function setGraphPeriod(minutes, btn) {
+    currentGraphMinutes = minutes;
+
+    // Update button styles
+    const modal = document.getElementById('graph-modal');
+    modal.querySelectorAll('.period-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-primary');
+
+    // Update button styles as before...
+    if (currentGraphDeviceId) {
+        await loadGraphHistory(currentGraphDeviceId);
+        if (responseTimeChart) {
+            const chartData = graphHistoryData.map(d => ({
+                x: d.time,
+                y: d.value
+            }));
+            responseTimeChart.data.datasets[0].data = chartData;
+
+            // Sync X-axis range
+            const now = new Date();
+            const start = new Date(now.getTime() - currentGraphMinutes * 60 * 1000);
+            responseTimeChart.options.scales.x.min = start;
+            responseTimeChart.options.scales.x.max = now;
+
+            responseTimeChart.update();
+        }
     }
 }
 
@@ -857,32 +1115,29 @@ function createResponseTimeChart() {
     }
 
     // Prepare data
-    const labels = graphHistoryData.map(d => formatGraphTime(d.time));
-    const values = graphHistoryData.map(d => d.value);
+    const chartData = graphHistoryData.map(d => ({
+        x: d.time,
+        y: d.value
+    }));
 
     // Create chart
     responseTimeChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
             datasets: [{
                 label: 'Response Time (ms)',
-                data: values,
-                borderColor: 'rgba(96, 165, 250, 1)',
-                backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                data: chartData,
+                borderColor: 'rgba(245, 158, 11, 1)', // Orange
+                backgroundColor: 'rgba(245, 158, 11, 0.4)', // Semi-transparent orange
                 borderWidth: 2,
                 fill: true,
-                tension: 0.3,
-                pointRadius: 3,
+                tension: 0, // sharp edges (jagged style)
+                spanGaps: true,
+                pointRadius: 0, // hide points for a cleaner look
                 pointHoverRadius: 6,
-                pointBackgroundColor: function (context) {
-                    const value = context.raw;
-                    if (value === null) return 'rgba(239, 68, 68, 1)';
-                    if (value > SLOW_THRESHOLD) return 'rgba(251, 191, 36, 1)';
-                    return 'rgba(34, 197, 94, 1)';
-                },
+                pointBackgroundColor: 'rgba(245, 158, 11, 1)',
                 pointBorderColor: 'white',
-                pointBorderWidth: 1
+                pointBorderWidth: 2
             }]
         },
         options: {
@@ -895,8 +1150,8 @@ function createResponseTimeChart() {
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            const value = context.raw;
-                            if (value === null) return 'DOWN';
+                            const value = context.raw?.y;
+                            if (value === null || value === undefined) return 'DOWN';
                             return `${value} ms`;
                         }
                     }
@@ -922,6 +1177,16 @@ function createResponseTimeChart() {
             },
             scales: {
                 x: {
+                    type: 'time',
+                    min: new Date(new Date().getTime() - currentGraphMinutes * 60 * 1000),
+                    max: new Date(),
+                    time: {
+                        unit: 'minute',
+                        tooltipFormat: 'PPp', // date-fns format for tooltips
+                        displayFormats: {
+                            minute: 'HH:mm'
+                        }
+                    },
                     display: true,
                     title: {
                         display: true,
@@ -961,13 +1226,6 @@ function createResponseTimeChart() {
     });
 }
 
-// Format time for graph labels
-function formatGraphTime(date) {
-    return date.toLocaleTimeString('th-TH', {
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
 
 // Update graph statistics
 function updateGraphStatistics() {
@@ -1002,14 +1260,23 @@ function addGraphDataPoint(deviceId, responseTime, timestamp) {
         value: responseTime
     });
 
-    // Keep only last MAX_GRAPH_POINTS
-    if (graphHistoryData.length > MAX_GRAPH_POINTS) {
-        graphHistoryData.shift();
-    }
+    // Ensure array is strictly monotonically sorted by time for Chart.js
+    graphHistoryData.sort((a, b) => a.time - b.time);
+
+    // Keep only data within the requested time range
+    const cutoff = new Date(new Date().getTime() - currentGraphMinutes * 60 * 1000);
+    graphHistoryData = graphHistoryData.filter(d => d.time >= cutoff);
+
+    // Update chart data and bounds
+    const now = new Date();
+    responseTimeChart.options.scales.x.min = cutoff;
+    responseTimeChart.options.scales.x.max = now;
 
     // Update chart
-    responseTimeChart.data.labels = graphHistoryData.map(d => formatGraphTime(d.time));
-    responseTimeChart.data.datasets[0].data = graphHistoryData.map(d => d.value);
+    responseTimeChart.data.datasets[0].data = graphHistoryData.map(d => ({
+        x: d.time,
+        y: d.value
+    }));
     responseTimeChart.update('none');
 
     // Update statistics

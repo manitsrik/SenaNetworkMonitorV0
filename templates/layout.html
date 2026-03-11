@@ -91,6 +91,18 @@
                     <i class="fa-solid fa-file-contract"></i>
                     <span>SLA Reports</span>
                 </a>
+                <a href="/traps" class="nav-item {% if active_page == 'traps' %}active{% endif %}">
+                    <i class="fa-solid fa-bell"></i>
+                    <span>SNMP Traps</span>
+                </a>
+                <a href="/syslog" class="nav-item {% if active_page == 'syslog' %}active{% endif %}">
+                    <i class="fa-solid fa-list-check"></i>
+                    <span>Syslog</span>
+                </a>
+                <a href="/bandwidth" class="nav-item {% if active_page == 'bandwidth' %}active{% endif %}">
+                    <i class="fa-solid fa-chart-area"></i>
+                    <span>Bandwidth</span>
+                </a>
 
                 <div class="menu-label">System</div>
                 <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">

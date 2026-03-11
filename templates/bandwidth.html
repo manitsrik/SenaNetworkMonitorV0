@@ -1,0 +1,600 @@
+{% extends "layout.html" %}
+
+{% block title %}Bandwidth Monitor — NetMonitor{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<style>
+    .bw-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.25rem;
+        margin-bottom: 1.25rem;
+    }
+
+    @media (max-width: 900px) {
+        .bw-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .bw-card {
+        background: var(--card-bg);
+        border-radius: 14px;
+        border: 1px solid var(--border-color);
+        padding: 1.25rem 1.5rem;
+    }
+
+    .bw-card.full {
+        grid-column: 1 / -1;
+    }
+
+    .bw-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        margin-bottom: 1.25rem;
+    }
+
+    .bw-toolbar select,
+    .bw-toolbar button {
+        padding: 0.45rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+
+    .bw-toolbar button.primary {
+        background: var(--primary);
+        color: #fff;
+        border-color: var(--primary);
+    }
+
+    .bw-toolbar button.primary:hover {
+        opacity: 0.85;
+    }
+
+    .stat-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+        flex-wrap: wrap;
+    }
+
+    .stat-box {
+        flex: 1 1 120px;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .stat-box .stat-val {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary);
+    }
+
+    .stat-box .stat-lbl {
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 280px;
+    }
+
+    table.bw-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .bw-table th {
+        text-align: left;
+        padding: 0.5rem 0.75rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .bw-table td {
+        padding: 0.55rem 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .bw-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .bw-table tr:hover td {
+        background: rgba(99, 102, 241, 0.06);
+    }
+
+    .util-bar-wrap {
+        width: 100%;
+        background: var(--border-color);
+        border-radius: 4px;
+        height: 6px;
+        overflow: hidden;
+    }
+
+    .util-bar-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.4s;
+    }
+
+    .badge-in {
+        color: #22c55e;
+        font-weight: 600;
+    }
+
+    .badge-out {
+        color: #f97316;
+        font-weight: 600;
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 3rem;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .no-data i {
+        font-size: 2.5rem;
+        margin-bottom: 0.75rem;
+        display: block;
+        opacity: 0.4;
+    }
+
+    .refresh-badge {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-left: auto;
+    }
+
+    .bw-card-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block page_title %}Bandwidth Monitor{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom:1.25rem;">
+    <div>
+        <h1 style="font-size:1.5rem;font-weight:700;margin:0">Bandwidth Monitor</h1>
+        <p style="color:var(--text-secondary);margin:0.25rem 0 0;font-size:0.875rem">
+            SNMP interface traffic — polling every 60 seconds
+        </p>
+    </div>
+</div>
+
+<!-- Toolbar -->
+<div class="bw-toolbar">
+    <select id="deviceSelect" onchange="onDeviceChange()">
+        <option value="">— Select Device —</option>
+    </select>
+    <select id="interfaceSelect" onchange="onInterfaceChange()">
+        <option value="">All Interfaces</option>
+    </select>
+    <select id="timeRange">
+        <option value="30">Last 30 min</option>
+        <option value="60" selected>Last 1 hour</option>
+        <option value="180">Last 3 hours</option>
+        <option value="360">Last 6 hours</option>
+        <option value="1440">Last 24 hours</option>
+    </select>
+    <button class="primary" onclick="refreshAll()"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+    <button onclick="triggerPoll()" id="pollBtn" title="Force an SNMP poll now">
+        <i class="fa-solid fa-bolt"></i> Poll Now
+    </button>
+    <span class="refresh-badge" id="lastRefresh">—</span>
+</div>
+
+<!-- Summary stats -->
+<div class="stat-row" id="statRow" style="display:none">
+    <div class="stat-box">
+        <div class="stat-val" id="statMaxIn">—</div>
+        <div class="stat-lbl">Peak In (bps)</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-val" id="statMaxOut">—</div>
+        <div class="stat-lbl">Peak Out (bps)</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-val" id="statAvgIn">—</div>
+        <div class="stat-lbl">Avg In (bps)</div>
+    </div>
+    <div class="stat-box">
+        <div class="stat-val" id="statAvgOut">—</div>
+        <div class="stat-lbl">Avg Out (bps)</div>
+    </div>
+</div>
+
+<!-- Charts + Table -->
+<div class="bw-grid">
+    <!-- In/Out chart -->
+    <div class="bw-card full">
+        <div class="bw-card-title">
+            <i class="fa-solid fa-chart-area" style="color:var(--primary)"></i>
+            Traffic — In / Out
+        </div>
+        <div class="chart-container">
+            <canvas id="bwChart"></canvas>
+        </div>
+        <div id="noChartData" class="no-data" style="display:none">
+            <i class="fa-solid fa-chart-area"></i>
+            No data yet. Select an SNMP device and wait for the first poll (≈60 sec),
+            or click <strong>Poll Now</strong>.
+        </div>
+    </div>
+
+    <!-- Interfaces summary -->
+    <div class="bw-card full">
+        <div class="bw-card-title">
+            <i class="fa-solid fa-list" style="color:var(--primary)"></i>
+            Interface Summary
+        </div>
+        <div id="ifTableWrap">
+            <div class="no-data">
+                <i class="fa-solid fa-server"></i>
+                Select an SNMP device to view interface traffic.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top consumers (global) -->
+<div class="bw-card" style="margin-bottom:1.25rem">
+    <div class="bw-card-title">
+        <i class="fa-solid fa-ranking-star" style="color:var(--primary)"></i>
+        Top Active Interfaces (All Devices — Last 5 min)
+    </div>
+    <div id="topTableWrap">
+        <div class="no-data"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading…</div>
+    </div>
+</div>
+
+<script>
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+    function fmtBps(bps) {
+        if (bps === null || bps === undefined || isNaN(bps)) return '—';
+        if (bps >= 1e9) return (bps / 1e9).toFixed(2) + ' Gbps';
+        if (bps >= 1e6) return (bps / 1e6).toFixed(2) + ' Mbps';
+        if (bps >= 1e3) return (bps / 1e3).toFixed(1) + ' Kbps';
+        return Math.round(bps) + ' bps';
+    }
+
+    function fmtUtil(u) {
+        if (u === null || u === undefined) return '—';
+        return parseFloat(u).toFixed(1) + '%';
+    }
+
+    function utilColor(u) {
+        if (!u) return 'var(--primary)';
+        const n = parseFloat(u);
+        if (n >= 80) return '#ef4444';
+        if (n >= 50) return '#f97316';
+        return '#22c55e';
+    }
+
+    // ── Chart ────────────────────────────────────────────────────────────────────
+    let bwChart = null;
+
+    function initChart() {
+        const ctx = document.getElementById('bwChart').getContext('2d');
+        bwChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'In (bps)',
+                        data: [],
+                        borderColor: '#22c55e',
+                        backgroundColor: 'rgba(34,197,94,0.08)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'Out (bps)',
+                        data: [],
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249,115,22,0.08)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        fill: true,
+                        tension: 0.3,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { tooltipFormat: 'HH:mm:ss', displayFormats: { minute: 'HH:mm', hour: 'HH:mm' } },
+                        ticks: { color: 'var(--text-secondary)', maxTicksLimit: 10 },
+                        grid: { color: 'rgba(128,128,128,0.1)' }
+                    },
+                    y: {
+                        ticks: {
+                            color: 'var(--text-secondary)',
+                            callback: v => fmtBps(v)
+                        },
+                        grid: { color: 'rgba(128,128,128,0.1)' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: 'var(--text-primary)' } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => `${ctx.dataset.label}: ${fmtBps(ctx.parsed.y)}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateChart(history) {
+        const canvas = document.getElementById('bwChart');
+        const noData = document.getElementById('noChartData');
+
+        // Group by if_index → pick earliest if multi-interface (or all if specific)
+        const pts_in = [], pts_out = [];
+        history.forEach(r => {
+            const t = new Date(r.sampled_at);
+            if (r.bps_in !== null && r.bps_in !== undefined)
+                pts_in.push({ x: t, y: r.bps_in });
+            if (r.bps_out !== null && r.bps_out !== undefined)
+                pts_out.push({ x: t, y: r.bps_out });
+        });
+
+        if (!pts_in.length && !pts_out.length) {
+            canvas.style.display = 'none';
+            noData.style.display = '';
+            return;
+        }
+        canvas.style.display = '';
+        noData.style.display = 'none';
+
+        bwChart.data.datasets[0].data = pts_in;
+        bwChart.data.datasets[1].data = pts_out;
+        bwChart.update('none');
+
+        // Update stat cards
+        const statRow = document.getElementById('statRow');
+        statRow.style.display = '';
+        const allIn = pts_in.map(p => p.y).filter(v => v != null);
+        const allOut = pts_out.map(p => p.y).filter(v => v != null);
+        document.getElementById('statMaxIn').textContent = fmtBps(Math.max(...allIn, 0));
+        document.getElementById('statMaxOut').textContent = fmtBps(Math.max(...allOut, 0));
+        const avgIn = allIn.reduce((a, b) => a + b, 0) / (allIn.length || 1);
+        const avgOut = allOut.reduce((a, b) => a + b, 0) / (allOut.length || 1);
+        document.getElementById('statAvgIn').textContent = fmtBps(avgIn);
+        document.getElementById('statAvgOut').textContent = fmtBps(avgOut);
+    }
+
+    // ── Interface Table ───────────────────────────────────────────────────────────
+    function renderIfTable(interfaces) {
+        const wrap = document.getElementById('ifTableWrap');
+        if (!interfaces.length) {
+            wrap.innerHTML = '<div class="no-data"><i class="fa-solid fa-server"></i>No interface data yet. Wait for first poll or click Poll Now.</div>';
+            return;
+        }
+        let html = `<table class="bw-table">
+    <thead><tr>
+      <th>#</th><th>Interface</th>
+      <th><span class="badge-in">▼ In</span></th>
+      <th><span class="badge-out">▲ Out</span></th>
+      <th>Speed</th>
+      <th>Util In</th>
+      <th>Util Out</th>
+    </tr></thead><tbody>`;
+        interfaces.forEach(i => {
+            const uIn = parseFloat(i.util_in || 0);
+            const uOut = parseFloat(i.util_out || 0);
+            html += `<tr>
+      <td>${i.if_index}</td>
+      <td>${i.if_name || '—'}</td>
+      <td class="badge-in">${fmtBps(i.bps_in)}</td>
+      <td class="badge-out">${fmtBps(i.bps_out)}</td>
+      <td>${fmtBps(i.if_speed)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="util-bar-wrap" style="width:80px">
+            <div class="util-bar-fill" style="width:${Math.min(uIn, 100)}%;background:${utilColor(uIn)}"></div>
+          </div>
+          ${fmtUtil(uIn)}
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="util-bar-wrap" style="width:80px">
+            <div class="util-bar-fill" style="width:${Math.min(uOut, 100)}%;background:${utilColor(uOut)}"></div>
+          </div>
+          ${fmtUtil(uOut)}
+        </div>
+      </td>
+    </tr>`;
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+    }
+
+    // ── Top Consumers Table ───────────────────────────────────────────────────────
+    function renderTopTable(top) {
+        const wrap = document.getElementById('topTableWrap');
+        if (!top.length) {
+            wrap.innerHTML = '<div class="no-data"><i class="fa-solid fa-chart-area"></i>No bandwidth data yet. Add an SNMP device and wait for polling.</div>';
+            return;
+        }
+        let html = `<table class="bw-table">
+    <thead><tr>
+      <th>Device</th><th>Interface</th>
+      <th><span class="badge-in">▼ Avg In</span></th>
+      <th><span class="badge-out">▲ Avg Out</span></th>
+      <th>Peak In</th><th>Peak Out</th>
+      <th>Util In</th><th>Util Out</th>
+    </tr></thead><tbody>`;
+        top.forEach(r => {
+            html += `<tr>
+      <td><strong>${r.device_name}</strong><br><small style="color:var(--text-secondary)">${r.ip_address}</small></td>
+      <td>${r.if_name || 'if' + r.if_index}</td>
+      <td class="badge-in">${fmtBps(r.avg_bps_in)}</td>
+      <td class="badge-out">${fmtBps(r.avg_bps_out)}</td>
+      <td>${fmtBps(r.max_bps_in)}</td>
+      <td>${fmtBps(r.max_bps_out)}</td>
+      <td>${fmtUtil(r.avg_util_in)}</td>
+      <td>${fmtUtil(r.avg_util_out)}</td>
+    </tr>`;
+        });
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+    }
+
+    // ── API Calls ─────────────────────────────────────────────────────────────────
+    async function loadDevices() {
+        const res = await fetch('/api/bandwidth/devices');
+        const data = await res.json();
+        const sel = document.getElementById('deviceSelect');
+        sel.innerHTML = '<option value="">— Select Device —</option>';
+        (data.devices || []).forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = `${d.name} (${d.ip_address})`;
+            sel.appendChild(opt);
+        });
+        if (!data.devices || !data.devices.length) {
+            sel.innerHTML = '<option value="">No SNMP devices found</option>';
+        }
+    }
+
+    async function loadInterfaces(deviceId) {
+        const sel = document.getElementById('interfaceSelect');
+        sel.innerHTML = '<option value="">All Interfaces</option>';
+        if (!deviceId) return;
+        const res = await fetch(`/api/bandwidth/interfaces?device_id=${deviceId}`);
+        const data = await res.json();
+        (data.interfaces || []).forEach(i => {
+            const opt = document.createElement('option');
+            opt.value = i.if_index;
+            opt.textContent = `if${i.if_index} — ${i.if_name}`;
+            sel.appendChild(opt);
+        });
+        renderIfTable(data.interfaces || []);
+    }
+
+    async function loadHistory(deviceId, ifIndex, minutes) {
+        let url = `/api/bandwidth/history?device_id=${deviceId}&minutes=${minutes}`;
+        if (ifIndex) url += `&if_index=${ifIndex}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        updateChart(data.history || []);
+    }
+
+    async function loadTop() {
+        const res = await fetch('/api/bandwidth/current');
+        const data = await res.json();
+        renderTopTable(data.top_interfaces || []);
+    }
+
+    async function refreshAll() {
+        const deviceId = document.getElementById('deviceSelect').value;
+        const ifIndex = document.getElementById('interfaceSelect').value;
+        const minutes = parseInt(document.getElementById('timeRange').value);
+
+        await loadTop();
+
+        if (deviceId) {
+            await loadInterfaces(deviceId);
+            await loadHistory(deviceId, ifIndex, minutes);
+        }
+
+        document.getElementById('lastRefresh').textContent =
+            'Last refresh: ' + new Date().toLocaleTimeString();
+    }
+
+    async function triggerPoll() {
+        const deviceId = document.getElementById('deviceSelect').value;
+        if (!deviceId) { alert('Please select a device first.'); return; }
+        const btn = document.getElementById('pollBtn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Polling…';
+        try {
+            const res = await fetch('/api/bandwidth/poll', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: parseInt(deviceId) })
+            });
+            const data = await res.json();
+            if (data.success) {
+                // Poll runs in background — wait 8s for SNMP GETBULK to finish (4 columns × ~2s each)
+                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Waiting for data…';
+                setTimeout(() => {
+                    refreshAll();
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Poll Now';
+                }, 8000);
+            } else {
+                alert('Poll failed: ' + (data.error || 'unknown error'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Poll Now';
+            }
+        } catch (e) {
+            alert('Poll request failed: ' + e);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Poll Now';
+        }
+    }
+    function onDeviceChange() {
+        const deviceId = document.getElementById('deviceSelect').value;
+        document.getElementById('interfaceSelect').innerHTML = '<option value="">All Interfaces</option>';
+        document.getElementById('statRow').style.display = 'none';
+        if (deviceId) {
+            loadInterfaces(deviceId);
+            const minutes = parseInt(document.getElementById('timeRange').value);
+            loadHistory(deviceId, '', minutes);
+        }
+    }
+
+    function onInterfaceChange() {
+        const deviceId = document.getElementById('deviceSelect').value;
+        const ifIndex = document.getElementById('interfaceSelect').value;
+        const minutes = parseInt(document.getElementById('timeRange').value);
+        if (deviceId) loadHistory(deviceId, ifIndex, minutes);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', async () => {
+        initChart();
+        await loadDevices();
+        await loadTop();
+
+        // Auto-refresh every 60s
+        setInterval(refreshAll, 60000);
+    });
+</script>
+{% endblock %}

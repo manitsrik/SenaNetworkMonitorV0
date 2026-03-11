@@ -11,7 +11,8 @@ from .alerts import alerts_bp
 from .users import users_bp
 from .sla import sla_bp
 from .maintenance import maintenance_bp
-from .discovery import discovery_bp
+from .traps import traps_bp
+from .bandwidth import bandwidth_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -24,4 +25,6 @@ ALL_BLUEPRINTS = [
     sla_bp,
     maintenance_bp,
     discovery_bp,
+    traps_bp,
+    bandwidth_bp,
 ]

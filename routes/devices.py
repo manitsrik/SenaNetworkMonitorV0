@@ -46,6 +46,11 @@ def add_device():
         snmp_community=data.get('snmp_community', 'public'),
         snmp_port=data.get('snmp_port', 161),
         snmp_version=data.get('snmp_version', '2c'),
+        snmp_v3_username=data.get('snmp_v3_username'),
+        snmp_v3_auth_protocol=data.get('snmp_v3_auth_protocol', 'SHA'),
+        snmp_v3_auth_password=data.get('snmp_v3_auth_password'),
+        snmp_v3_priv_protocol=data.get('snmp_v3_priv_protocol', 'AES128'),
+        snmp_v3_priv_password=data.get('snmp_v3_priv_password'),
         tcp_port=data.get('tcp_port', 80),
         dns_query_domain=data.get('dns_query_domain', 'google.com'),
         location_type=data.get('location_type', 'on-premise')
@@ -76,6 +81,11 @@ def update_device(device_id):
         snmp_community=data.get('snmp_community'),
         snmp_port=data.get('snmp_port'),
         snmp_version=data.get('snmp_version'),
+        snmp_v3_username=data.get('snmp_v3_username'),
+        snmp_v3_auth_protocol=data.get('snmp_v3_auth_protocol'),
+        snmp_v3_auth_password=data.get('snmp_v3_auth_password'),
+        snmp_v3_priv_protocol=data.get('snmp_v3_priv_protocol'),
+        snmp_v3_priv_password=data.get('snmp_v3_priv_password'),
         tcp_port=data.get('tcp_port'),
         dns_query_domain=data.get('dns_query_domain'),
         location_type=data.get('location_type')
@@ -122,7 +132,12 @@ def get_snmp_interfaces(device_id):
         device['ip_address'],
         device.get('snmp_community', 'public'),
         device.get('snmp_port', 161),
-        device.get('snmp_version', '2c')
+        device.get('snmp_version', '2c'),
+        snmp_v3_username=device.get('snmp_v3_username'),
+        snmp_v3_auth_protocol=device.get('snmp_v3_auth_protocol', 'SHA'),
+        snmp_v3_auth_password=device.get('snmp_v3_auth_password'),
+        snmp_v3_priv_protocol=device.get('snmp_v3_priv_protocol', 'AES128'),
+        snmp_v3_priv_password=device.get('snmp_v3_priv_password')
     )
     
     return jsonify({
@@ -130,6 +145,90 @@ def get_snmp_interfaces(device_id):
         'device_name': device['name'],
         'interfaces': interfaces
     })
+
+
+# ============================================================================
+# Custom SNMP OID Routes
+# ============================================================================
+
+@devices_bp.route('/api/snmp/<int:device_id>/custom-oids', methods=['GET'])
+def get_custom_oids(device_id):
+    """Get all custom OIDs for a device"""
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    oids = db.get_custom_oids(device_id)
+    return jsonify({'device_id': device_id, 'oids': oids})
+
+
+@devices_bp.route('/api/snmp/<int:device_id>/custom-oids', methods=['POST'])
+@operator_required
+def add_custom_oid(device_id):
+    """Add a custom OID for a device"""
+    data = request.json
+    if not data.get('oid') or not data.get('name'):
+        return jsonify({'success': False, 'error': 'OID and Name are required'}), 400
+    
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    
+    result = db.add_custom_oid(
+        device_id=device_id,
+        oid=data['oid'].strip(),
+        name=data['name'].strip(),
+        unit=data.get('unit', '').strip()
+    )
+    if result['success']:
+        return jsonify(result), 201
+    return jsonify(result), 400
+
+
+@devices_bp.route('/api/snmp/custom-oids/<int:oid_id>', methods=['DELETE'])
+@operator_required
+def delete_custom_oid(oid_id):
+    """Delete a custom OID"""
+    result = _get_db().delete_custom_oid(oid_id)
+    return jsonify(result)
+
+
+@devices_bp.route('/api/snmp/<int:device_id>/custom-oids/query', methods=['POST'])
+@operator_required
+def query_custom_oids(device_id):
+    """Query all custom OIDs for a device (live SNMP query)"""
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    
+    oids = db.get_custom_oids(device_id)
+    if not oids:
+        return jsonify({'results': [], 'message': 'No custom OIDs configured'})
+    
+    oid_list = [{'id': o['id'], 'oid': o['oid'], 'name': o['name'],
+                 'unit': o.get('unit', '')} for o in oids]
+    
+    monitor = _get_monitor()
+    results = monitor.query_custom_oids(
+        device['ip_address'],
+        device.get('snmp_community', 'public'),
+        device.get('snmp_port', 161),
+        device.get('snmp_version', '2c'),
+        snmp_v3_username=device.get('snmp_v3_username'),
+        snmp_v3_auth_protocol=device.get('snmp_v3_auth_protocol', 'SHA'),
+        snmp_v3_auth_password=device.get('snmp_v3_auth_password'),
+        snmp_v3_priv_protocol=device.get('snmp_v3_priv_protocol', 'AES128'),
+        snmp_v3_priv_password=device.get('snmp_v3_priv_password'),
+        oid_list=oid_list
+    )
+    
+    # Update last values in DB
+    for r in results:
+        db.update_custom_oid_value(r['id'], r.get('value', ''))
+    
+    return jsonify({'device_id': device_id, 'results': results})
 
 
 @devices_bp.route('/api/check/<int:device_id>', methods=['POST'])
@@ -167,6 +266,7 @@ def export_devices_csv():
     fieldnames = [
         'name', 'ip_address', 'device_type', 'location', 'location_type',
         'monitor_type', 'snmp_community', 'snmp_port', 'snmp_version',
+        'snmp_v3_username', 'snmp_v3_auth_protocol', 'snmp_v3_priv_protocol',
         'tcp_port', 'dns_query_domain', 'expected_status_code'
     ]
     

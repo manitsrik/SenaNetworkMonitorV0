@@ -7,6 +7,11 @@ class Config:
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     
+    # Server settings
+    SERVER_HOST = os.environ.get('SERVER_HOST') or '0.0.0.0'
+    SERVER_PORT = int(os.environ.get('SERVER_PORT') or 5000)
+    DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
+    
     # Database settings
     DB_TYPE = os.environ.get('DB_TYPE') or 'postgresql'  # 'sqlite' or 'postgresql'
     DATABASE_PATH = 'network_monitor.db'  # SQLite fallback path
@@ -19,10 +24,15 @@ class Config:
     PG_USER = os.environ.get('PG_USER') or 'netmonitor'
     PG_PASSWORD = os.environ.get('PG_PASSWORD') or 'netmonitor_password'
     
+    # Connection Pool settings (PostgreSQL only)
+    PG_POOL_MIN = int(os.environ.get('PG_POOL_MIN') or 2)
+    PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 25)  # Must exceed MONITOR_MAX_WORKERS + API headroom
+    
     # Monitoring settings
     PING_INTERVAL = 30  # seconds between ping checks
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
+    MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 20)  # parallel workers
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = 'threading'
@@ -44,7 +54,9 @@ class Config:
     SNMP_TIMEOUT = 5  # seconds to wait for SNMP response
     SNMP_DEFAULT_COMMUNITY = 'public'  # default community string
     SNMP_DEFAULT_PORT = 161  # default SNMP port
-    SNMP_DEFAULT_VERSION = '2c'  # default SNMP version (1, 2c)
+    SNMP_DEFAULT_VERSION = '2c'  # default SNMP version (1, 2c, 3)
+    SNMP_V3_DEFAULT_AUTH_PROTOCOL = 'SHA'  # SHA or MD5
+    SNMP_V3_DEFAULT_PRIV_PROTOCOL = 'AES128'  # AES128 or DES
     
     # TCP Port Check settings
     TCP_TIMEOUT = 10  # seconds to wait for TCP connection (industry standard: 10-30s)

@@ -28,31 +28,103 @@
                 <option value="99.99">99.99%</option>
             </select>
             <button class="btn btn-primary btn-sm" onclick="loadSlaData()">🔄 Refresh</button>
+            <div style="border-left: 1px solid var(--border-color); margin: 0 0.5rem; height: 1.5rem;"></div>
+            <button class="btn btn-secondary btn-sm" onclick="exportSLA('csv')"
+                style="color: var(--success); border-color: var(--success); background-color: transparent;">📥
+                CSV</button>
+            <button class="btn btn-secondary btn-sm" onclick="exportSLA('pdf')"
+                style="color: var(--danger); border-color: var(--danger); background-color: transparent;">🖨️
+                PDF</button>
         </div>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-5 mb-2" id="summary-cards">
-        <div class="stat-card">
-            <div class="stat-value" id="avg-uptime">-</div>
-            <div class="stat-label">Average Uptime</div>
+    <!-- Summary Cards (Grid Layout) -->
+    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Statistics
+        Summary</div>
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 1rem;"
+        id="summary-cards">
+
+        <!-- Average Uptime -->
+        <div class="stat-card"
+            style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-bottom: 3px solid var(--success); display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: var(--radius-md);">
+            <div class="stat-icon"
+                style="width: 45px; height: 45px; border-radius: 50%; font-size: 1.25rem; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i class="fa-solid fa-square-check"
+                    style="color: var(--success); background: white; padding: 0.1rem; border-radius: 4px;"></i>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2;"
+                    id="avg-uptime">-</div>
+                <div
+                    style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+                    Network Uptime</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value" id="total-devices">0</div>
-            <div class="stat-label">Total Devices</div>
+
+        <!-- Total Devices -->
+        <div class="stat-card"
+            style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-bottom: 3px solid var(--info); display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: var(--radius-md);">
+            <div class="stat-icon"
+                style="width: 45px; height: 45px; border-radius: 50%; font-size: 1.25rem; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i class="fa-solid fa-desktop" style="color: var(--text-primary);"></i>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2;"
+                    id="total-devices">0</div>
+                <div
+                    style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+                    Online Devices</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value" id="sla-met" style="color: var(--success);">0</div>
-            <div class="stat-label">✅ SLA Met</div>
+
+        <!-- SLA Met (Repurposed for Latency visually) -->
+        <div class="stat-card"
+            style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-bottom: 3px solid var(--primary); display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: var(--radius-md);">
+            <div class="stat-icon"
+                style="width: 45px; height: 45px; border-radius: 50%; font-size: 1.25rem; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i class="fa-solid fa-bolt" style="color: #f59e0b;"></i>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2;"
+                    id="sla-met">0</div>
+                <div
+                    style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+                    SLA Met</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value" id="sla-warning" style="color: var(--warning);">0</div>
-            <div class="stat-label">⚠️ Warning</div>
+
+        <!-- Warning -->
+        <div class="stat-card"
+            style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-bottom: 3px solid var(--warning); display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: var(--radius-md);">
+            <div class="stat-icon"
+                style="width: 45px; height: 45px; border-radius: 50%; font-size: 1.25rem; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i class="fa-solid fa-triangle-exclamation" style="color: var(--warning);"></i>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2;"
+                    id="sla-warning">0</div>
+                <div
+                    style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+                    Warning</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <div class="stat-value" id="sla-breached" style="color: var(--danger);">0</div>
-            <div class="stat-label">❌ Breached</div>
+
+        <!-- Breached -->
+        <div class="stat-card"
+            style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-bottom: 3px solid var(--danger); display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: var(--radius-md);">
+            <div class="stat-icon"
+                style="width: 45px; height: 45px; border-radius: 50%; font-size: 1.25rem; background-color: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+                <div style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary); line-height: 1.2;"
+                    id="sla-breached">0</div>
+                <div
+                    style="font-size: 0.65rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">
+                    Breached</div>
+            </div>
         </div>
+
     </div>
 
     <!-- SLA Table -->
@@ -124,6 +196,18 @@
                         Error loading SLA data
                     </td></tr>
                 `;
+        }
+    }
+
+    function exportSLA(format) {
+        const days = document.getElementById('sla-period').value;
+        const target = document.getElementById('sla-target').value;
+
+        if (format === 'csv') {
+            window.location.href = `/api/sla/export/csv?days=${days}&target=${target}`;
+        } else if (format === 'pdf') {
+            // Open print page in a new window/tab
+            window.open(`/sla/export/print?days=${days}&target=${target}`, '_blank');
         }
     }
 

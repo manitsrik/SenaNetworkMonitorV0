@@ -11,11 +11,14 @@ try:
     import psycopg2
     import psycopg2.extras
     import psycopg2.errors
+    import psycopg2.pool
     PG_AVAILABLE = True
 except ImportError:
     PG_AVAILABLE = False
 
 class Database:
+    _pool = None  # Class-level pool (shared across instances)
+    
     def __init__(self, db_path=None):
         self.db_type = Config.DB_TYPE
         self.db_path = db_path or Config.DATABASE_PATH
@@ -24,11 +27,34 @@ class Database:
             print("[WARNING] psycopg2 not installed, falling back to SQLite")
             self.db_type = 'sqlite'
         
+        # Initialize connection pool for PostgreSQL
+        if self.db_type == 'postgresql' and Database._pool is None:
+            try:
+                Database._pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=Config.PG_POOL_MIN,
+                    maxconn=Config.PG_POOL_MAX,
+                    host=Config.PG_HOST,
+                    port=Config.PG_PORT,
+                    dbname=Config.PG_DATABASE,
+                    user=Config.PG_USER,
+                    password=Config.PG_PASSWORD
+                )
+                print(f"[DB] Connection pool created (min={Config.PG_POOL_MIN}, max={Config.PG_POOL_MAX})")
+            except Exception as e:
+                print(f"[WARNING] Failed to create connection pool: {e}, falling back to SQLite")
+                self.db_type = 'sqlite'
+                Database._pool = None
+        
         self.init_db()
     
     def get_connection(self):
-        """Get database connection"""
-        if self.db_type == 'postgresql':
+        """Get database connection (from pool for PostgreSQL)"""
+        if self.db_type == 'postgresql' and Database._pool:
+            conn = Database._pool.getconn()
+            conn.autocommit = False
+            return conn
+        elif self.db_type == 'postgresql':
+            # Fallback: direct connection if pool not available
             conn = psycopg2.connect(
                 host=Config.PG_HOST,
                 port=Config.PG_PORT,
@@ -44,6 +70,31 @@ class Database:
             conn.execute('PRAGMA journal_mode=WAL')
             return conn
     
+    def release_connection(self, conn):
+        """Return connection to pool (PostgreSQL) or close it (SQLite)"""
+        if conn is None:
+            return
+        if self.db_type == 'postgresql' and Database._pool:
+            try:
+                Database._pool.putconn(conn)
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        else:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    
+    def close_pool(self):
+        """Close all connections in the pool (call on shutdown)"""
+        if Database._pool:
+            Database._pool.closeall()
+            Database._pool = None
+            print("[DB] Connection pool closed")
+    
     def _cursor(self, conn):
         """Get appropriate cursor"""
         if self.db_type == 'postgresql':
@@ -51,12 +102,26 @@ class Database:
         return conn.cursor()
     
     def _row_to_dict(self, row):
-        """Convert a row to dict"""
+        """Convert a row to dict and serialize datetimes"""
         if row is None:
             return None
+            
+        result = {}
         if isinstance(row, dict):
-            return row
-        return dict(row)
+            for k, v in row.items():
+                if isinstance(v, datetime):
+                    result[k] = v.isoformat()
+                else:
+                    result[k] = v
+            return result
+            
+        for k in row.keys():
+            v = row[k]
+            if isinstance(v, datetime):
+                result[k] = v.isoformat()
+            else:
+                result[k] = v
+        return result
     
     def _rows_to_dicts(self, rows):
         """Convert rows to list of dicts"""
@@ -101,6 +166,11 @@ class Database:
                 snmp_community TEXT DEFAULT 'public',
                 snmp_port INTEGER DEFAULT 161,
                 snmp_version TEXT DEFAULT '2c',
+                snmp_v3_username TEXT,
+                snmp_v3_auth_protocol TEXT DEFAULT 'SHA',
+                snmp_v3_auth_password TEXT,
+                snmp_v3_priv_protocol TEXT DEFAULT 'AES128',
+                snmp_v3_priv_password TEXT,
                 snmp_uptime TEXT,
                 snmp_sysname TEXT,
                 snmp_sysdescr TEXT,
@@ -117,6 +187,27 @@ class Database:
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
+        
+        # Migration: Add SNMP v3 columns to existing devices table
+        snmp_v3_columns = [
+            ('snmp_v3_username', 'TEXT'),
+            ('snmp_v3_auth_protocol', "TEXT DEFAULT 'SHA'"),
+            ('snmp_v3_auth_password', 'TEXT'),
+            ('snmp_v3_priv_protocol', "TEXT DEFAULT 'AES128'"),
+            ('snmp_v3_priv_password', 'TEXT'),
+        ]
+        for col_name, col_type in snmp_v3_columns:
+            try:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+                    conn.commit()
+                else:
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+            except Exception:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                # Column already exists — ignore
         
         # Topology table
         cursor.execute(f'''
@@ -254,6 +345,89 @@ class Database:
                 FOREIGN KEY (connected_to) REFERENCES devices(id)
             )
         ''')
+        # Custom SNMP OIDs table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS custom_oids (
+                id {pk},
+                device_id INTEGER NOT NULL,
+                oid TEXT NOT NULL,
+                name TEXT NOT NULL,
+                unit TEXT DEFAULT '',
+                last_value TEXT,
+                last_checked TIMESTAMP,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
+                UNIQUE(device_id, oid)
+            )
+        ''')
+        
+        # Job execution history table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS job_history (
+                id {pk},
+                job_id TEXT NOT NULL,
+                job_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                duration_seconds REAL,
+                result_summary TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT {timestamp_default}
+            )
+        ''')
+        
+        # SNMP Traps table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS snmp_traps (
+                id {pk},
+                source_ip TEXT NOT NULL,
+                device_id INTEGER,
+                device_name TEXT,
+                trap_oid TEXT,
+                trap_name TEXT,
+                severity TEXT DEFAULT 'info',
+                varbinds TEXT,
+                raw_data TEXT,
+                received_at TIMESTAMP DEFAULT {timestamp_default},
+                acknowledged INTEGER DEFAULT 0
+            )
+        ''')
+        
+        # Syslog Messages table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS syslog_messages (
+                id {pk},
+                source_ip TEXT NOT NULL,
+                device_id INTEGER,
+                device_name TEXT,
+                facility INTEGER,
+                severity INTEGER,
+                program TEXT,
+                message TEXT,
+                received_at TIMESTAMP DEFAULT {timestamp_default}
+            )
+        ''')
+        
+        # Bandwidth History table -- SNMP interface counter samples
+        bigint_type = 'BIGINT' if self.db_type == 'postgresql' else 'INTEGER'
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS bandwidth_history (
+                id          {pk},
+                device_id   INTEGER NOT NULL,
+                if_index    INTEGER NOT NULL,
+                if_name     TEXT,
+                bytes_in    {bigint_type},
+                bytes_out   {bigint_type},
+                bps_in      REAL,
+                bps_out     REAL,
+                if_speed    {bigint_type},
+                util_in     REAL,
+                util_out    REAL,
+                sampled_at  TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
         
         # Create default users if not exists
         from werkzeug.security import generate_password_hash
@@ -284,12 +458,36 @@ class Database:
                 VALUES ({self._ph(4)})
             ''', ('viewer', generate_password_hash('viewer'), 'viewer', 'Viewer User'))
         
+        # =========================================================================
+        # Performance Indexes
+        # =========================================================================
+        
+        # status_history indexes (critical for time-series queries)
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sh_checked_at ON status_history(checked_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sh_device_checked ON status_history(device_id, checked_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sh_device_status ON status_history(device_id, status, checked_at)')
+        
+        # alert_history indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ah_device_event ON alert_history(device_id, event_type, created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_ah_created_at ON alert_history(created_at)')
+        
+        # devices indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(device_type)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)')
+        
+        # bandwidth_history indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_device_sampled ON bandwidth_history(device_id, sampled_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_sampled_at ON bandwidth_history(sampled_at)')
+        
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
     
     def add_device(self, name, ip_address, device_type=None, location=None, 
                    monitor_type='ping', expected_status_code=200,
                    snmp_community='public', snmp_port=161, snmp_version='2c',
+                   snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
+                   snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
+                   snmp_v3_priv_password=None,
                    tcp_port=80, dns_query_domain='google.com', location_type='on-premise'):
         """Add a new device"""
         conn = self.get_connection()
@@ -304,37 +502,51 @@ class Database:
                 cursor.execute('''
                     INSERT INTO devices (name, ip_address, device_type, location, 
                                        monitor_type, expected_status_code,
-                                       snmp_community, snmp_port, snmp_version, tcp_port,
-                                       dns_query_domain, location_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       snmp_community, snmp_port, snmp_version,
+                                       snmp_v3_username, snmp_v3_auth_protocol,
+                                       snmp_v3_auth_password, snmp_v3_priv_protocol,
+                                       snmp_v3_priv_password,
+                                       tcp_port, dns_query_domain, location_type)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
-                      snmp_community, snmp_port, snmp_version, tcp_port, dns_query_domain,
+                      snmp_community, snmp_port, snmp_version,
+                      snmp_v3_username, snmp_v3_auth_protocol,
+                      snmp_v3_auth_password, snmp_v3_priv_protocol,
+                      snmp_v3_priv_password,
+                      tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE))
                 device_id = cursor.fetchone()['id']
             else:
                 cursor.execute('''
                     INSERT INTO devices (name, ip_address, device_type, location, 
                                        monitor_type, expected_status_code,
-                                       snmp_community, snmp_port, snmp_version, tcp_port,
-                                       dns_query_domain, location_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       snmp_community, snmp_port, snmp_version,
+                                       snmp_v3_username, snmp_v3_auth_protocol,
+                                       snmp_v3_auth_password, snmp_v3_priv_protocol,
+                                       snmp_v3_priv_password,
+                                       tcp_port, dns_query_domain, location_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
-                      snmp_community, snmp_port, snmp_version, tcp_port, dns_query_domain,
+                      snmp_community, snmp_port, snmp_version,
+                      snmp_v3_username, snmp_v3_auth_protocol,
+                      snmp_v3_auth_password, snmp_v3_priv_protocol,
+                      snmp_v3_priv_password,
+                      tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE))
                 device_id = cursor.lastrowid
             conn.commit()
-            conn.close()
+            self.release_connection(conn)
             return {'success': True, 'id': device_id}
         except (sqlite3.IntegrityError, Exception) as e:
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower() or 'UNIQUE constraint' in str(e):
                 conn.rollback()
-                conn.close()
+                self.release_connection(conn)
                 return {'success': False, 'error': 'Device with this IP/URL, monitor type, and device type already exists'}
             conn.rollback()
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
     def get_all_devices(self):
@@ -343,7 +555,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute('SELECT * FROM devices ORDER BY id')
         devices = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return devices
     
     def get_device(self, device_id):
@@ -352,12 +564,15 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'SELECT * FROM devices WHERE id = {self._ph()}', (device_id,))
         device = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         return self._row_to_dict(device)
     
     def update_device(self, device_id, name=None, ip_address=None, 
                      device_type=None, location=None, monitor_type=None,
                      snmp_community=None, snmp_port=None, snmp_version=None,
+                     snmp_v3_username=None, snmp_v3_auth_protocol=None,
+                     snmp_v3_auth_password=None, snmp_v3_priv_protocol=None,
+                     snmp_v3_priv_password=None,
                      tcp_port=None, dns_query_domain=None, location_type=None):
         """Update device information"""
         # Strip whitespace from IP address and name to prevent issues
@@ -397,6 +612,21 @@ class Database:
         if snmp_version:
             updates.append(f'snmp_version = {ph}')
             params.append(snmp_version)
+        if snmp_v3_username is not None:
+            updates.append(f'snmp_v3_username = {ph}')
+            params.append(snmp_v3_username)
+        if snmp_v3_auth_protocol is not None:
+            updates.append(f'snmp_v3_auth_protocol = {ph}')
+            params.append(snmp_v3_auth_protocol)
+        if snmp_v3_auth_password is not None:
+            updates.append(f'snmp_v3_auth_password = {ph}')
+            params.append(snmp_v3_auth_password)
+        if snmp_v3_priv_protocol is not None:
+            updates.append(f'snmp_v3_priv_protocol = {ph}')
+            params.append(snmp_v3_priv_protocol)
+        if snmp_v3_priv_password is not None:
+            updates.append(f'snmp_v3_priv_password = {ph}')
+            params.append(snmp_v3_priv_password)
         if tcp_port is not None:
             updates.append(f'tcp_port = {ph}')
             params.append(tcp_port)
@@ -413,7 +643,7 @@ class Database:
             cursor.execute(query, params)
             conn.commit()
         
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
     def delete_device(self, device_id):
@@ -430,7 +660,7 @@ class Database:
         cursor.execute(f'DELETE FROM sub_topology_connections WHERE device_id = {ph} OR connected_to = {ph}',
                       (device_id, device_id))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
     def update_device_status(self, device_id, status, response_time=None, http_status_code=None,
@@ -491,7 +721,7 @@ class Database:
         ''', (device_id, status, response_time, now))
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
     
     def get_topology(self):
         """Get topology connections"""
@@ -499,7 +729,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute('SELECT * FROM topology')
         topology = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return topology
     
     def add_topology_connection(self, device_id, connected_to, view_type='standard'):
@@ -517,7 +747,7 @@ class Database:
         ''', (device_id, connected_to, connected_to, device_id, view_type))
         
         if cursor.fetchone():
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': 'Connection already exists in this view'}
         
         if self.db_type == 'postgresql':
@@ -534,7 +764,7 @@ class Database:
             ''', (device_id, connected_to, view_type))
             connection_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True, 'id': connection_id}
     
     def delete_topology_connection(self, connection_id=None, device_id=None, connected_to=None):
@@ -552,26 +782,108 @@ class Database:
                    OR (device_id = {ph} AND connected_to = {ph})
             ''', (device_id, connected_to, connected_to, device_id))
         else:
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': 'Must provide connection_id or both device_id and connected_to'}
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
-    def get_device_history(self, device_id, limit=100):
-        """Get status history for a device"""
+    def get_device_history(self, device_id, limit=100, minutes=None, sample_count=None):
+        """Get status history for a device, optionally sampled and padded into N points"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
         ph = self._ph()
+        
+        if sample_count and minutes:
+            # Time-bucket sampling logic
+            sample_count = int(sample_count)
+            minutes = int(minutes)
+            bucket_size_sec = max(1, (minutes * 60) / sample_count)
+            
+            if self.db_type == 'postgresql':
+                time_group = "FLOOR(EXTRACT(EPOCH FROM h.checked_at::timestamp) / %d)" % bucket_size_sec
+                time_select = "to_char(MIN(h.checked_at::timestamp), 'YYYY-MM-DD HH24:MI:SS')"
+                time_filter = "NOW() - INTERVAL '%d minutes'" % minutes
+            else:
+                time_group = "CAST(strftime('%%s', h.checked_at) / %d AS INTEGER)" % bucket_size_sec
+                time_select = "datetime(MIN(h.checked_at))"
+                time_filter = "datetime('now', '-%d minutes')" % minutes
+                
+            query = f'''
+                SELECT 
+                    {time_select} as checked_at,
+                    AVG(response_time) as response_time,
+                    {time_group} as bucket_id
+                FROM status_history h
+                WHERE device_id = {ph} 
+                AND checked_at >= {time_filter}
+                GROUP BY {time_group}
+                ORDER BY checked_at DESC
+            '''
+            # Define buckets aligned with epoch
+            now_ts = int(datetime.now().timestamp())
+            current_bucket_id = int(now_ts / bucket_size_sec)
+            start_bucket_id = current_bucket_id - sample_count + 1
+            
+            query = f'''
+                SELECT 
+                    {time_select} as checked_at,
+                    AVG(response_time) as response_time,
+                    {time_group} as bucket_id
+                FROM status_history h
+                WHERE device_id = {ph} 
+                AND checked_at >= {time_filter}
+                GROUP BY {time_group}
+                ORDER BY bucket_id ASC
+            '''
+            cursor.execute(query, (device_id,))
+            raw_sampled = self._rows_to_dicts(cursor.fetchall())
+            self.release_connection(conn)
+            
+            # Map existing data to buckets
+            data_map = {int(row['bucket_id']): row for row in raw_sampled}
+            
+            padded_history = []
+            for b_id in range(start_bucket_id, current_bucket_id + 1):
+                if b_id in data_map:
+                    row = data_map[b_id]
+                    padded_history.append({
+                        'checked_at': row['checked_at'],
+                        'response_time': row['response_time'],
+                        'status': 'up' if row['response_time'] is not None else 'down'
+                    })
+                else:
+                    # Calculate middle time for the bucket for display
+                    bucket_start_ts = b_id * bucket_size_sec
+                    bucket_time = datetime.fromtimestamp(bucket_start_ts).isoformat()
+                    padded_history.append({
+                        'checked_at': bucket_time,
+                        'response_time': None,
+                        'status': 'unknown'
+                    })
+            
+            return padded_history
+        
+        # Standard raw history (unchanged)
+        where_clause = f"WHERE device_id = {ph}"
+        params = [device_id]
+        
+        if minutes:
+            if self.db_type == 'postgresql':
+                where_clause += " AND checked_at >= NOW() - INTERVAL '%s minutes'" % int(minutes)
+            else:
+                where_clause += " AND checked_at >= datetime('now', '-%d minutes')" % int(minutes)
+            
         cursor.execute(f'''
             SELECT * FROM status_history 
-            WHERE device_id = {ph} 
+            {where_clause}
             ORDER BY checked_at DESC 
             LIMIT {ph}
-        ''', (device_id, limit))
+        ''', (*params, limit))
+            
         history = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return history
     
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
@@ -605,7 +917,7 @@ class Database:
         
         cursor.execute(query, params)
         history = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return history
     
     def get_historical_data_multi(self, start_date=None, end_date=None, device_ids=None):
@@ -637,7 +949,7 @@ class Database:
         
         cursor.execute(query, params)
         history = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return history
     
     def get_aggregated_stats(self, start_date=None, end_date=None):
@@ -674,7 +986,7 @@ class Database:
         
         cursor.execute(query, params)
         stats = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return stats
     
     def get_device_type_trends(self, minutes=180):
@@ -715,7 +1027,7 @@ class Database:
         
         cursor.execute(query, (start_time,))
         results = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return results
 
     # =========================================================================
@@ -746,7 +1058,7 @@ class Database:
             ''', (key, value, datetime.now().isoformat()))
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
     def get_alert_setting(self, key):
@@ -755,7 +1067,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'SELECT setting_value FROM alert_settings WHERE setting_key = {self._ph()}', (key,))
         result = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         if result is None:
             return None
         r = self._row_to_dict(result)
@@ -767,7 +1079,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute('SELECT setting_key, setting_value FROM alert_settings')
         settings = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return settings
     
     def log_alert(self, device_id, event_type, message, channel, status, error=None):
@@ -781,7 +1093,7 @@ class Database:
         ''', (device_id, event_type, message, channel, status, error, datetime.now().isoformat()))
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
     
     def get_last_alert_time(self, device_id, event_type):
         """Get the last alert time for a device and event type (for cooldown)"""
@@ -794,7 +1106,7 @@ class Database:
             ORDER BY created_at DESC LIMIT 1
         ''', (device_id, event_type))
         result = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         if result is None:
             return None
         r = self._row_to_dict(result)
@@ -812,7 +1124,7 @@ class Database:
             LIMIT {self._ph()}
         ''', (limit,))
         history = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return history
     
     def get_failure_count(self, device_id):
@@ -821,7 +1133,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'SELECT failure_count FROM devices WHERE id = {self._ph()}', (device_id,))
         result = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         if result is None:
             return 0
         r = self._row_to_dict(result)
@@ -840,7 +1152,7 @@ class Database:
         cursor.execute(f'SELECT failure_count FROM devices WHERE id = {ph}', (device_id,))
         result = cursor.fetchone()
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         r = self._row_to_dict(result)
         return r['failure_count'] if r else 1
     
@@ -850,7 +1162,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'UPDATE devices SET failure_count = 0 WHERE id = {self._ph()}', (device_id,))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
     
     # =========================================================================
     # Maintenance Windows Methods
@@ -881,11 +1193,11 @@ class Database:
                       datetime.now().isoformat()))
                 window_id = cursor.lastrowid
             conn.commit()
-            conn.close()
+            self.release_connection(conn)
             return {'success': True, 'id': window_id}
         except Exception as e:
             conn.rollback()
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
     def get_all_maintenance_windows(self):
@@ -899,7 +1211,7 @@ class Database:
             ORDER BY mw.start_time DESC
         ''')
         windows = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return windows
     
     def get_active_maintenance(self, device_id=None):
@@ -924,7 +1236,7 @@ class Database:
             ''', (now, now))
         
         windows = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return windows
     
     def is_device_in_maintenance(self, device_id):
@@ -938,7 +1250,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'DELETE FROM maintenance_windows WHERE id = {self._ph()}', (window_id,))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
     def cleanup_expired_maintenance(self):
@@ -953,7 +1265,7 @@ class Database:
         ''', (now,))
         deleted = cursor.rowcount
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return deleted
 
     # =========================================================================
@@ -978,7 +1290,7 @@ class Database:
         ''', (device_id, start_date.isoformat()))
         
         records = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         
         if not records:
             return {
@@ -1014,12 +1326,66 @@ class Database:
         }
     
     def get_all_devices_sla(self, days=30, sla_target=99.9):
-        """Get SLA data for all devices"""
+        """Get SLA data for all devices (optimized: single aggregate query)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        start_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        # Single aggregate query instead of N+1 queries
+        cursor.execute(f'''
+            SELECT 
+                h.device_id,
+                COUNT(*) as total_checks,
+                SUM(CASE WHEN h.status = 'up' THEN 1 ELSE 0 END) as up_checks,
+                SUM(CASE WHEN h.status = 'down' THEN 1 ELSE 0 END) as down_checks,
+                SUM(CASE WHEN h.status = 'slow' THEN 1 ELSE 0 END) as slow_checks,
+                AVG(CASE WHEN h.status != 'down' AND h.response_time IS NOT NULL 
+                    THEN h.response_time END) as avg_response_time
+            FROM status_history h
+            WHERE h.checked_at >= {ph}
+            GROUP BY h.device_id
+        ''', (start_date,))
+        
+        stats_map = {}
+        for row in self._rows_to_dicts(cursor.fetchall()):
+            device_id = row['device_id']
+            total = row['total_checks']
+            up = row['up_checks']
+            down = row['down_checks']
+            slow = row['slow_checks']
+            available = up + slow
+            uptime = (available / total * 100) if total > 0 else None
+            
+            stats_map[device_id] = {
+                'uptime_percent': round(uptime, 4) if uptime else None,
+                'total_checks': total,
+                'up_checks': up,
+                'down_checks': down,
+                'slow_checks': slow,
+                'avg_response_time': round(row['avg_response_time'], 2) if row['avg_response_time'] else None,
+                'days': days
+            }
+        
+        self.release_connection(conn)
+        
+        # Combine with device info
         devices = self.get_all_devices()
         result = []
         
+        empty_stats = {
+            'uptime_percent': None,
+            'total_checks': 0,
+            'up_checks': 0,
+            'down_checks': 0,
+            'slow_checks': 0,
+            'avg_response_time': None,
+            'days': days
+        }
+        
         for device in devices:
-            stats = self.get_device_uptime_stats(device['id'], days)
+            stats = stats_map.get(device['id'], empty_stats)
             
             uptime = stats['uptime_percent']
             if uptime is None:
@@ -1044,6 +1410,169 @@ class Database:
             })
         
         return result
+    
+    def cleanup_old_data(self):
+        """Remove old data beyond retention period (works with both SQLite and PostgreSQL)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        cutoff_date = (datetime.now() - timedelta(days=Config.RETENTION_DAYS)).isoformat()
+        
+        try:
+            # Delete old status history
+            cursor.execute(f'DELETE FROM status_history WHERE checked_at < {ph}', (cutoff_date,))
+            deleted_history = cursor.rowcount
+            
+            # Delete old alert history  
+            cursor.execute(f'DELETE FROM alert_history WHERE created_at < {ph}', (cutoff_date,))
+            deleted_alerts = cursor.rowcount
+            
+            # Delete old bandwidth history (7-day retention for bandwidth data)
+            bw_cutoff = (datetime.now() - timedelta(days=7)).isoformat()
+            cursor.execute(f'DELETE FROM bandwidth_history WHERE sampled_at < {ph}', (bw_cutoff,))
+            deleted_bw = cursor.rowcount
+            
+            conn.commit()
+            
+            # PostgreSQL: VACUUM ANALYZE for space reclaim and stats update
+            if self.db_type == 'postgresql':
+                conn.autocommit = True
+                cursor.execute('VACUUM ANALYZE status_history')
+                cursor.execute('VACUUM ANALYZE alert_history')
+                conn.autocommit = False
+            
+            print(f"[DB Cleanup] Deleted {deleted_history} old status records, {deleted_alerts} old alerts, {deleted_bw} old bandwidth samples (retention: {Config.RETENTION_DAYS} days)")
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB Cleanup] Error: {e}")
+        finally:
+            self.release_connection(conn)
+
+    # =========================================================================
+    # Bandwidth Monitoring Methods
+    # =========================================================================
+    
+    def save_bandwidth_sample(self, device_id, if_index, if_name,
+                              bytes_in, bytes_out,
+                              bps_in=None, bps_out=None,
+                              if_speed=None, util_in=None, util_out=None):
+        """Save a bandwidth sample for one interface"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        now = datetime.now().isoformat()
+        try:
+            cursor.execute(f'''
+                INSERT INTO bandwidth_history
+                    (device_id, if_index, if_name, bytes_in, bytes_out,
+                     bps_in, bps_out, if_speed, util_in, util_out, sampled_at)
+                VALUES ({self._ph(11)})
+            ''', (device_id, if_index, if_name, bytes_in, bytes_out,
+                  bps_in, bps_out, if_speed, util_in, util_out, now))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[BW] save_bandwidth_sample error: {e}")
+        finally:
+            self.release_connection(conn)
+    
+    def get_last_bandwidth_sample(self, device_id, if_index):
+        """Get the most recent bandwidth sample for a device/interface (for delta calc)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cursor.execute(f'''
+            SELECT * FROM bandwidth_history
+            WHERE device_id = {ph} AND if_index = {ph}
+            ORDER BY sampled_at DESC
+            LIMIT 1
+        ''', (device_id, if_index))
+        row = cursor.fetchone()
+        self.release_connection(conn)
+        return self._row_to_dict(row)
+    
+    def get_bandwidth_history(self, device_id, if_index=None, minutes=60, limit=500):
+        """Get bandwidth time-series for a device (and optionally a specific interface)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        params = [device_id, cutoff]
+        query = f'''
+            SELECT * FROM bandwidth_history
+            WHERE device_id = {ph} AND sampled_at >= {ph}
+        '''
+        if if_index is not None:
+            query += f' AND if_index = {ph}'
+            params.append(if_index)
+        query += ' ORDER BY if_index ASC, sampled_at ASC'
+        if limit:
+            query += f' LIMIT {ph}'
+            params.append(limit)
+        
+        cursor.execute(query, params)
+        rows = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return rows
+    
+    def get_latest_bandwidth_all_interfaces(self, device_id):
+        """Get most recent sample per interface for a device"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        if self.db_type == 'postgresql':
+            cursor.execute(f'''
+                SELECT DISTINCT ON (if_index) *
+                FROM bandwidth_history
+                WHERE device_id = {ph}
+                ORDER BY if_index, sampled_at DESC
+            ''', (device_id,))
+        else:
+            cursor.execute(f'''
+                SELECT * FROM bandwidth_history
+                WHERE id IN (
+                    SELECT MAX(id) FROM bandwidth_history
+                    WHERE device_id = {ph}
+                    GROUP BY if_index
+                )
+                ORDER BY if_index
+            ''', (device_id,))
+        
+        rows = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return rows
+    
+    def get_top_bandwidth_interfaces(self, minutes=5, top_n=10):
+        """Get top N most active interfaces across all devices (by bps_in + bps_out)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        cursor.execute(f'''
+            SELECT b.device_id, d.name as device_name, d.ip_address,
+                   b.if_index, b.if_name,
+                   AVG(b.bps_in) as avg_bps_in,
+                   AVG(b.bps_out) as avg_bps_out,
+                   MAX(b.bps_in) as max_bps_in,
+                   MAX(b.bps_out) as max_bps_out,
+                   AVG(b.util_in) as avg_util_in,
+                   AVG(b.util_out) as avg_util_out,
+                   b.if_speed
+            FROM bandwidth_history b
+            JOIN devices d ON b.device_id = d.id
+            WHERE b.sampled_at >= {ph}
+            GROUP BY b.device_id, d.name, d.ip_address, b.if_index, b.if_name, b.if_speed
+            ORDER BY (AVG(b.bps_in) + AVG(b.bps_out)) DESC
+            LIMIT {ph}
+        ''', (cutoff, top_n))
+        
+        rows = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return rows
 
     # =========================================================================
     # User Management Methods
@@ -1055,7 +1584,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'SELECT * FROM users WHERE username = {self._ph()}', (username,))
         row = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         return self._row_to_dict(row)
     
     def get_user_by_id(self, user_id):
@@ -1064,7 +1593,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'SELECT * FROM users WHERE id = {self._ph()}', (user_id,))
         row = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         return self._row_to_dict(row)
     
     def authenticate_user(self, username, password):
@@ -1093,7 +1622,7 @@ class Database:
             UPDATE users SET last_login = {ph} WHERE id = {ph}
         ''', (datetime.now().isoformat(), user_id))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
     
     def get_all_users(self):
         """Get all users (excluding password hashes)"""
@@ -1105,7 +1634,7 @@ class Database:
             FROM users ORDER BY created_at DESC
         ''')
         users = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return users
     
     def add_user(self, username, password, role='viewer', display_name=None, email=None):
@@ -1135,11 +1664,11 @@ class Database:
                       datetime.now().isoformat()))
                 user_id = cursor.lastrowid
             conn.commit()
-            conn.close()
+            self.release_connection(conn)
             return {'success': True, 'id': user_id}
         except Exception as e:
             conn.rollback()
-            conn.close()
+            self.release_connection(conn)
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 return {'success': False, 'error': 'Username already exists'}
             return {'success': False, 'error': str(e)}
@@ -1156,7 +1685,7 @@ class Database:
         
         if role is not None:
             if role not in ['admin', 'operator', 'viewer']:
-                conn.close()
+                self.release_connection(conn)
                 return {'success': False, 'error': 'Invalid role'}
             updates.append(f'role = {ph}')
             params.append(role)
@@ -1182,7 +1711,7 @@ class Database:
             params.append(generate_password_hash(password))
         
         if not updates:
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': 'No updates provided'}
         
         updates.append(f'updated_at = {ph}')
@@ -1194,11 +1723,11 @@ class Database:
                 UPDATE users SET {', '.join(updates)} WHERE id = {ph}
             ''', params)
             conn.commit()
-            conn.close()
+            self.release_connection(conn)
             return {'success': True}
         except Exception as e:
             conn.rollback()
-            conn.close()
+            self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
     def delete_user(self, user_id):
@@ -1215,13 +1744,13 @@ class Database:
                 cursor.execute(f'SELECT COUNT(*) as count FROM users WHERE role = {ph}', ('admin',))
                 admin_count = self._row_to_dict(cursor.fetchone())['count']
                 if admin_count <= 1:
-                    conn.close()
+                    self.release_connection(conn)
                     return {'success': False, 'error': 'Cannot delete the last admin user'}
         
         cursor.execute(f'DELETE FROM users WHERE id = {ph}', (user_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         
         return {'success': deleted}
 
@@ -1250,7 +1779,7 @@ class Database:
             dashboard_id = cursor.lastrowid
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True, 'id': dashboard_id}
     
     def get_dashboards(self, user_id=None):
@@ -1285,7 +1814,7 @@ class Database:
             ''')
             
         dashboards = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return dashboards
     
     def get_dashboard(self, dashboard_id):
@@ -1301,7 +1830,7 @@ class Database:
         ''', (dashboard_id,))
         
         result = cursor.fetchone()
-        conn.close()
+        self.release_connection(conn)
         return self._row_to_dict(result)
     
     def update_dashboard(self, dashboard_id, name=None, layout_config=None, description=None, is_public=None):
@@ -1341,7 +1870,7 @@ class Database:
             ''', params)
             conn.commit()
             
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
     
     def delete_dashboard(self, dashboard_id):
@@ -1350,7 +1879,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute(f'DELETE FROM dashboards WHERE id = {self._ph()}', (dashboard_id,))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
 
     # =========================================================================
@@ -1376,7 +1905,7 @@ class Database:
             ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity))
             sub_topo_id = cursor.lastrowid
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True, 'id': sub_topo_id}
 
     def get_all_sub_topologies(self):
@@ -1385,7 +1914,7 @@ class Database:
         cursor = self._cursor(conn)
         cursor.execute('SELECT * FROM sub_topologies ORDER BY name')
         result = self._rows_to_dicts(cursor.fetchall())
-        conn.close()
+        self.release_connection(conn)
         return result
 
     def get_sub_topology(self, sub_topo_id):
@@ -1397,7 +1926,7 @@ class Database:
         cursor.execute(f'SELECT * FROM sub_topologies WHERE id = {ph}', (sub_topo_id,))
         sub_topo = cursor.fetchone()
         if not sub_topo:
-            conn.close()
+            self.release_connection(conn)
             return None
         
         result = self._row_to_dict(sub_topo)
@@ -1416,7 +1945,7 @@ class Database:
         ''', (sub_topo_id,))
         result['connections'] = self._rows_to_dicts(cursor.fetchall())
         
-        conn.close()
+        self.release_connection(conn)
         return result
 
     def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, background_opacity=None):
@@ -1471,7 +2000,7 @@ class Database:
                 ''', (sub_topo_id, conn_item['device_id'], conn_item['connected_to']))
         
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
 
     def delete_sub_topology(self, sub_topo_id):
@@ -1483,5 +2012,453 @@ class Database:
         cursor.execute(f'DELETE FROM sub_topology_devices WHERE sub_topology_id = {ph}', (sub_topo_id,))
         cursor.execute(f'DELETE FROM sub_topologies WHERE id = {ph}', (sub_topo_id,))
         conn.commit()
-        conn.close()
+        self.release_connection(conn)
         return {'success': True}
+
+    # =========================================================================
+    # Custom SNMP OID Methods
+    # =========================================================================
+
+    def add_custom_oid(self, device_id, oid, name, unit=''):
+        """Add a custom SNMP OID to monitor for a device"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                    INSERT INTO custom_oids (device_id, oid, name, unit)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                ''', (device_id, oid, name, unit))
+                oid_id = cursor.fetchone()['id']
+            else:
+                cursor.execute('''
+                    INSERT INTO custom_oids (device_id, oid, name, unit)
+                    VALUES (?, ?, ?, ?)
+                ''', (device_id, oid, name, unit))
+                oid_id = cursor.lastrowid
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True, 'id': oid_id}
+        except Exception as e:
+            if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
+                conn.rollback()
+                self.release_connection(conn)
+                return {'success': False, 'error': 'This OID already exists for this device'}
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+
+    def get_custom_oids(self, device_id):
+        """Get all custom OIDs for a device"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(
+            f'SELECT * FROM custom_oids WHERE device_id = {self._ph()} ORDER BY id',
+            (device_id,)
+        )
+        oids = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return oids
+
+    def update_custom_oid_value(self, oid_id, value):
+        """Update the last queried value of a custom OID"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        now = datetime.now().isoformat()
+        cursor.execute(
+            f'UPDATE custom_oids SET last_value = {ph}, last_checked = {ph} WHERE id = {ph}',
+            (value, now, oid_id)
+        )
+        conn.commit()
+        self.release_connection(conn)
+
+    def delete_custom_oid(self, oid_id):
+        """Delete a custom OID"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(f'DELETE FROM custom_oids WHERE id = {self._ph()}', (oid_id,))
+        conn.commit()
+        self.release_connection(conn)
+        return {'success': True}
+
+    # =========================================================================
+    # Job History Methods
+    # =========================================================================
+
+    def log_job_start(self, job_id, job_name):
+        """Log that a job has started, return the history row ID"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        now = datetime.now().isoformat()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                    INSERT INTO job_history (job_id, job_name, status, started_at)
+                    VALUES (%s, %s, 'running', %s)
+                    RETURNING id
+                ''', (job_id, job_name, now))
+                row_id = cursor.fetchone()['id']
+            else:
+                cursor.execute('''
+                    INSERT INTO job_history (job_id, job_name, status, started_at)
+                    VALUES (?, ?, 'running', ?)
+                ''', (job_id, job_name, now))
+                row_id = cursor.lastrowid
+            conn.commit()
+            return row_id
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] Failed to log job start: {e}")
+            return None
+        finally:
+            self.release_connection(conn)
+
+    def log_job_complete(self, history_id, result_summary=None):
+        """Log that a job has completed successfully"""
+        if not history_id:
+            return
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        now = datetime.now().isoformat()
+        try:
+            cursor.execute(f'''
+                UPDATE job_history 
+                SET status = 'success', 
+                    completed_at = {ph}, 
+                    duration_seconds = EXTRACT(EPOCH FROM ({ph}::timestamp - started_at)),
+                    result_summary = {ph}
+                WHERE id = {ph}
+            ''', (now, now, result_summary, history_id)) if self.db_type == 'postgresql' else \
+            cursor.execute(f'''
+                UPDATE job_history 
+                SET status = 'success', 
+                    completed_at = {ph},
+                    duration_seconds = (julianday({ph}) - julianday(started_at)) * 86400,
+                    result_summary = {ph}
+                WHERE id = {ph}
+            ''', (now, now, result_summary, history_id))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] Failed to log job complete: {e}")
+        finally:
+            self.release_connection(conn)
+
+    def log_job_error(self, history_id, error_message):
+        """Log that a job has failed"""
+        if not history_id:
+            return
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        now = datetime.now().isoformat()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    UPDATE job_history 
+                    SET status = 'error', 
+                        completed_at = {ph},
+                        duration_seconds = EXTRACT(EPOCH FROM ({ph}::timestamp - started_at)),
+                        error_message = {ph}
+                    WHERE id = {ph}
+                ''', (now, now, error_message, history_id))
+            else:
+                cursor.execute(f'''
+                    UPDATE job_history 
+                    SET status = 'error', 
+                        completed_at = {ph},
+                        duration_seconds = (julianday({ph}) - julianday(started_at)) * 86400,
+                        error_message = {ph}
+                    WHERE id = {ph}
+                ''', (now, now, error_message, history_id))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] Failed to log job error: {e}")
+        finally:
+            self.release_connection(conn)
+
+    def get_job_history(self, job_id=None, limit=50):
+        """Get job execution history, optionally filtered by job_id"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        if job_id:
+            cursor.execute(f'''
+                SELECT * FROM job_history 
+                WHERE job_id = {ph} 
+                ORDER BY created_at DESC LIMIT {limit}
+            ''', (job_id,))
+        else:
+            cursor.execute(f'''
+                SELECT * FROM job_history 
+                ORDER BY created_at DESC LIMIT {limit}
+            ''')
+        rows = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return rows
+
+    def cleanup_job_history(self, days=7):
+        """Remove job history older than specified days"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute(f'DELETE FROM job_history WHERE created_at < {ph}', (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+        self.release_connection(conn)
+        return deleted
+
+    # =========================================================================
+    # SNMP Trap Methods
+    # =========================================================================
+
+    def add_trap(self, source_ip, trap_oid, trap_name=None, severity='info',
+                 varbinds=None, raw_data=None, device_id=None, device_name=None):
+        """Store a received SNMP trap"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        now = datetime.now().isoformat()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                    INSERT INTO snmp_traps (source_ip, device_id, device_name, trap_oid,
+                                           trap_name, severity, varbinds, raw_data, received_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                ''', (source_ip, device_id, device_name, trap_oid,
+                      trap_name, severity, varbinds, raw_data, now))
+                trap_id = cursor.fetchone()['id']
+            else:
+                cursor.execute('''
+                    INSERT INTO snmp_traps (source_ip, device_id, device_name, trap_oid,
+                                           trap_name, severity, varbinds, raw_data, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (source_ip, device_id, device_name, trap_oid,
+                      trap_name, severity, varbinds, raw_data, now))
+                trap_id = cursor.lastrowid
+            conn.commit()
+            return trap_id
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] Failed to add trap: {e}")
+            return None
+        finally:
+            self.release_connection(conn)
+
+    def get_traps(self, limit=100, offset=0, severity=None, source_ip=None, acknowledged=None):
+        """Get traps with optional filters"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        conditions = []
+        params = []
+        if severity:
+            conditions.append(f"severity = {ph}")
+            params.append(severity)
+        if source_ip:
+            conditions.append(f"source_ip = {ph}")
+            params.append(source_ip)
+        if acknowledged is not None:
+            conditions.append(f"acknowledged = {ph}")
+            params.append(int(acknowledged))
+        
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        
+        cursor.execute(f'''
+            SELECT * FROM snmp_traps {where}
+            ORDER BY received_at DESC LIMIT {limit} OFFSET {offset}
+        ''', params)
+        rows = self._rows_to_dicts(cursor.fetchall())
+        
+        # Get total count
+        cursor.execute(f'SELECT COUNT(*) as cnt FROM snmp_traps {where}', params)
+        total = cursor.fetchone()['cnt'] if self.db_type == 'postgresql' else cursor.fetchone()[0]
+        
+        self.release_connection(conn)
+        return {'traps': rows, 'total': total}
+
+    def acknowledge_trap(self, trap_id):
+        """Acknowledge a trap"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(f'UPDATE snmp_traps SET acknowledged = 1 WHERE id = {self._ph()}', (trap_id,))
+        conn.commit()
+        self.release_connection(conn)
+        return {'success': True}
+
+    def acknowledge_all_traps(self):
+        """Acknowledge all unacknowledged traps"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute('UPDATE snmp_traps SET acknowledged = 1 WHERE acknowledged = 0')
+        count = cursor.rowcount
+        conn.commit()
+        self.release_connection(conn)
+        return {'success': True, 'count': count}
+
+    def delete_trap(self, trap_id):
+        """Delete a trap"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(f'DELETE FROM snmp_traps WHERE id = {self._ph()}', (trap_id,))
+        conn.commit()
+        self.release_connection(conn)
+        return {'success': True}
+
+    def get_trap_stats(self):
+        """Get trap statistics"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        stats = {}
+        
+        cursor.execute('SELECT COUNT(*) as cnt FROM snmp_traps')
+        row = cursor.fetchone()
+        stats['total'] = row['cnt'] if self.db_type == 'postgresql' else row[0]
+        
+        cursor.execute('SELECT COUNT(*) as cnt FROM snmp_traps WHERE acknowledged = 0')
+        row = cursor.fetchone()
+        stats['unacknowledged'] = row['cnt'] if self.db_type == 'postgresql' else row[0]
+        
+        cursor.execute("SELECT COUNT(*) as cnt FROM snmp_traps WHERE severity = 'critical'")
+        row = cursor.fetchone()
+        stats['critical'] = row['cnt'] if self.db_type == 'postgresql' else row[0]
+        
+        cursor.execute("SELECT COUNT(*) as cnt FROM snmp_traps WHERE severity = 'warning'")
+        row = cursor.fetchone()
+        stats['warning'] = row['cnt'] if self.db_type == 'postgresql' else row[0]
+        
+        self.release_connection(conn)
+        return stats
+
+    def cleanup_old_traps(self, days=30):
+        """Remove traps older than specified days"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute(f'DELETE FROM snmp_traps WHERE received_at < {ph}', (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+        self.release_connection(conn)
+        return deleted
+
+    # =========================================================================
+    # Syslog Methods
+    # =========================================================================
+
+    def add_syslog(self, source_ip, facility, severity, program, message, device_id=None, device_name=None):
+        """Store a received syslog message"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        now = datetime.now().isoformat()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                    INSERT INTO syslog_messages (source_ip, device_id, device_name, facility,
+                                                severity, program, message, received_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                ''', (source_ip, device_id, device_name, facility,
+                      severity, program, message, now))
+                syslog_id = cursor.fetchone()['id']
+            else:
+                cursor.execute('''
+                    INSERT INTO syslog_messages (source_ip, device_id, device_name, facility,
+                                                severity, program, message, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (source_ip, device_id, device_name, facility,
+                      severity, program, message, now))
+                syslog_id = cursor.lastrowid
+            conn.commit()
+            return syslog_id
+        except Exception as e:
+            conn.rollback()
+            print(f"[DB] Failed to add syslog: {e}")
+            return None
+        finally:
+            self.release_connection(conn)
+
+    def get_syslogs(self, limit=100, offset=0, severity=None, source_ip=None, search=None):
+        """Get syslog messages with optional filters"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        conditions = []
+        params = []
+        if severity is not None:
+            conditions.append(f"severity <= {ph}") # lower number = higher severity
+            params.append(int(severity))
+        if source_ip:
+            conditions.append(f"source_ip = {ph}")
+            params.append(source_ip)
+        if search:
+            conditions.append(f"message LIKE {ph}")
+            params.append(f"%{search}%")
+        
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        
+        cursor.execute(f'''
+            SELECT * FROM syslog_messages {where}
+            ORDER BY received_at DESC LIMIT {limit} OFFSET {offset}
+        ''', params)
+        rows = self._rows_to_dicts(cursor.fetchall())
+        
+        # Get total count
+        cursor.execute(f'SELECT COUNT(*) as cnt FROM syslog_messages {where}', params)
+        total = cursor.fetchone()['cnt'] if self.db_type == 'postgresql' else cursor.fetchone()[0]
+        
+        self.release_connection(conn)
+        return {'syslogs': rows, 'total': total}
+
+    def get_syslog_stats(self):
+        """Get syslog statistics based on severity levels"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        stats = {
+            'total': 0,
+            'emergency': 0, # 0
+            'alert': 0,     # 1
+            'critical': 0,  # 2
+            'error': 0,     # 3
+            'warning': 0,   # 4
+            'notice': 0,    # 5
+            'info': 0,      # 6
+            'debug': 0      # 7
+        }
+        
+        cursor.execute('SELECT severity, COUNT(*) as cnt FROM syslog_messages GROUP BY severity')
+        rows = cursor.fetchall()
+        
+        for row in rows:
+            sev = row['severity'] if self.db_type == 'postgresql' else row[0]
+            cnt = row['cnt'] if self.db_type == 'postgresql' else row[1]
+            stats['total'] += cnt
+            
+            if sev == 0: stats['emergency'] += cnt
+            elif sev == 1: stats['alert'] += cnt
+            elif sev == 2: stats['critical'] += cnt
+            elif sev == 3: stats['error'] += cnt
+            elif sev == 4: stats['warning'] += cnt
+            elif sev == 5: stats['notice'] += cnt
+            elif sev == 6: stats['info'] += cnt
+            elif sev == 7: stats['debug'] += cnt
+            
+        self.release_connection(conn)
+        return stats
+
+    def cleanup_old_syslogs(self, days=30):
+        """Remove syslog messages older than specified days"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute(f'DELETE FROM syslog_messages WHERE received_at < {ph}', (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+        self.release_connection(conn)
+        return deleted

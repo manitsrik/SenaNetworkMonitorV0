@@ -198,11 +198,53 @@
                     </div>
                     <div class="form-group" style="flex: 1;">
                         <label class="form-label" for="snmp-version">SNMP Version</label>
-                        <select id="snmp-version" class="form-select">
+                        <select id="snmp-version" class="form-select" onchange="updateSnmpVersionFields()">
                             <option value="2c">v2c (Recommended)</option>
                             <option value="1">v1</option>
+                            <option value="3">v3 (Secure)</option>
                         </select>
                     </div>
+                </div>
+
+                <!-- SNMP v3 Settings (hidden by default) -->
+                <div id="snmp-v3-settings"
+                    style="display: none; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem; background: rgba(var(--primary-rgb, 99,102,241), 0.05);">
+                    <h4 style="margin: 0 0 0.75rem 0; color: var(--primary); font-size: 0.95rem;">🔐 SNMP v3 Security
+                        Settings</h4>
+                    <div class="form-group">
+                        <label class="form-label" for="snmp-v3-username">Security Username *</label>
+                        <input type="text" id="snmp-v3-username" class="form-input" placeholder="e.g., snmpuser">
+                    </div>
+                    <div style="display: flex; gap: 1rem;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label" for="snmp-v3-auth-protocol">Auth Protocol</label>
+                            <select id="snmp-v3-auth-protocol" class="form-select">
+                                <option value="SHA">SHA (Recommended)</option>
+                                <option value="MD5">MD5</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label" for="snmp-v3-auth-password">Auth Password</label>
+                            <input type="password" id="snmp-v3-auth-password" class="form-input"
+                                placeholder="Min 8 characters">
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 1rem;">
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label" for="snmp-v3-priv-protocol">Privacy Protocol</label>
+                            <select id="snmp-v3-priv-protocol" class="form-select">
+                                <option value="AES128">AES-128 (Recommended)</option>
+                                <option value="DES">DES</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label class="form-label" for="snmp-v3-priv-password">Privacy Password</label>
+                            <input type="password" id="snmp-v3-priv-password" class="form-input"
+                                placeholder="Min 8 characters">
+                        </div>
+                    </div>
+                    <small style="color: var(--text-muted); font-size: 0.8rem;">💡 authPriv = Auth + Encryption |
+                        authNoPriv = Auth only | noAuthNoPriv = Username only</small>
                 </div>
             </div>
 
@@ -297,6 +339,53 @@
                 </div>
             </div>
 
+            <!-- Custom OIDs Section -->
+            <div class="card" style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h4 style="margin: 0; color: var(--primary);">🎯 Custom OIDs</h4>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-sm btn-primary" onclick="queryCustomOids()" id="query-oids-btn">
+                            🔄 Query All
+                        </button>
+                        <button class="btn btn-sm" style="background: var(--success); color: white;"
+                            onclick="toggleAddOidForm()" id="toggle-add-oid-btn">
+                            ➕ Add OID
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Add OID Form (hidden by default) -->
+                <div id="add-oid-form"
+                    style="display: none; background: rgba(var(--primary-rgb, 99,102,241), 0.05); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                        <div style="flex: 2;">
+                            <label style="font-size: 0.8rem; color: var(--text-muted);">OID *</label>
+                            <input type="text" id="new-oid-value" class="form-input"
+                                placeholder="e.g., 1.3.6.1.2.1.25.3.3.1.2.1" style="font-size: 0.85rem;">
+                        </div>
+                        <div style="flex: 2;">
+                            <label style="font-size: 0.8rem; color: var(--text-muted);">Name *</label>
+                            <input type="text" id="new-oid-name" class="form-input" placeholder="e.g., CPU Usage"
+                                style="font-size: 0.85rem;">
+                        </div>
+                        <div style="flex: 1;">
+                            <label style="font-size: 0.8rem; color: var(--text-muted);">Unit</label>
+                            <input type="text" id="new-oid-unit" class="form-input" placeholder="e.g., %"
+                                style="font-size: 0.85rem;">
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="addCustomOid()" style="white-space: nowrap;">
+                            💾 Save
+                        </button>
+                    </div>
+                </div>
+
+                <div id="custom-oids-container" style="max-height: 250px; overflow-y: auto;">
+                    <p style="color: var(--text-muted); text-align: center; padding: 0.75rem; font-size: 0.85rem;">
+                        No custom OIDs configured. Click "Add OID" to get started.
+                    </p>
+                </div>
+            </div>
+
             <button class="btn btn-secondary" onclick="closeSnmpModal()" style="width: 100%;">
                 Close
             </button>
@@ -348,6 +437,21 @@
             <button class="modal-close" onclick="closeGraphModal()">&times;</button>
         </div>
         <div style="padding: 1rem;">
+            <!-- Period Selection -->
+            <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem;">
+                <button class="btn btn-xs btn-outline-secondary period-btn"
+                    onclick="setGraphPeriod(15, this)">15m</button>
+                <button class="btn btn-xs btn-primary period-btn" onclick="setGraphPeriod(60, this)">1h</button>
+                <button class="btn btn-xs btn-outline-secondary period-btn"
+                    onclick="setGraphPeriod(180, this)">3h</button>
+                <button class="btn btn-xs btn-outline-secondary period-btn"
+                    onclick="setGraphPeriod(360, this)">6h</button>
+                <button class="btn btn-xs btn-outline-secondary period-btn"
+                    onclick="setGraphPeriod(720, this)">12h</button>
+                <button class="btn btn-xs btn-outline-secondary period-btn"
+                    onclick="setGraphPeriod(1440, this)">24h</button>
+            </div>
+
             <!-- Device Info -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <div>
@@ -462,6 +566,8 @@
 {% block scripts %}
 <!-- Chart.js for real-time graphs -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script
+    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <!-- Devices Script -->
 <script src="{{ url_for('static', filename='js/devices.js') }}"></script>
 {% endblock %}

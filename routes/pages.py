@@ -1,7 +1,7 @@
 """
 Page routes — HTML rendering
 """
-from flask import Blueprint, render_template
+from flask import Blueprint, render_template, request
 from .auth import login_required, admin_required
 
 pages_bp = Blueprint('pages', __name__)
@@ -88,3 +88,48 @@ def edit_dashboard(dashboard_id):
 def view_dashboard(dashboard_id):
     """View specific dashboard"""
     return render_template('dashboard_view.html', dashboard_id=dashboard_id)
+
+
+@pages_bp.route('/traps')
+@login_required
+def traps_page():
+    """SNMP Traps page"""
+    return render_template('traps.html')
+
+
+@pages_bp.route('/syslog')
+@login_required
+def syslog_page():
+    """Syslog Viewer page"""
+    return render_template('syslog.html')
+
+
+@pages_bp.route('/sla/export/print')
+def print_sla():
+    """Printable SLA Report page"""
+    db = _get_db()
+    days = request.args.get('days', 30, type=int)
+    sla_target = request.args.get('target', 99.9, type=float)
+    
+    sla_data = db.get_all_devices_sla(days=days, sla_target=sla_target)
+    
+    devices_with_data = [d for d in sla_data if d['uptime_percent'] is not None]
+    summary = {
+        'total_devices': len(sla_data),
+        'devices_with_data': len(devices_with_data),
+        'sla_met': len([d for d in devices_with_data if d['sla_status'] == 'met']),
+        'sla_warning': len([d for d in devices_with_data if d['sla_status'] == 'warning']),
+        'sla_breached': len([d for d in devices_with_data if d['sla_status'] == 'breached']),
+        'average_uptime': round(sum(d['uptime_percent'] for d in devices_with_data) / len(devices_with_data), 4) if devices_with_data else None,
+        'days': days,
+        'sla_target': sla_target
+    }
+    
+    # Sort data for print layout (by status, then uptime)
+    sla_data.sort(key=lambda x: (
+        x['uptime_percent'] is None, 
+        x['uptime_percent'] if x['uptime_percent'] is not None else 0
+    ))
+    
+    return render_template('reports/sla_print.html', summary=summary, devices=sla_data)
+

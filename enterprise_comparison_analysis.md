@@ -44,7 +44,7 @@
 | **DNS** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **SSL Certificate** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **WMI/SSH Agent** | ✅ | ✅ | ✅ (agent) | ✅ | — | ❌ | 🔴 High |
-| **Bandwidth/NetFlow** | ✅ | ✅ | ✅ | ✅ | via plugin | ❌ | 🔴 High |
+| **Bandwidth/NetFlow** | ✅ | ✅ | ✅ | ✅ | via plugin | ✅ (SNMP) | ✔ มีแล้ว |
 | **Syslog Receiver** | ✅ | ✅ | ✅ | ✅ | via Loki | ❌ | 🟡 Medium |
 | **Custom Dashboards** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
 | **Auto-discovery** | ✅ | ✅ | ✅ | ✅ | — | ✅ (basic) | � ต้องพัฒนา |
@@ -97,7 +97,7 @@
 |-----|-----------|---------|---------|-----------|
 | **2.1 SNMP v3 Support** | รองรับ authentication (SHA/MD5) + encryption (AES/DES) | Medium | ✅ เสร็จ | — |
 | **2.2 SNMP Traps Receiver** | Listen SNMP traps จากอุปกรณ์ (port 162) | Medium | ✅ เสร็จ | — |
-| **2.3 Bandwidth/NetFlow/sFlow** | เก็บข้อมูล traffic flow แบบ real-time | Hard | ⬜ | — |
+| **2.3 Bandwidth/NetFlow/sFlow** | เก็บข้อมูล traffic flow แบบ real-time (SNMP interface counters) | Hard | ✅ เสร็จ | — |
 | **2.4 SSH/WMI Agent-based Monitoring** | เก็บ CPU, RAM, Disk, Process จาก server | Hard | ⬜ | — |
 | **2.5 Syslog Receiver** | รับ syslog จากอุปกรณ์ เก็บและแสดงผล | Medium | ✅ เสร็จ | — |
 | **2.6 Custom SNMP OID Monitoring** | ให้ user กำหนด OID เองสำหรับ monitor ค่าเฉพาะ | Easy | ✅ เสร็จ | — |
@@ -169,9 +169,7 @@
 ### ❌ จุดอ่อนหลัก
 - **Single Process** — ไม่มี HA, ถ้า server ล่มจะตรวจไม่ได้เลย
 - **ไม่มี Agent-based monitoring** — ดู CPU/RAM/Disk ไม่ได้
-- **ไม่มี Bandwidth/NetFlow** — ไม่เห็น traffic data
 - **ไม่มี Container/Cloud Monitoring** — ไม่รองรับ Docker/K8s/Cloud
-- **ไม่มี SNMP Traps** — ยังไม่รองรับ SNMP trap receiver
 
 ---
 
@@ -208,14 +206,14 @@ quadrantChart
 
 | # | งาน | ใช้เวลา | Impact | สถานะ |
 |---|------|--------|--------|--------|
-| 1 | Webhook alerting (Slack/Teams) | 1-2 วัน | ⭐⭐⭐⭐ | ⬜ |
-| 2 | Custom SNMP OID monitoring | 1-2 วัน | ⭐⭐⭐ | ⬜ |
+| 1 | Webhook alerting (Slack/Teams) | 1-2 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
+| 2 | Custom SNMP OID monitoring | 1-2 วัน | ⭐⭐⭐ | ✅ เสร็จ |
 | 3 | Audit Log | 1 วัน | ⭐⭐⭐ | ⬜ |
 | 4 | API Documentation (Swagger) | 1 วัน | ⭐⭐⭐ | ⬜ |
-| 5 | PDF report export | 2-3 วัน | ⭐⭐⭐⭐ | ⬜ |
-| 6 | SNMP v3 support | 2-3 วัน | ⭐⭐⭐⭐ | ⬜ |
+| 5 | PDF report export | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
+| 6 | SNMP v3 support | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 7 | Alert escalation | 2-3 วัน | ⭐⭐⭐⭐ | ⬜ |
-| 8 | Dark/Light theme | 1 วัน | ⭐⭐ | ⬜ |
+| 8 | Dark/Light theme | 1 วัน | ⭐⭐ | ✅ เสร็จ |
 
 ---
 
@@ -224,12 +222,12 @@ quadrantChart
 | Phase | ทั้งหมด | เสร็จ | บางส่วน | % | สถานะ |
 |-------|:---:|:---:|:---:|:---:|--------|
 | **Phase 1** — Foundation & Scalability | 5 | 5 | 0 | 100% | ✅ เสร็จ |
-| **Phase 2** — Monitoring Depth | 6 | 4 | 0 | 67% | 🟡 กำลังดำเนินการ |
+| **Phase 2** — Monitoring Depth | 6 | 5 | 0 | 83% | 🟡 กำลังดำเนินการ |
 | **Phase 3** — Alerting & Intelligence | 5 | 1 | 0 | 20% | 🟡 กำลังดำเนินการ |
 | **Phase 4** — Visualization & Reporting | 5 | 1 | 0 | 20% | 🟡 กำลังดำเนินการ |
 | **Phase 5** — Enterprise Security & Integration | 5 | 0 | 0 | 0% | ⬜ ยังไม่เริ่ม |
 | **Phase 6** — Accessibility & UX | 4 | 1 | 0 | 25% | 🟡 กำลังดำเนินการ |
-| **รวม** | **30** | **12** | **0** | **40%** | — |
+| **รวม** | **30** | **13** | **0** | **43%** | — |
 
 ```mermaid
 gantt
@@ -271,6 +269,7 @@ gantt
 
 | วันที่ | Version | รายละเอียดการเปลี่ยนแปลง |
 |--------|---------|-------------------------|
+| 11 มี.ค. 2569 | 1.4 | อัปเดตสถานะ Bandwidth Monitoring (Task 2.3) เป็นเสร็จสมบูรณ์ — SNMP interface counter polling ทุก 60 วินาที, คำนวณ bps/utilization, UI page พร้อม Chart.js time-series, interface table, top consumers, Poll Now. อัปเดต Quick Wins status, Progress Tracker 43% |
 | 2 มี.ค. 2569 | 1.3 | เพิ่ม SNMP v3 Support — รองรับ USM authentication (SHA/MD5) + encryption (AES128/DES) ครบทั้ง authPriv, authNoPriv, noAuthNoPriv พร้อม UI form สำหรับตั้งค่า |
 | 2 มี.ค. 2569 | 1.2 | อัปเดตจากการตรวจสอบโค้ดจริง: PostgreSQL dual-database support (Task 1.1 บางส่วน), Blueprint modular architecture เสร็จแล้ว 10 modules (Task 1.2 บางส่วน), เพิ่ม SNMP Interface Table, อัปเดตจุดแข็ง/จุดอ่อน, ปรับ Progress Tracker เป็น 10%, ลบ dependency 1.1 ที่ไม่จำเป็นแล้ว |
 | 2 มี.ค. 2569 | 1.1 | อัปเดตสถานะ Auto-discovery (เสร็จแล้ว), เพิ่ม Progress Tracker, เพิ่ม Dependencies ระหว่าง Tasks, เพิ่มฟีเจอร์ Container/Cloud/IPAM/Log Management/Capacity Planning ในตาราง Gap, เพิ่ม Gantt chart, เพิ่ม Changelog |

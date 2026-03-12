@@ -5,6 +5,13 @@ Slim entry point: initializes Flask, registers Blueprints, starts services
 import eventlet
 eventlet.monkey_patch(all=True)
 
+import asyncio
+import sys
+if sys.platform == 'win32':
+    # Force SelectorEventLoop so asyncio uses select(), which eventlet monkey-patches.
+    # This prevents PySNMP (which uses asyncio) from deadlocking the server on Windows.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS

@@ -822,7 +822,14 @@ class Database:
                 ORDER BY checked_at DESC
             '''
             # Define buckets aligned with epoch
-            now_ts = int(datetime.now().timestamp())
+            # IMPORTANT: PostgreSQL's EXTRACT(EPOCH FROM timestamp without time zone)
+            # and SQLite's strftime('%s') both treat stored timestamps AS IF they were UTC.
+            # Since checked_at is stored as local time (datetime.now().isoformat()),
+            # we must compute the Python-side epoch the same way: interpret local
+            # wall-clock values as UTC so bucket IDs match the SQL side.
+            import calendar
+            now_naive = datetime.now()  # local wall-clock time, no tzinfo
+            now_ts = int(calendar.timegm(now_naive.timetuple()))  # treat as UTC, matching SQL
             current_bucket_id = int(now_ts / bucket_size_sec)
             start_bucket_id = current_bucket_id - sample_count + 1
             
@@ -854,9 +861,10 @@ class Database:
                         'status': 'up' if row['response_time'] is not None else 'down'
                     })
                 else:
-                    # Calculate middle time for the bucket for display
+                    # Calculate time for the bucket for display
+                    # Use utcfromtimestamp since bucket IDs use "naive as UTC" epoch
                     bucket_start_ts = b_id * bucket_size_sec
-                    bucket_time = datetime.fromtimestamp(bucket_start_ts).isoformat()
+                    bucket_time = datetime.utcfromtimestamp(bucket_start_ts).isoformat()
                     padded_history.append({
                         'checked_at': bucket_time,
                         'response_time': None,

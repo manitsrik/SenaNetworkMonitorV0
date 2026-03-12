@@ -4,6 +4,7 @@ Handles ping, HTTP, and SNMP monitoring with status updates
 """
 from pythonping import ping
 import eventlet
+from eventlet import tpool
 from datetime import datetime, timezone
 # from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import Config
@@ -49,13 +50,9 @@ class NetworkMonitor:
         Returns: dict with 'status' ('up' or 'down') and 'response_time' (ms)
         """
         try:
-            # Perform ping - wrap in tpool.execute because pythonping uses raw sockets 
-            # and might block the hub if it doesn't yield properly
-            def _do_ping():
-                return ping(ip_address, count=Config.PING_COUNT, 
+            # Perform ping natively (patched sockets make it yield)
+            response = ping(ip_address, count=Config.PING_COUNT, 
                             timeout=Config.PING_TIMEOUT, verbose=False)
-            
-            response = eventlet.tpool.execute(_do_ping)
             
             # Check if any pings were successful
             if response.success():
@@ -94,8 +91,8 @@ class NetworkMonitor:
             # Measure connection time
             start_time = time.time()
             
-            # Wrap blocking connect in tpool.execute
-            result = eventlet.tpool.execute(sock.connect_ex, (ip_address, int(port)))
+            # Call natively - socket is patched by eventlet
+            result = sock.connect_ex((ip_address, int(port)))
             
             response_time = (time.time() - start_time) * 1000  # Convert to ms
             
@@ -341,19 +338,17 @@ class NetworkMonitor:
             
             is_https = url.startswith('https://')
             
-            # Perform HTTP GET request - wrap in tpool.execute for safety
+            # Perform HTTP GET request natively (requests uses patched sockets)
             start_time = time.time()
             
-            def _do_get():
-                return requests.get(
-                    url,
-                    timeout=Config.HTTP_TIMEOUT,
-                    verify=Config.VERIFY_SSL,
-                    headers={'User-Agent': Config.HTTP_USER_AGENT},
-                    allow_redirects=True
-                )
+            response = requests.get(
+                url,
+                timeout=Config.HTTP_TIMEOUT,
+                verify=Config.VERIFY_SSL,
+                headers={'User-Agent': Config.HTTP_USER_AGENT},
+                allow_redirects=True
+            )
                 
-            response = eventlet.tpool.execute(_do_get)
             response_time = (time.time() - start_time) * 1000  # Convert to ms
             
             # Check if status code matches expected
@@ -422,6 +417,94 @@ class NetworkMonitor:
                 'http_status_code': None
             }
     
+    @staticmethod
+    async def _check_snmp_async_standalone(ip_address, community='public', port=161, version='2c',
+                                           snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
+                                           snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
+                                           snmp_v3_priv_password=None):
+        """
+        Standalone async SNMP check for subprocess execution.
+        Same logic as _check_snmp_async but without self dependency.
+        """
+        start_time = time.time()
+        
+        # Build auth data based on SNMP version
+        if version == '3':
+            auth_proto = SNMP_AUTH_PROTOCOLS.get(snmp_v3_auth_protocol, usmHMACSHAAuthProtocol)
+            priv_proto = SNMP_PRIV_PROTOCOLS.get(snmp_v3_priv_protocol, usmAesCfb128Protocol)
+            
+            if snmp_v3_auth_password and snmp_v3_priv_password:
+                auth_data = UsmUserData(
+                    userName=snmp_v3_username or '',
+                    authKey=snmp_v3_auth_password,
+                    privKey=snmp_v3_priv_password,
+                    authProtocol=auth_proto,
+                    privProtocol=priv_proto
+                )
+            elif snmp_v3_auth_password:
+                auth_data = UsmUserData(
+                    userName=snmp_v3_username or '',
+                    authKey=snmp_v3_auth_password,
+                    authProtocol=auth_proto
+                )
+            else:
+                auth_data = UsmUserData(userName=snmp_v3_username or '')
+        else:
+            mp_model = 0 if version == '1' else 1
+            auth_data = CommunityData(community, mpModel=mp_model)
+        
+        snmp_engine = SnmpEngine()
+        transport = await UdpTransportTarget.create(
+            (ip_address, port),
+            timeout=Config.SNMP_TIMEOUT,
+            retries=1
+        )
+        
+        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+            snmp_engine,
+            auth_data,
+            transport,
+            ContextData(),
+            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.1.0')),
+            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.3.0')),
+            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.4.0')),
+            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.5.0')),
+            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.6.0'))
+        )
+        
+        response_time = (time.time() - start_time) * 1000
+        
+        if errorIndication:
+            raise Exception(f"SNMP Error: {errorIndication}")
+        if errorStatus:
+            raise Exception(f"SNMP Error: {errorStatus.prettyPrint()} at {errorIndex}")
+        
+        result = {'uptime': None, 'sysname': None, 'sysdescr': None, 'syslocation': None, 'syscontact': None}
+        
+        for varBind in varBinds:
+            oid = str(varBind[0])
+            value = varBind[1]
+            if '1.3.6.1.2.1.1.1.0' in oid:
+                result['sysdescr'] = str(value)[:255]
+            elif '1.3.6.1.2.1.1.3.0' in oid:
+                try:
+                    ticks = int(value)
+                    seconds = ticks / 100
+                    days = int(seconds // 86400)
+                    hours = int((seconds % 86400) // 3600)
+                    minutes = int((seconds % 3600) // 60)
+                    result['uptime'] = f"{days}d {hours}h {minutes}m"
+                except:
+                    result['uptime'] = str(value)
+            elif '1.3.6.1.2.1.1.4.0' in oid:
+                result['syscontact'] = str(value)
+            elif '1.3.6.1.2.1.1.5.0' in oid:
+                result['sysname'] = str(value)
+            elif '1.3.6.1.2.1.1.6.0' in oid:
+                result['syslocation'] = str(value)
+        
+        return response_time, result
+
     async def _check_snmp_async(self, ip_address, community='public', port=161, version='2c',
                                  snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
                                  snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
@@ -549,26 +632,22 @@ class NetworkMonitor:
             }
         
         try:
-            import eventlet.tpool
-            
-            def _snmp_wrapper():
-                # Setting up a completely fresh loop for the native thread
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(
+            def _run_snmp():
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                return asyncio.run(
+                    asyncio.wait_for(
                         self._check_snmp_async(
                             ip_address, community, port, version,
                             snmp_v3_username, snmp_v3_auth_protocol,
                             snmp_v3_auth_password, snmp_v3_priv_protocol,
                             snmp_v3_priv_password
-                        )
+                        ),
+                        timeout=12
                     )
-                finally:
-                    loop.close()
-                    
-            # Run async SNMP check in a native thread to avoid Eventlet conflicts
-            response_time, snmp_data = eventlet.tpool.execute(_snmp_wrapper)
+                )
+            response_time, snmp_data = tpool.execute(_run_snmp)
             
             # Determine status based on response time
             status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
@@ -907,14 +986,19 @@ class NetworkMonitor:
             return []
         
         try:
-            return asyncio.run(
-                self._get_snmp_interfaces_async(
-                    ip_address, community, port, version,
-                    snmp_v3_username, snmp_v3_auth_protocol,
-                    snmp_v3_auth_password, snmp_v3_priv_protocol,
-                    snmp_v3_priv_password
+            def _run_snmp_interfaces():
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                return asyncio.run(
+                    self._get_snmp_interfaces_async(
+                        ip_address, community, port, version,
+                        snmp_v3_username, snmp_v3_auth_protocol,
+                        snmp_v3_auth_password, snmp_v3_priv_protocol,
+                        snmp_v3_priv_password
+                    )
                 )
-            )
+            return tpool.execute(_run_snmp_interfaces)
         except Exception as e:
             print(f"SNMP Interface Error for {ip_address}: {e}")
             return []
@@ -1003,14 +1087,19 @@ class NetworkMonitor:
         if not SNMP_AVAILABLE or not oid_list:
             return []
         try:
-            return asyncio.run(
-                self._query_custom_oids_async(
-                    ip_address, community, port, version,
-                    snmp_v3_username, snmp_v3_auth_protocol,
-                    snmp_v3_auth_password, snmp_v3_priv_protocol,
-                    snmp_v3_priv_password, oid_list
+            def _run_custom_oids():
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                return asyncio.run(
+                    self._query_custom_oids_async(
+                        ip_address, community, port, version,
+                        snmp_v3_username, snmp_v3_auth_protocol,
+                        snmp_v3_auth_password, snmp_v3_priv_protocol,
+                        snmp_v3_priv_password, oid_list
+                    )
                 )
-            )
+            return tpool.execute(_run_custom_oids)
         except Exception as e:
             print(f"Custom OID Query Error: {e}")
             return [{'id': item['id'], 'oid': item['oid'], 'name': item['name'],
@@ -1127,19 +1216,17 @@ class NetworkMonitor:
         )
 
         try:
-            import eventlet.tpool
-
-            def _wrapper():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    return loop.run_until_complete(
-                        self._poll_bandwidth_async(ip_address, community, port, version, **kwargs)
+            def _run_poll_bandwidth():
+                import sys
+                if sys.platform == 'win32':
+                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                return asyncio.run(
+                    asyncio.wait_for(
+                        self._poll_bandwidth_async(ip_address, community, port, version, **kwargs),
+                        timeout=25
                     )
-                finally:
-                    loop.close()
-
-            samples = eventlet.tpool.execute(_wrapper)
+                )
+            samples = tpool.execute(_run_poll_bandwidth)
         except Exception as e:
             print(f"[BW] Poll error for {ip_address}: {e}")
             return

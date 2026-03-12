@@ -1117,7 +1117,8 @@ function createResponseTimeChart() {
     // Prepare data
     const chartData = graphHistoryData.map(d => ({
         x: d.time,
-        y: d.value
+        y: d.value === null ? 0 : d.value,
+        originalValue: d.value
     }));
 
     // Create chart
@@ -1127,17 +1128,19 @@ function createResponseTimeChart() {
             datasets: [{
                 label: 'Response Time (ms)',
                 data: chartData,
-                borderColor: 'rgba(245, 158, 11, 1)', // Orange
-                backgroundColor: 'rgba(245, 158, 11, 0.4)', // Semi-transparent orange
+                borderColor: 'rgba(16, 185, 129, 1)', // Emerald Green
+                backgroundColor: 'rgba(16, 185, 129, 0.4)', // Semi-transparent emerald green
                 borderWidth: 2,
                 fill: true,
                 tension: 0, // sharp edges (jagged style)
-                spanGaps: true,
+                spanGaps: true, // Connect lines across
+                
                 pointRadius: 0, // hide points for a cleaner look
                 pointHoverRadius: 6,
-                pointBackgroundColor: 'rgba(245, 158, 11, 1)',
+                pointBackgroundColor: 'rgba(239, 68, 68, 1)', // Red on hover
                 pointBorderColor: 'white',
-                pointBorderWidth: 2
+                pointBorderWidth: 2,
+                pointHoverRadius: 7
             }]
         },
         options: {
@@ -1150,9 +1153,9 @@ function createResponseTimeChart() {
                 tooltip: {
                     callbacks: {
                         label: function (context) {
-                            const value = context.raw?.y;
-                            if (value === null || value === undefined) return 'DOWN';
-                            return `${value} ms`;
+                            const original = context.raw?.originalValue;
+                            if (original === null || original === undefined) return 'DOWN';
+                            return `${original} ms`;
                         }
                     }
                 },
@@ -1275,7 +1278,8 @@ function addGraphDataPoint(deviceId, responseTime, timestamp) {
     // Update chart
     responseTimeChart.data.datasets[0].data = graphHistoryData.map(d => ({
         x: d.time,
-        y: d.value
+        y: d.value === null ? 0 : d.value,
+        originalValue: d.value
     }));
     responseTimeChart.update('none');
 

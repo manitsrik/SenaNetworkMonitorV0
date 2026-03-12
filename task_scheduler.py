@@ -2,16 +2,27 @@
 Enhanced Task Scheduler for Network Monitor
 Wraps APScheduler with job management, history tracking, and admin API support
 """
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
 from datetime import datetime
 import traceback
+import eventlet
 
 
 class TaskScheduler:
     """Enhanced scheduler with job management and execution history"""
     
     def __init__(self, db):
-        self.scheduler = BackgroundScheduler()
+        # Use BlockingScheduler with a single-thread executor to ensure all jobs
+        # run within the same greenlet context, avoiding thread-switching errors
+        executors = {
+            'default': ThreadPoolExecutor(1)
+        }
+        job_defaults = {
+            'coalesce': True,
+            'max_instances': 1
+        }
+        self.scheduler = BlockingScheduler(executors=executors, job_defaults=job_defaults)
         self.db = db
         self.tasks = {}  # job_id -> task metadata
     
@@ -43,14 +54,15 @@ class TaskScheduler:
             func=wrapped,
             trigger=trigger,
             id=job_id,
-            max_instances=1,
+            max_instances=1 if job_id == 'monitor_job' else 2,
+            misfire_grace_time=30,
             **trigger_args
         )
     
     def start(self):
-        """Start the scheduler"""
-        self.scheduler.start()
-        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks")
+        """Start the scheduler in a dedicated greenlet"""
+        eventlet.spawn(self.scheduler.start)
+        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks (eventlet context)")
     
     def shutdown(self):
         """Shutdown the scheduler"""
@@ -153,7 +165,7 @@ class TaskScheduler:
         def wrapper():
             # Mandatory timeout for ALL background jobs to prevent global stall
             # monitor_job has a 30s interval, give it 120s max. Others 300s.
-            timeout_sec = 120 if job_id == 'monitor_job' else 300
+            timeout_sec = 300 if job_id == 'monitor_job' else 300
             
             import eventlet.timeout
             timer = eventlet.timeout.Timeout(timeout_sec)

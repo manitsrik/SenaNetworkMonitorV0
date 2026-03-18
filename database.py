@@ -298,11 +298,26 @@ class Database:
                 layout_config TEXT,
                 created_by INTEGER,
                 is_public {bool_type} DEFAULT {bool_default_false},
+                display_order INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT {timestamp_default},
                 updated_at TIMESTAMP DEFAULT {timestamp_default},
                 FOREIGN KEY (created_by) REFERENCES users (id)
             )
         ''')
+        
+        # Migration: Add display_order to dashboards if missing
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute('ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0')
+                conn.commit()
+            else:
+                cursor.execute('ALTER TABLE dashboards ADD COLUMN display_order INTEGER DEFAULT 0')
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+            # Column likely exists
         
         # Sub-topologies table
         cursor.execute(f'''
@@ -1774,15 +1789,15 @@ class Database:
         if self.db_type == 'postgresql':
             is_public_val = bool(is_public)
             cursor.execute('''
-                INSERT INTO dashboards (name, layout_config, description, created_by, is_public)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO dashboards (name, layout_config, description, created_by, is_public, display_order)
+                VALUES (%s, %s, %s, %s, %s, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM dashboards))
                 RETURNING id
             ''', (name, layout_config, description, created_by, is_public_val))
             dashboard_id = cursor.fetchone()['id']
         else:
             cursor.execute('''
-                INSERT INTO dashboards (name, layout_config, description, created_by, is_public)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO dashboards (name, layout_config, description, created_by, is_public, display_order)
+                VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM dashboards))
             ''', (name, layout_config, description, created_by, is_public))
             dashboard_id = cursor.lastrowid
         
@@ -1803,7 +1818,7 @@ class Database:
                     FROM dashboards d
                     LEFT JOIN users u ON d.created_by = u.id
                     WHERE d.is_public = TRUE OR d.created_by = {ph}
-                    ORDER BY d.created_at DESC
+                    ORDER BY d.display_order ASC, d.created_at DESC
                 ''', (user_id,))
             else:
                 cursor.execute(f'''
@@ -1811,14 +1826,14 @@ class Database:
                     FROM dashboards d
                     LEFT JOIN users u ON d.created_by = u.id
                     WHERE d.is_public = 1 OR d.created_by = {ph}
-                    ORDER BY d.created_at DESC
+                    ORDER BY d.display_order ASC, d.created_at DESC
                 ''', (user_id,))
         else:
             cursor.execute('''
                 SELECT d.*, u.username as creator_name 
                 FROM dashboards d
                 LEFT JOIN users u ON d.created_by = u.id
-                ORDER BY d.created_at DESC
+                ORDER BY d.display_order ASC, d.created_at DESC
             ''')
             
         dashboards = self._rows_to_dicts(cursor.fetchall())
@@ -1889,6 +1904,23 @@ class Database:
         conn.commit()
         self.release_connection(conn)
         return {'success': True}
+
+    def reorder_dashboards(self, dashboard_ids):
+        """Update display order for dashboards"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        try:
+            for index, d_id in enumerate(dashboard_ids):
+                cursor.execute(f'UPDATE dashboards SET display_order = {ph} WHERE id = {ph}', (index, d_id))
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
 
     # =========================================================================
     # Sub-Topology Methods

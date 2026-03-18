@@ -15,10 +15,19 @@ def _get_db():
 @pages_bp.route('/')
 @login_required
 def index():
-    """Dashboard page"""
+    """Redirect to the first available dashboard (default landing page)"""
     db = _get_db()
-    main_dashboard = db.get_dashboard(1)
-    return render_template('index.html', dashboard=main_dashboard)
+    from flask import session, redirect, url_for
+    user_id = session.get('user_id')
+    dashboards = db.get_dashboards(user_id)
+    
+    if dashboards:
+        # Dashboards are already sorted by display_order in db.get_dashboards()
+        first_dashboard_id = dashboards[0]['id']
+        return redirect(url_for('pages.view_dashboard', dashboard_id=first_dashboard_id))
+    
+    # Fallback to dashboards list if none exist
+    return redirect(url_for('pages.dashboards_list'))
 
 
 @pages_bp.route('/topology')

@@ -107,3 +107,17 @@ def delete_dashboard(dashboard_id):
     """Delete a dashboard"""
     result = _get_db().delete_dashboard(dashboard_id)
     return jsonify(result)
+
+
+@dashboards_bp.route('/api/dashboards/reorder', methods=['POST'])
+@admin_required
+def reorder_dashboards():
+    """Update dashboard display order"""
+    data = request.json
+    dashboard_ids = data.get('dashboard_ids')
+    
+    if not dashboard_ids or not isinstance(dashboard_ids, list):
+        return jsonify({'success': False, 'error': 'dashboard_ids list is required'}), 400
+        
+    result = _get_db().reorder_dashboards(dashboard_ids)
+    return jsonify(result)

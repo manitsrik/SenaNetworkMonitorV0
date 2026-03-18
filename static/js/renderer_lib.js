@@ -68,40 +68,32 @@ window.DashboardRenderer = {
 
         layoutConfig.forEach((widget, index) => {
             const widgetEl = document.createElement('div');
+            widgetEl.className = 'grid-stack-item';
+            
+            // Set GridStack attributes - ensure we use numbers and avoid NaN/null strings
+            const gw = parseInt(widget.w || widget.width || 4);
+            const gh = parseInt(widget.h || (widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4));
+            
+            widgetEl.setAttribute('gs-w', isNaN(gw) ? 4 : gw);
+            widgetEl.setAttribute('gs-h', isNaN(gh) ? 4 : gh);
+
+            if (widget.x !== undefined && widget.x !== null && widget.x !== "null") {
+                widgetEl.setAttribute('gs-x', widget.x);
+            }
+            if (widget.y !== undefined && widget.y !== null && widget.y !== "null") {
+                widgetEl.setAttribute('gs-y', widget.y);
+            }
 
             // Determine class configuration
             widgetEl.setAttribute('data-type', widget.type);
-
-            if (widget.type === 'stat_card') {
-                // Remove the default card styling for stat cards to use the specific stat-card class
-                let widthClass = widget.width || 2;
-                if (typeof widthClass === 'number' || !widthClass.startsWith('w-col-')) {
-                    widthClass = `w-col-${widthClass}`;
-                }
-                widgetEl.className = `stat-card-wrapper ${widthClass}`;
-                widgetEl.style.padding = '0';
-                widgetEl.style.border = 'none';
-                widgetEl.style.background = 'transparent';
-                widgetEl.style.boxShadow = 'none';
-            } else {
-                let widthClass = widget.width || 4; // Default width 4 (1/3)
-                if (typeof widthClass === 'number' || !widthClass.startsWith('w-col-')) {
-                    widthClass = `w-col-${widthClass}`;
-                }
-                widgetEl.className = `grid-widget ${widthClass}`;
-            }
-
-            // Apply custom height to the whole widget card if specified
-            if (widget.height) {
-                widgetEl.style.height = `${widget.height}px`;
-                widgetEl.style.minHeight = 'auto'; // Allow smaller than default min-height
-            }
-
             widgetEl.dataset.index = index;
             widgetEl.id = `widget-${index}`;
 
             let controlsHtml = '';
+            let dragHandleHtml = '';
             if (isEditMode) {
+                // Remove individual drag handle icon to use the whole title as handle
+                dragHandleHtml = ``;
                 controlsHtml = `
                     <div class="widget-controls">
                         <button class="widget-btn configure" onclick="configureWidget(${index})" title="Configure"><i class="fas fa-cog"></i></button>
@@ -111,18 +103,24 @@ window.DashboardRenderer = {
             }
 
             const flexDir = widget.type === 'stat_row' ? 'row' : 'column';
-            // Render structure (Standardized for all types)
-            widgetEl.innerHTML = `
-                <div class="widget-header">
-                    <div class="widget-title">${widget.title || getWidgetDefaultTitle(widget.type)}</div>
-                    ${controlsHtml}
+            
+            // GridStack requires an inner div with class 'grid-stack-item-content'
+            // We use this inner div to house our custom widget structure
+            const contentWrapperHtml = `
+                <div class="grid-stack-item-content">
+                    <div class="widget-header">
+                        <div class="widget-title" style="display: flex; align-items: center;">${dragHandleHtml}${widget.title || getWidgetDefaultTitle(widget.type)}</div>
+                        ${controlsHtml}
+                    </div>
+                    <div class="widget-content" id="widget-content-${index}" style="height: calc(100% - 2rem); min-height: 0; position: relative; display: flex; flex-direction: ${flexDir};"></div>
                 </div>
-                <div class="widget-content" id="widget-content-${index}" style="height: calc(100% - 2rem); min-height: 0; position: relative; display: flex; flex-direction: ${flexDir};"></div>
             `;
+            
+            widgetEl.innerHTML = contentWrapperHtml;
 
             container.appendChild(widgetEl);
 
-            // Render specific content
+            // Render specific content inside the .widget-content container
             const contentContainer = widgetEl.querySelector('.widget-content');
             this.renderWidgetContent(contentContainer, widget, data, index);
         });
@@ -153,6 +151,9 @@ window.DashboardRenderer = {
                     break;
                 case 'stat_row':
                     this.updateStatRow(container, widget, widgetData);
+                    break;
+                case 'device_pie':
+                    this.updateDevicePie(container, widget, widgetData, index);
                     break;
                 case 'trends':
                     // Silent update (already fetches internally)
@@ -192,6 +193,9 @@ window.DashboardRenderer = {
                     break;
                 case 'stat_row':
                     this.renderStatRow(container, widget, widgetData);
+                    break;
+                case 'device_pie':
+                    this.renderDevicePie(container, widget, widgetData, index);
                     break;
                 case 'trends':
                     this.renderResponseTrends(container, widget, widgetData, index);
@@ -694,6 +698,160 @@ window.DashboardRenderer = {
         });
     },
 
+    renderDevicePie: function (container, widget, data, index) {
+        container.innerHTML = '';
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.position = 'relative';
+        container.style.padding = '1.25rem';
+
+        // Chart Area
+        const chartWrapper = document.createElement('div');
+        chartWrapper.style.flex = '1';
+        chartWrapper.style.position = 'relative';
+        chartWrapper.style.minHeight = '140px';
+        container.appendChild(chartWrapper);
+
+        const canvas = document.createElement('canvas');
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        chartWrapper.appendChild(canvas);
+
+        const centerOverlay = document.createElement('div');
+        centerOverlay.style.position = 'absolute';
+        centerOverlay.style.top = '50%';
+        centerOverlay.style.left = '50%';
+        centerOverlay.style.transform = 'translate(-50%, -50%)';
+        centerOverlay.style.textAlign = 'center';
+        centerOverlay.style.pointerEvents = 'none';
+        centerOverlay.innerHTML = `
+            <div class="pie-total-val" style="font-size: 2.75rem; font-weight: 700; color: var(--text-primary); line-height: 1;">0</div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-top: 4px;">DEVICES</div>
+        `;
+        chartWrapper.appendChild(centerOverlay);
+
+        // Legend Area
+        const legendContainer = document.createElement('div');
+        legendContainer.style.marginTop = '1.25rem';
+        legendContainer.className = 'pie-legend-container';
+        container.appendChild(legendContainer);
+
+        const ctx = canvas.getContext('2d');
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        const colorOnline = '#10b981';
+        const colorWarning = '#f59e0b';
+        const colorDown = '#ef4444';
+        const colorOffline = '#64748b';
+
+        const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Online', 'Warning', 'Down', 'Offline'],
+                datasets: [{
+                    data: [0, 0, 0, 0],
+                    backgroundColor: [colorOnline, colorWarning, colorDown, colorOffline],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '76%',
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: true,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed !== null) {
+                                    const totalMatch = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    if (totalMatch > 0) {
+                                        label += context.parsed + ' (' + Math.round((context.parsed / totalMatch) * 100) + '%)';
+                                    } else {
+                                        label += context.parsed;
+                                    }
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                layout: { padding: 0 }
+            }
+        });
+
+        this.instances[`chart_${index}`] = chart;
+        
+        // Initial Update
+        this.updateDevicePie(container, widget, data, index);
+    },
+
+    updateDevicePie: function (container, widget, data, index) {
+        const chart = this.instances[`chart_${index}`];
+        if (!chart) return;
+
+        const stats = data.stats || {};
+        const countOnline = stats.devices_up || 0;
+        const countSlow = stats.devices_slow || 0;
+        const countDown = stats.devices_down || 0;
+        const total = stats.total_devices || 0;
+        const countOffline = Math.max(0, total - (countOnline + countSlow + countDown));
+
+        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+        const colorEmpty = isLight ? '#e2e8f0' : '#334155';
+        const colorOnline = '#10b981';
+        const colorWarning = '#f59e0b';
+        const colorDown = '#ef4444';
+        const colorOffline = '#64748b';
+
+        // Update Chart
+        if (total === 0) {
+            chart.data.datasets[0].data = [1];
+            chart.data.datasets[0].backgroundColor = [colorEmpty];
+            chart.data.labels = ['No Devices'];
+            chart.options.plugins.tooltip.enabled = false;
+        } else {
+            chart.data.datasets[0].data = [countOnline, countSlow, countDown, countOffline];
+            chart.data.datasets[0].backgroundColor = [colorOnline, colorWarning, colorDown, colorOffline];
+            chart.data.labels = ['Online', 'Warning', 'Down', 'Offline'];
+            chart.options.plugins.tooltip.enabled = true;
+        }
+        chart.update();
+
+        // Update Center Text
+        const centerValEl = container.querySelector('.pie-total-val');
+        if (centerValEl) centerValEl.textContent = total;
+
+        // Update Legend
+        const legendContainer = container.querySelector('.pie-legend-container');
+        if (legendContainer) {
+            const legendItems = [
+                { label: 'Online', count: countOnline, color: colorOnline },
+                { label: 'Warning', count: countSlow, color: colorWarning },
+                { label: 'Down', count: countDown, color: colorDown },
+                { label: 'Offline', count: countOffline, color: colorOffline }
+            ];
+
+            legendContainer.innerHTML = legendItems.map((item, idx) => {
+                const borderBottom = idx !== legendItems.length - 1 ? 'border-bottom: 1px solid var(--border-color);' : '';
+                return `
+                <div style="display: flex; justify-content: space-between; padding: 0.6rem 0.25rem; ${borderBottom} font-size: 0.9rem;">
+                    <div style="display: flex; align-items: center; color: var(--text-secondary);">
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${item.color}; margin-right: 0.75rem;"></span>
+                        ${item.label}
+                    </div>
+                    <div style="font-weight: 600; color: var(--text-primary);">${item.count}</div>
+                </div>
+                `;
+            }).join('');
+        }
+    },
 
     renderTopology: function (container, widget, data, index) {
         // Just fill the container

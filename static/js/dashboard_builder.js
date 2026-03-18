@@ -7,6 +7,7 @@ let isEditMode = true;
 let dashboardId = document.getElementById('dashboard-id').value;
 let cachedData = null; // Store fetched data
 let configuringIndex = -1;
+let grid = null; // GridStack instance
 
 document.addEventListener('DOMContentLoaded', () => {
     // Load initial data once
@@ -53,19 +54,21 @@ function addWidget(type) {
         let defaultWidth = 4;
         if (type === 'stat_row') {
             defaultWidth = 12;
-        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts') {
+        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie') {
             defaultWidth = 6;
         }
 
-        let defaultHeight = 350;
-        if (type === 'stat_row') defaultHeight = 150;
-        if (type === 'stat_card') defaultHeight = 150;
+        let defaultHeight = 4; // GridStack height (rows)
+        if (type === 'stat_row') defaultHeight = 2;
+        if (type === 'stat_card') defaultHeight = 2;
 
         const newWidget = {
+            id: 'w_' + Date.now(), // GridStack needs unique IDs ideally, or we track by index
             type: type,
             title: getWidgetDefaultTitleLocal(type),
-            width: defaultWidth,
-            height: defaultHeight,
+            w: defaultWidth,
+            h: defaultHeight,
+            // x and y will be auto-assigned by GridStack if not provided
             config: {} // specific config
         };
 
@@ -123,10 +126,49 @@ function renderGrid() {
 
     try {
         Renderer.renderDashboard(container, currentLayout, cachedData, true);
+        initGridStack();
     } catch (e) {
         console.error('Error rendering grid:', e);
         container.innerHTML = `<p class="text-danger">Error rendering dashboard: ${e.message}</p>`;
     }
+}
+
+function initGridStack() {
+    // If a grid already exists, destroy it before re-rendering
+    if (grid) {
+        grid.destroy(false); // false means don't remove DOM elements, just the grid behavior
+    }
+
+    grid = GridStack.init({
+        cellHeight: 78, // Slightly more compact rows
+        margin: 6,      // Unified margin for all sides (reduced from verticalMargin: 10)
+        handle: '.widget-title', // drag handle
+        float: true, // Allow widgets to be placed anywhere
+        animate: true
+    });
+
+    // Listen for changes (drag, drop, resize)
+    grid.on('change', function(event, items) {
+        if (!items) return;
+        
+        // Update currentLayout based on new GridStack positions
+        items.forEach(item => {
+            const index = item.el.dataset.index;
+            if (index !== undefined && currentLayout[index]) {
+                currentLayout[index].x = item.x;
+                currentLayout[index].y = item.y;
+                currentLayout[index].w = item.w;
+                currentLayout[index].h = item.h;
+            }
+        });
+        
+        // We do NOT call renderGrid() here because GridStack already updated the DOM
+        // and we don't want to interrupt the user's drag/resize action.
+        // We might need to tell charts to resize though.
+        setTimeout(() => {
+             window.dispatchEvent(new Event('resize'));
+        }, 100);
+    });
 }
 
 function saveDashboard() {
@@ -147,7 +189,24 @@ function saveDashboard() {
         }
 
         console.log('Preparing to save dashboard:', name);
-        console.log('Current layout:', currentLayout);
+
+        // Ensure currentLayout has the latest x, y, w, h from grid before saving
+        // This handles cases where widgets auto-flowed but weren't dragged
+        if (grid) {
+            const items = grid.getGridItems();
+            items.forEach(el => {
+                const node = el.gridstackNode;
+                const index = el.dataset.index;
+                if (node && index !== undefined && currentLayout[index]) {
+                    currentLayout[index].x = node.x;
+                    currentLayout[index].y = node.y;
+                    currentLayout[index].w = node.w || 4;
+                    currentLayout[index].h = node.h || 4;
+                }
+            });
+        }
+        
+        console.log('Current layout with extracted coords:', currentLayout);
 
         // Deep copy layout and ensure no DOM elements or circular refs are present
         // This is a common cause of JSON.stringify failures
@@ -214,6 +273,7 @@ function getWidgetDefaultTitleLocal(type) {
         case 'device_grid': return 'Device Status Grid';
         case 'alerts': return 'Active Alerts';
         case 'activity': return 'Recent Activity';
+        case 'device_pie': return 'Device Status Summary';
         default: return 'Widget';
     }
 }
@@ -261,12 +321,12 @@ function configureWidget(index) {
     html += `
         <div style="display: flex; gap: 1rem; margin-top: 1rem;">
             <div class="form-group" style="flex: 1;">
-                <label style="display:block; margin-bottom: 0.5rem;">Width (Col 1-12)</label>
-                <input type="number" id="config-width" class="form-input" value="${widget.width || 4}" min="1" max="12">
+                <label style="display:block; margin-bottom: 0.5rem;">Width (Columns, 1-12)</label>
+                <input type="number" id="config-width" class="form-input" value="${widget.w || widget.width || 4}" min="1" max="12">
             </div>
             <div class="form-group" style="flex: 1;">
-                <label style="display:block; margin-bottom: 0.5rem;">Height (Pixels)</label>
-                <input type="number" id="config-height" class="form-input" value="${widget.height || 350}" min="50" step="10">
+                <label style="display:block; margin-bottom: 0.5rem;">Height (Rows)</label>
+                <input type="number" id="config-height" class="form-input" value="${widget.h || 4}" min="1" max="10">
             </div>
         </div>
     `;
@@ -290,8 +350,13 @@ function saveWidgetConfig() {
     const newHeight = parseInt(document.getElementById('config-height').value);
 
     widget.title = newTitle || null;
-    widget.width = newWidth || 4;
-    widget.height = newHeight || (widget.type === 'stat_row' ? 150 : 350);
+    widget.w = newWidth || 4;
+    widget.h = newHeight || (widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4);
+    
+    // Also remove old properties to keep it clean
+    delete widget.width;
+    delete widget.height;
+    
     widget.config = widget.config || {};
     widget.config.deviceType = newType || null;
 

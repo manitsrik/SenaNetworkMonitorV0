@@ -9,6 +9,8 @@
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack.min.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack-all.js"></script>
 
 <style>
     /* Override content-area padding for full-screen builder */
@@ -77,37 +79,41 @@
     }
 
     .grid-canvas {
-        display: grid;
-        grid-template-columns: repeat(12, 1fr);
-        gap: 0.75rem;
         min-height: 500px;
         padding-bottom: 4rem;
+        background-color: var(--bg-primary);
     }
 
-    .grid-widget {
+    /* GridStack specific overrides */
+    .grid-stack-item-content {
         background-color: var(--bg-secondary);
         border: 1px solid var(--border-color);
-        border-radius: 0.6rem;
-        padding: 0.85rem;
-        position: relative;
-        min-height: 80px;
+        border-radius: 0.5rem; /* Tighter */
+        padding: 0.65rem; /* Reduced */
         display: flex;
         flex-direction: column;
+        overflow: hidden;
     }
 
     .widget-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem; /* Reduced */
         border-bottom: 1px solid var(--border-color);
-        padding-bottom: 0.5rem;
+        padding-bottom: 0.4rem; /* Reduced */
+        flex-shrink: 0;
     }
 
     .widget-title {
         font-weight: 600;
         font-size: 0.95rem;
         color: var(--text-primary);
+        flex-grow: 1;
+        cursor: grab;
+    }
+    .widget-title:active {
+        cursor: grabbing;
     }
 
     .widget-controls {
@@ -160,9 +166,17 @@
     }
 
     .ghost-widget {
-        border: 2px dashed var(--text-muted);
-        background: transparent;
+        border: 2px dashed var(--primary);
+        background: rgba(45, 106, 79, 0.1);
         opacity: 0.5;
+        grid-column: span var(--ghost-col, 4);
+    }
+    
+    .sortable-drag {
+        opacity: 1 !important;
+        cursor: grabbing !important;
+        z-index: 1000;
+        box-shadow: var(--shadow-xl);
     }
 
     /* Form Styles */
@@ -225,6 +239,13 @@
                 <div>
                     <div style="font-weight: 500;">Gauge Chart</div>
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Response Time</div>
+                </div>
+            </div>
+            <div class="widget-item" onclick="addWidget('device_pie')">
+                <i class="fas fa-chart-pie"></i>
+                <div>
+                    <div style="font-weight: 500;">Device Pie</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Status Summary</div>
                 </div>
             </div>
             <div class="widget-item" onclick="addWidget('performance')">
@@ -313,7 +334,7 @@
             </button>
         </div>
 
-        <div id="grid-canvas" class="grid-canvas">
+        <div id="grid-canvas" class="grid-stack">
             <!-- Widgets will be dropped here -->
             <div id="empty-msg"
                 style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 4rem; border: 2px dashed var(--border-color); border-radius: 1rem;">

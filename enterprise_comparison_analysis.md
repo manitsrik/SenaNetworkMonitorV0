@@ -134,8 +134,8 @@
 |-----|-----------|---------|---------|
 | **5.1 LDAP/Active Directory Auth** | ใช้ user/group จาก AD สำหรับ authentication | Medium | ⬜ |
 | **5.2 SSO (SAML/OAuth2)** | Single Sign-On สำหรับองค์กรขนาดใหญ่ | Hard | ⬜ |
-| **5.3 Audit Log** | บันทึกทุก action ที่ user ทำ (who/what/when) | Easy | ⬜ |
-| **5.4 API Documentation (Swagger)** | เปิด public REST API พร้อม docs | Easy | ⬜ |
+| **5.3 Audit Log** | บันทึกทุก action ที่ user ทำ (who/what/when) | Easy | ✅ เสร็จ |
+| **5.4 API Documentation (Swagger)** | เปิด public REST API พร้อม docs | Easy | ✅ เสร็จ |
 | **5.5 Plugin System** | ให้ user เขียน custom monitor/alerter ได้เอง | Hard | ⬜ |
 
 ---
@@ -144,10 +144,10 @@
 
 | งาน | รายละเอียด | ความยาก | สถานะ |
 |-----|-----------|---------|---------|
-| **6.1 Progressive Web App (PWA)** | ใช้งานผ่านมือถือเหมือน native app | Medium | ⬜ |
+| **6.1 Progressive Web App (PWA)** | ใช้งานผ่านมือถือเหมือน native app | Medium | ✅ เสร็จ |
 | **6.2 Dark/Light Theme Switcher** | UI themes ที่สวยงาม | Easy | ✅ เสร็จ |
-| **6.3 Internationalization (i18n)** | รองรับหลายภาษา (ไทย/อังกฤษ) | Medium | ⬜ |
-| **6.4 Responsive Mobile UI** | ปรับ layout ให้ใช้งานบนมือถือได้ดี | Medium | ⬜ |
+| **6.3 Internationalization (i18n)** | รองรับหลายภาษา (ไทย/อังกฤษ) | Medium | ✅ เสร็จ |
+| **6.4 Responsive Mobile UI** | ปรับ layout ให้ใช้งานบนมือถือได้ดี | Medium | ✅ เสร็จ |
 
 ---
 
@@ -208,8 +208,8 @@ quadrantChart
 |---|------|--------|--------|--------|
 | 1 | Webhook alerting (Slack/Teams) | 1-2 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 2 | Custom SNMP OID monitoring | 1-2 วัน | ⭐⭐⭐ | ✅ เสร็จ |
-| 3 | Audit Log | 1 วัน | ⭐⭐⭐ | ⬜ |
-| 4 | API Documentation (Swagger) | 1 วัน | ⭐⭐⭐ | ⬜ |
+| 3 | Audit Log | 1 วัน | ⭐⭐⭐ | ✅ เสร็จ |
+| 4 | API Documentation (Swagger) | 1 วัน | ⭐⭐⭐ | ✅ เสร็จ |
 | 5 | PDF report export | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 6 | SNMP v3 support | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 7 | Alert escalation | 2-3 วัน | ⭐⭐⭐⭐ | ⬜ |

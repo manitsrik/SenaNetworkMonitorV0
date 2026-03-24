@@ -89,7 +89,7 @@
         background-color: var(--bg-secondary);
         border: 1px solid var(--border-color);
         border-radius: 0.5rem; /* Tighter */
-        padding: 0.65rem; /* Reduced */
+        padding: 0.4rem; /* Reduced for compactness */
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -99,9 +99,9 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.4rem; /* Reduced */
+        margin-bottom: 0.25rem; /* Reduced */
         border-bottom: 1px solid var(--border-color);
-        padding-bottom: 0.4rem; /* Reduced */
+        padding-bottom: 0.25rem; /* Reduced */
         flex-shrink: 0;
     }
 
@@ -309,6 +309,13 @@
                 <div>
                     <div style="font-weight: 500;">Recent Activity</div>
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Event Log</div>
+                </div>
+            </div>
+            <div class="widget-item" onclick="addWidget('bandwidth')">
+                <i class="fas fa-network-wired"></i>
+                <div>
+                    <div style="font-weight: 500;">Top Bandwidth</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Top Traffic Interfaces</div>
                 </div>
             </div>
         </div>

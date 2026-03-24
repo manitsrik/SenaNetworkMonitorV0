@@ -22,15 +22,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function fetchData() {
     try {
-        const [devices, stats, topology] = await Promise.all([
+        // Collect specific bandwidth interface IDs from layout
+        let bandwidthIds = [];
+        if (currentLayout) {
+            currentLayout.forEach(w => {
+                if (w.type === 'bandwidth' && w.config && w.config.mode === 'specific' && w.config.deviceId && w.config.ifIndex) {
+                    bandwidthIds.push(`${w.config.deviceId}:${w.config.ifIndex}`);
+                }
+            });
+        }
+        
+        const bwUrl = bandwidthIds.length > 0 ? `/api/bandwidth/current?ids=${bandwidthIds.join(',')}` : '/api/bandwidth/current';
+
+        const [devices, stats, topology, bandwidth] = await Promise.all([
             fetch('/api/devices').then(r => r.json()),
             fetch('/api/statistics').then(r => r.json()),
-            fetch('/api/topology').then(r => r.json())
+            fetch('/api/topology').then(r => r.json()),
+            fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] }))
         ]);
-        cachedData = { devices, stats, connections: topology.connections };
+        cachedData = { devices, stats, connections: topology.connections, bandwidth };
     } catch (error) {
         console.error('Error fetching data:', error);
-        cachedData = { devices: [], stats: {}, connections: [] }; // Fallback
+        cachedData = { devices: [], stats: {}, connections: [], bandwidth: { top_interfaces: [] } }; // Fallback
     }
 }
 
@@ -54,7 +67,7 @@ function addWidget(type) {
         let defaultWidth = 4;
         if (type === 'stat_row') {
             defaultWidth = 12;
-        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie') {
+        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie' || type === 'bandwidth') {
             defaultWidth = 6;
         }
 
@@ -141,7 +154,7 @@ function initGridStack() {
 
     grid = GridStack.init({
         cellHeight: 78, // Slightly more compact rows
-        margin: 6,      // Unified margin for all sides (reduced from verticalMargin: 10)
+        margin: 3,      // Unified margin for all sides (reduced for compactness)
         handle: '.widget-title', // drag handle
         float: true, // Allow widgets to be placed anywhere
         animate: true
@@ -274,6 +287,7 @@ function getWidgetDefaultTitleLocal(type) {
         case 'alerts': return 'Active Alerts';
         case 'activity': return 'Recent Activity';
         case 'device_pie': return 'Device Status Summary';
+        case 'bandwidth': return 'Top Bandwidth';
         default: return 'Widget';
     }
 }
@@ -316,6 +330,52 @@ function configureWidget(index) {
     });
 
     html += `</select></div>`;
+
+    // Special config for Bandwidth widget
+    if (widget.type === 'bandwidth') {
+        const mode = (widget.config && widget.config.mode) || 'top';
+        const selectedDeviceId = (widget.config && widget.config.deviceId) || '';
+        const selectedIfIndex = (widget.config && widget.config.ifIndex) || '';
+
+        html += `
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom: 0.5rem;">Display Mode</label>
+                <select id="config-bw-mode" class="form-input" onchange="toggleBwConfig(this.value)">
+                    <option value="top" ${mode === 'top' ? 'selected' : ''}>Top Interfaces Table (Auto)</option>
+                    <option value="specific" ${mode === 'specific' ? 'selected' : ''}>Specific Interface (Table)</option>
+                    <option value="specific_chart" ${mode === 'specific_chart' ? 'selected' : ''}>Specific Interface (History Chart)</option>
+                </select>
+            </div>
+            <div id="bw-specific-fields" style="display: ${mode.startsWith('specific') ? 'block' : 'none'}; border: 1px dashed var(--border-color); padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label style="display:block; margin-bottom: 0.5rem;">Select Device (SNMP)</label>
+                    <select id="config-bw-device" class="form-input" onchange="loadBwInterfaces(this.value)">
+                        <option value="">-- Select Device --</option>
+        `;
+
+        if (cachedData && cachedData.devices) {
+            cachedData.devices.filter(d => d.monitor_type === 'snmp').forEach(d => {
+                html += `<option value="${d.id}" ${selectedDeviceId == d.id ? 'selected' : ''}>${d.name} (${d.ip_address})</option>`;
+            });
+        }
+
+        html += `
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label style="display:block; margin-bottom: 0.5rem;">Select Interface</label>
+                    <select id="config-bw-interface" class="form-input">
+                        <option value="">-- Select Interface --</option>
+                    </select>
+                </div>
+            </div>
+        `;
+        
+        // Inline script to handle dynamic loading and toggling (executed when modal opens)
+        setTimeout(() => {
+            if (selectedDeviceId) loadBwInterfaces(selectedDeviceId, selectedIfIndex);
+        }, 100);
+    }
 
     // Add layout controls (width and height)
     html += `
@@ -360,6 +420,49 @@ function saveWidgetConfig() {
     widget.config = widget.config || {};
     widget.config.deviceType = newType || null;
 
+    if (widget.type === 'bandwidth') {
+        const mode = document.getElementById('config-bw-mode').value;
+        widget.config.mode = mode;
+        if (mode.startsWith('specific')) {
+            widget.config.deviceId = document.getElementById('config-bw-device').value;
+            widget.config.ifIndex = document.getElementById('config-bw-interface').value;
+        } else {
+            delete widget.config.deviceId;
+            delete widget.config.ifIndex;
+        }
+    }
+
     renderGrid();
     closeModal();
 }
+
+// Bandwidth Customization Helpers (Global scope)
+window.toggleBwConfig = function(mode) {
+    const fields = document.getElementById('bw-specific-fields');
+    if (fields) fields.style.display = mode.startsWith('specific') ? 'block' : 'none';
+};
+
+window.loadBwInterfaces = function(deviceId, selectedIfIndex = null) {
+    const selector = document.getElementById('config-bw-interface');
+    if (!selector || !deviceId) return;
+
+    selector.innerHTML = '<option value="">Loading...</option>';
+
+    fetch(`/api/bandwidth/interfaces?device_id=${deviceId}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.interfaces) {
+                let html = '<option value="">-- Select Interface --</option>';
+                data.interfaces.forEach(iface => {
+                    const sel = (selectedIfIndex && selectedIfIndex == iface.if_index) ? 'selected' : '';
+                    html += `<option value="${iface.if_index}" ${sel}>${iface.if_name} (${(iface.if_speed/1000000).toFixed(0)} Mbps)</option>`;
+                });
+                selector.innerHTML = html;
+            } else {
+                selector.innerHTML = '<option value="">Error loading interfaces</option>';
+            }
+        })
+        .catch(() => {
+            selector.innerHTML = '<option value="">Fetch failed</option>';
+        });
+};

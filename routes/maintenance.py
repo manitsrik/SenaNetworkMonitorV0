@@ -3,6 +3,7 @@ Maintenance windows API routes
 """
 from flask import Blueprint, jsonify, request, current_app
 from .auth import operator_required
+from .audit import log_audit
 
 maintenance_bp = Blueprint('maintenance', __name__)
 
@@ -37,6 +38,7 @@ def add_maintenance_window():
     )
     
     if result['success']:
+        log_audit('create', 'maintenance', 'maintenance', result.get('id'), data['name'])
         return jsonify(result), 201
     return jsonify(result), 400
 
@@ -46,6 +48,7 @@ def add_maintenance_window():
 def delete_maintenance_window(window_id):
     """Delete a maintenance window"""
     result = _get_db().delete_maintenance_window(window_id)
+    log_audit('delete', 'maintenance', 'maintenance', window_id)
     return jsonify(result)
 
 

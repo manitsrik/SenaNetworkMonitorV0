@@ -1,0 +1,188 @@
+# Thai translations for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-03-18 13:21+0700\n"
+"PO-Revision-Date: 2026-03-18 13:21+0700\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: th\n"
+"Language-Team: th <LL@li.org>\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: templates/layout.html:48
+msgid "Main"
+msgstr "หลัก"
+
+#: templates/layout.html:55
+msgid "Dashboard"
+msgstr "กระดานภาพรวม"
+
+#: templates/layout.html:63
+msgid "New Sub-Dashboard"
+msgstr "สร้างกระดานย่อยใหม่"
+
+#: templates/layout.html:74
+msgid "Topology"
+msgstr "แผนผังเครือข่าย"
+
+#: templates/layout.html:81
+msgid "Main Topology"
+msgstr "แผนผังหลัก"
+
+#: templates/layout.html:85
+msgid "New Sub-Topology"
+msgstr "สร้างแผนผังย่อยใหม่"
+
+#: templates/layout.html:91
+msgid "Resources"
+msgstr "ทรัพยากร"
+
+#: templates/layout.html:94
+msgid "Devices"
+msgstr "อุปกรณ์ทั้งหมด"
+
+#: templates/layout.html:98
+msgid "Discovery"
+msgstr "ค้นหาอุปกรณ์"
+
+#: templates/layout.html:102
+msgid "Dashboards"
+msgstr "จัดการกระดาน"
+
+#: templates/layout.html:105
+msgid "Analysis"
+msgstr "วิเคราะห์ข้อมูล"
+
+#: templates/layout.html:108
+msgid "History"
+msgstr "ประวัติการทำงาน"
+
+#: templates/layout.html:112
+msgid "SLA Reports"
+msgstr "รายงาน SLA"
+
+#: templates/layout.html:116
+msgid "SNMP Traps"
+msgstr "บันทึก SNMP Traps"
+
+#: templates/layout.html:120
+msgid "Syslog"
+msgstr "บันทึก Syslog"
+
+#: templates/layout.html:124
+msgid "Bandwidth"
+msgstr "ปริมาณแบนด์วิดท์"
+
+#: templates/layout.html:127
+msgid "System"
+msgstr "ระบบ"
+
+#: templates/layout.html:130
+msgid "Settings"
+msgstr "ตั้งค่าระบบ"
+
+#: templates/layout.html:134
+msgid "API Docs"
+msgstr "คู่มือ API"
+
+#: templates/layout.html:139
+msgid "Audit Log"
+msgstr "ประวัติการใช้งาน (Audit)"
+
+#: templates/layout.html:143
+msgid "Users"
+msgstr "ผู้ใช้งาน"
+
+#: templates/layout.html:170
+msgid "System Normal"
+msgstr "ระบบทำงานปกติ"
+
+#: templates/layout.html:63
+msgid "New Sub-Dashboard"
+msgstr ""
+
+#: templates/layout.html:74
+msgid "Topology"
+msgstr ""
+
+#: templates/layout.html:81
+msgid "Main Topology"
+msgstr ""
+
+#: templates/layout.html:85
+msgid "New Sub-Topology"
+msgstr ""
+
+#: templates/layout.html:91
+msgid "Resources"
+msgstr ""
+
+#: templates/layout.html:94
+msgid "Devices"
+msgstr ""
+
+#: templates/layout.html:98
+msgid "Discovery"
+msgstr ""
+
+#: templates/layout.html:102
+msgid "Dashboards"
+msgstr ""
+
+#: templates/layout.html:105
+msgid "Analysis"
+msgstr ""
+
+#: templates/layout.html:108
+msgid "History"
+msgstr ""
+
+#: templates/layout.html:112
+msgid "SLA Reports"
+msgstr ""
+
+#: templates/layout.html:116
+msgid "SNMP Traps"
+msgstr ""
+
+#: templates/layout.html:120
+msgid "Syslog"
+msgstr ""
+
+#: templates/layout.html:124
+msgid "Bandwidth"
+msgstr ""
+
+#: templates/layout.html:127
+msgid "System"
+msgstr ""
+
+#: templates/layout.html:130
+msgid "Settings"
+msgstr ""
+
+#: templates/layout.html:134
+msgid "API Docs"
+msgstr ""
+
+#: templates/layout.html:139
+msgid "Audit Log"
+msgstr ""
+
+#: templates/layout.html:143
+msgid "Users"
+msgstr ""
+
+#: templates/layout.html:177
+msgid "System Normal"
+msgstr ""
+

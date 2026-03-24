@@ -10,6 +10,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css" />
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e1e2d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         .sortable-ghost {
@@ -37,6 +43,8 @@
 
 <body>
     <div class="app-wrapper">
+        <!-- Mobile Sidebar Backdrop -->
+        <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
         <!-- Sidebar -->
         <nav class="sidebar">
             <div class="sidebar-brand">
@@ -45,14 +53,14 @@
             </div>
 
             <div class="sidebar-menu">
-                <div class="menu-label">Main</div>
+                <div class="menu-label">{{ _('Main') }}</div>
                 <!-- Dashboard Group -->
                 <div class="nav-group">
                     <div class="nav-link-toggle {% if active_page == 'dashboard' or active_page == 'dashboard_view' %}active expanded{% endif %}"
                         onclick="toggleSubmenu('dashboard-submenu', this)">
                         <div class="nav-link-content">
                             <i class="fa-solid fa-gauge-high"></i>
-                            <span>Dashboard</span>
+                            <span>{{ _('Dashboard') }}</span>
                         </div>
                         <i class="fa-solid fa-chevron-right nav-chevron"></i>
                     </div>
@@ -60,7 +68,7 @@
                         id="dashboard-submenu">
 
                         <a href="/dashboard/new" id="new-dashboard-link" class="submenu-item" style="color: var(--primary); font-size: 0.8rem;">
-                            <span>+ New Sub-Dashboard</span>
+                            <span>+ {{ _('New Sub-Dashboard') }}</span>
                         </a>
                         <!-- Dynamic dashboards will be inserted here -->
                     </div>
@@ -71,68 +79,76 @@
                         onclick="toggleSubmenu('topology-submenu', this)">
                         <div class="nav-link-content">
                             <i class="fa-solid fa-sitemap"></i>
-                            <span>Topology</span>
+                            <span>{{ _('Topology') }}</span>
                         </div>
                         <i class="fa-solid fa-chevron-right nav-chevron"></i>
                     </div>
                     <div class="submenu {% if active_page == 'topology' or active_page == 'sub_topology' %}show{% endif %}"
                         id="topology-submenu">
                         <a href="/topology" class="submenu-item {% if active_page == 'topology' %}active{% endif %}">
-                            <span>Main Topology</span>
+                            <span>{{ _('Main Topology') }}</span>
                         </a>
                         <a href="/sub-topology/new" class="submenu-item"
                             style="color: var(--primary); font-size: 0.8rem;">
-                            <span>+ New Sub-Topology</span>
+                            <span>+ {{ _('New Sub-Topology') }}</span>
                         </a>
                         <!-- Dynamic sub-topologies will be inserted here -->
                     </div>
                 </div>
 
-                <div class="menu-label">Resources</div>
+                <div class="menu-label">{{ _('Resources') }}</div>
                 <a href="/devices" class="nav-item {% if active_page == 'devices' %}active{% endif %}">
                     <i class="fa-solid fa-server"></i>
-                    <span>Devices</span>
+                    <span>{{ _('Devices') }}</span>
                 </a>
                 <a href="/discovery" class="nav-item {% if active_page == 'discovery' %}active{% endif %}">
                     <i class="fa-solid fa-radar"></i>
-                    <span>Discovery</span>
+                    <span>{{ _('Discovery') }}</span>
                 </a>
                 <a href="/dashboards" class="nav-item {% if active_page == 'dashboards' %}active{% endif %}">
                     <i class="fa-solid fa-table-columns"></i>
-                    <span>Dashboards</span>
+                    <span>{{ _('Dashboards') }}</span>
                 </a>
 
-                <div class="menu-label">Analysis</div>
+                <div class="menu-label">{{ _('Analysis') }}</div>
                 <a href="/history" class="nav-item {% if active_page == 'history' %}active{% endif %}">
                     <i class="fa-solid fa-clock-rotate-left"></i>
-                    <span>History</span>
+                    <span>{{ _('History') }}</span>
                 </a>
                 <a href="/sla" class="nav-item {% if active_page == 'sla' %}active{% endif %}">
                     <i class="fa-solid fa-file-contract"></i>
-                    <span>SLA Reports</span>
+                    <span>{{ _('SLA Reports') }}</span>
                 </a>
                 <a href="/traps" class="nav-item {% if active_page == 'traps' %}active{% endif %}">
                     <i class="fa-solid fa-bell"></i>
-                    <span>SNMP Traps</span>
+                    <span>{{ _('SNMP Traps') }}</span>
                 </a>
                 <a href="/syslog" class="nav-item {% if active_page == 'syslog' %}active{% endif %}">
                     <i class="fa-solid fa-list-check"></i>
-                    <span>Syslog</span>
+                    <span>{{ _('Syslog') }}</span>
                 </a>
                 <a href="/bandwidth" class="nav-item {% if active_page == 'bandwidth' %}active{% endif %}">
                     <i class="fa-solid fa-chart-area"></i>
-                    <span>Bandwidth</span>
+                    <span>{{ _('Bandwidth') }}</span>
                 </a>
 
-                <div class="menu-label">System</div>
+                <div class="menu-label">{{ _('System') }}</div>
                 <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
                     <i class="fa-solid fa-gear"></i>
-                    <span>Settings</span>
+                    <span>{{ _('Settings') }}</span>
+                </a>
+                <a href="/api/docs" target="_blank" class="nav-item">
+                    <i class="fa-solid fa-book"></i>
+                    <span>{{ _('API Docs') }}</span>
                 </a>
                 {% if session.get('role') == 'admin' %}
+                <a href="/audit-log" class="nav-item {% if active_page == 'audit_log' %}active{% endif %}">
+                    <i class="fa-solid fa-clipboard-list"></i>
+                    <span>{{ _('Audit Log') }}</span>
+                </a>
                 <a href="/users" class="nav-item {% if active_page == 'users' %}active{% endif %}">
                     <i class="fa-solid fa-users-gear"></i>
-                    <span>Users</span>
+                    <span>{{ _('Users') }}</span>
                 </a>
                 {% endif %}
             </div>
@@ -166,7 +182,12 @@
                 <div class="header-right">
                     <div class="status-indicator" id="system-status-header">
                         <span class="status-dot status-dot-up"></span>
-                        <span class="status-text">System Normal</span>
+                        <span class="status-text">{{ _('System Normal') }}</span>
+                    </div>
+
+                    <div class="lang-switch-wrapper" style="margin-right: 15px; display: flex; gap: 10px; align-items: center;">
+                        <a href="/set_lang/en" style="text-decoration: none; opacity: {% if session.get('lang', 'en') == 'en' %}1{% else %}0.4{% endif %}; font-size: 1.2rem; transition: opacity 0.2s;" title="English"><span class="fi fi-us" style="border-radius: 2px;"></span></a>
+                        <a href="/set_lang/th" style="text-decoration: none; opacity: {% if session.get('lang') == 'th' %}1{% else %}0.4{% endif %}; font-size: 1.2rem; transition: opacity 0.2s;" title="ภาษาไทย"><span class="fi fi-th" style="border-radius: 2px;"></span></a>
                     </div>
 
                     <div class="theme-switch-wrapper">
@@ -193,9 +214,15 @@
     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <script>
         // Sidebar Toggle Logic
-        document.getElementById('sidebar-toggle').addEventListener('click', function () {
+        function toggleSidebar() {
             document.querySelector('.app-wrapper').classList.toggle('sidebar-collapsed');
-        });
+        }
+        document.getElementById('sidebar-toggle').addEventListener('click', toggleSidebar);
+        
+        const backdrop = document.getElementById('sidebar-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', toggleSidebar);
+        }
 
         // Submenu Toggle Logic
         function toggleSubmenu(id, element) {
@@ -303,6 +330,20 @@
                 })
                 .catch(error => console.error('Error fetching sub-topologies for sidebar:', error));
         });
+    </script>
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>

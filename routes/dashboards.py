@@ -4,6 +4,7 @@ Dashboard management API routes
 from flask import Blueprint, jsonify, request, session, current_app
 import json
 from .auth import login_required, admin_required
+from .audit import log_audit
 
 dashboards_bp = Blueprint('dashboards', __name__)
 
@@ -50,7 +51,8 @@ def create_dashboard():
         created_by=session.get('user_id'),
         is_public=data.get('is_public', 0)
     )
-    
+    if result.get('success'):
+        log_audit('create', 'dashboard', 'dashboard', result.get('id'), data['name'])
     return jsonify(result)
 
 
@@ -97,7 +99,7 @@ def update_dashboard(dashboard_id):
         description=data.get('description'),
         is_public=data.get('is_public')
     )
-    
+    log_audit('update', 'dashboard', 'dashboard', dashboard_id, data.get('name'))
     return jsonify(result)
 
 
@@ -106,6 +108,7 @@ def update_dashboard(dashboard_id):
 def delete_dashboard(dashboard_id):
     """Delete a dashboard"""
     result = _get_db().delete_dashboard(dashboard_id)
+    log_audit('delete', 'dashboard', 'dashboard', dashboard_id)
     return jsonify(result)
 
 
@@ -120,4 +123,6 @@ def reorder_dashboards():
         return jsonify({'success': False, 'error': 'dashboard_ids list is required'}), 400
         
     result = _get_db().reorder_dashboards(dashboard_ids)
+    if result.get('success'):
+        log_audit('update', 'dashboard', details={'action': 'reorder', 'order': dashboard_ids})
     return jsonify(result)

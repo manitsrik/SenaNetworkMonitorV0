@@ -444,6 +444,23 @@ class Database:
             )
         ''')
         
+        # Audit Logs table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id          {pk},
+                user_id     INTEGER,
+                username    TEXT NOT NULL,
+                action      TEXT NOT NULL,
+                category    TEXT NOT NULL,
+                target_type TEXT,
+                target_id   INTEGER,
+                target_name TEXT,
+                details     TEXT,
+                ip_address  TEXT,
+                created_at  TIMESTAMP DEFAULT {timestamp_default}
+            )
+        ''')
+        
         # Create default users if not exists
         from werkzeug.security import generate_password_hash
         
@@ -493,6 +510,11 @@ class Database:
         # bandwidth_history indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_device_sampled ON bandwidth_history(device_id, sampled_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_sampled_at ON bandwidth_history(sampled_at)')
+        
+        # audit_logs indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username, created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_category ON audit_logs(category, created_at)')
         
         conn.commit()
         self.release_connection(conn)
@@ -1597,6 +1619,44 @@ class Database:
         self.release_connection(conn)
         return rows
 
+    def get_bandwidth_interfaces_by_ids(self, interface_list, minutes=5):
+        """
+        Get bandwidth data for a specific list of interfaces.
+        interface_list: list of (device_id, if_index) tuples
+        """
+        if not interface_list:
+            return []
+            
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        
+        results = []
+        for device_id, if_index in interface_list:
+            cursor.execute(f'''
+                SELECT b.device_id, d.name as device_name, d.ip_address as hostname,
+                       b.if_index, b.if_name,
+                       AVG(b.bps_in) as avg_bps_in,
+                       AVG(b.bps_out) as avg_bps_out,
+                       MAX(b.bps_in) as max_bps_in,
+                       MAX(b.bps_out) as max_bps_out,
+                       AVG(b.util_in) as avg_util_in,
+                       AVG(b.util_out) as avg_util_out,
+                       b.if_speed
+                FROM bandwidth_history b
+                JOIN devices d ON b.device_id = d.id
+                WHERE b.device_id = {ph} AND b.if_index = {ph} AND b.sampled_at >= {ph}
+                GROUP BY b.device_id, d.name, d.ip_address, b.if_index, b.if_name, b.if_speed
+            ''', (device_id, if_index, cutoff))
+            row = cursor.fetchone()
+            if row:
+                results.append(self._row_to_dict(row))
+        
+        self.release_connection(conn)
+        return results
+
     # =========================================================================
     # User Management Methods
     # =========================================================================
@@ -2498,6 +2558,111 @@ class Database:
         ph = self._ph()
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         cursor.execute(f'DELETE FROM syslog_messages WHERE received_at < {ph}', (cutoff,))
+        deleted = cursor.rowcount
+        conn.commit()
+        self.release_connection(conn)
+        return deleted
+
+    # =========================================================================
+    # Audit Log Methods
+    # =========================================================================
+
+    def add_audit_log(self, user_id, username, action, category,
+                      target_type=None, target_id=None, target_name=None,
+                      details=None, ip_address=None):
+        """Record an audit log entry"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        try:
+            cursor.execute(f'''
+                INSERT INTO audit_logs (user_id, username, action, category,
+                    target_type, target_id, target_name, details, ip_address)
+                VALUES ({self._ph(9)})
+            ''', (user_id, username, action, category,
+                  target_type, target_id, target_name, details, ip_address))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[AUDIT] Error logging audit event: {e}")
+        finally:
+            self.release_connection(conn)
+
+    def get_audit_logs(self, limit=100, offset=0, username=None,
+                       action=None, category=None, search=None):
+        """Get paginated audit logs with filtering"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+
+        conditions = []
+        params = []
+
+        if username:
+            conditions.append(f'username = {ph}')
+            params.append(username)
+        if action:
+            conditions.append(f'action = {ph}')
+            params.append(action)
+        if category:
+            conditions.append(f'category = {ph}')
+            params.append(category)
+        if search:
+            like_op = 'ILIKE' if self.db_type == 'postgresql' else 'LIKE'
+            conditions.append(f'(target_name {like_op} {ph} OR details {like_op} {ph} OR username {like_op} {ph})')
+            search_term = f'%{search}%'
+            params.extend([search_term, search_term, search_term])
+
+        where_clause = ''
+        if conditions:
+            where_clause = 'WHERE ' + ' AND '.join(conditions)
+
+        # Get total count
+        cursor.execute(f'SELECT COUNT(*) as cnt FROM audit_logs {where_clause}', params)
+        row = cursor.fetchone()
+        total = row['cnt'] if isinstance(row, dict) else row[0]
+
+        # Get paginated results
+        params_page = params + [limit, offset]
+        cursor.execute(f'''
+            SELECT * FROM audit_logs {where_clause}
+            ORDER BY created_at DESC
+            LIMIT {ph} OFFSET {ph}
+        ''', params_page)
+
+        logs = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return {'logs': logs, 'total': total}
+
+    def get_audit_stats(self):
+        """Get audit log statistics by action type"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute('SELECT action, COUNT(*) as cnt FROM audit_logs GROUP BY action')
+        rows = cursor.fetchall()
+
+        stats = {'total': 0, 'login': 0, 'logout': 0, 'create': 0,
+                 'update': 0, 'delete': 0, 'export': 0, 'import': 0, 'other': 0}
+        for row in rows:
+            if isinstance(row, dict):
+                action, cnt = row['action'], row['cnt']
+            else:
+                action, cnt = row[0], row[1]
+            stats['total'] += cnt
+            if action in stats:
+                stats[action] += cnt
+            else:
+                stats['other'] += cnt
+
+        self.release_connection(conn)
+        return stats
+
+    def cleanup_old_audit_logs(self, days=90):
+        """Remove audit logs older than specified days"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cursor.execute(f'DELETE FROM audit_logs WHERE created_at < {ph}', (cutoff,))
         deleted = cursor.rowcount
         conn.commit()
         self.release_connection(conn)

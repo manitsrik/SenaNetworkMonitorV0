@@ -7,9 +7,33 @@
 {% set active_page = 'dashboard_view' %}
 
 {% block header_actions %}
+<div class="dashboard-filters-header" style="display: flex; gap: 1rem; align-items: center; margin-left: 1rem; border-left: 1px solid var(--border-color); padding-left: 1rem;">
+    <div style="font-weight: 600; color: var(--text-muted); font-size: 0.85rem;">
+        <i class="fa-solid fa-filter"></i> <span class="d-none d-md-inline">{{ _('Filters') }}:</span>
+    </div>
+    
+    <div class="filter-group" style="display: flex; align-items: center; gap: 0.5rem;">
+        <label for="global-filter-location" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Location') }}</label>
+        <select id="global-filter-location" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
+            <option value="all">{{ _('All Locations') }}</option>
+        </select>
+    </div>
+
+    <div class="filter-group" style="display: flex; align-items: center; gap: 0.5rem;">
+        <label for="global-filter-type" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Device Type') }}</label>
+        <select id="global-filter-type" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
+            <option value="all">{{ _('All Types') }}</option>
+        </select>
+    </div>
+    
+    <div style="font-size: 0.75rem; color: var(--text-muted); display: none; align-items: center;" id="filter-status-text" class="d-none d-lg-flex">
+        Loading...
+    </div>
+</div>
+
 {% if session.role == 'admin' %}
-<a href="/dashboard/{{ dashboard_id }}/edit" class="btn btn-xs btn-primary">
-    <i class="fa-solid fa-pen-to-square"></i> Edit Dashboard
+<a href="/dashboard/{{ dashboard_id }}/edit" class="btn btn-xs btn-primary" style="margin-left: 1rem;">
+    <i class="fa-solid fa-pen-to-square"></i> <span class="d-none d-sm-inline">Edit Dashboard</span>
 </a>
 {% endif %}
 {% endblock %}
@@ -28,7 +52,7 @@
         background-color: var(--bg-secondary);
         border: 1px solid var(--border-color);
         border-radius: 0.5rem; /* Slightly tighter border radius */
-        padding: 0.65rem; /* Reduced from 0.85rem */
+        padding: 0.4rem; /* Reduced for compactness */
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -38,9 +62,9 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.4rem; /* Reduced from 0.5rem */
+        margin-bottom: 0.25rem; /* Reduced for compactness */
         border-bottom: 1px solid var(--border-color);
-        padding-bottom: 0.4rem; /* Reduced from 0.5rem */
+        padding-bottom: 0.25rem; /* Reduced for compactness */
         flex-shrink: 0;
     }
 
@@ -66,6 +90,8 @@
 
 {% block content %}
 <div class="dashboard-container" style="padding-top: 0.25rem;">
+    <!-- Filters moved to header_actions -->
+
     <p id="dashboard-desc" class="text-muted" style="display:none;"></p>
     <div id="grid-canvas" class="grid-stack grid-canvas">
         <!-- Widgets will be loaded here -->
@@ -83,7 +109,14 @@
 <script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=3"></script>
 <script>
     let currentDashboard = null;
-    let currentData = { devices: [], stats: {}, connections: [] };
+    let originalData = { devices: [], stats: {}, connections: [] }; // The untouched source data
+    let currentData = { devices: [], stats: {}, connections: [] };  // The filtered data sent to renderer
+    
+    // Filter State
+    let activeFilters = {
+        location: 'all',
+        type: 'all'
+    };
 
     document.addEventListener('DOMContentLoaded', async () => {
         const dashboardId = document.getElementById('dashboard-id').value;
@@ -105,7 +138,8 @@
 
             // Initial data load
             await loadData();
-            render();
+            updateFilterDropdowns(); // Populate dropdowns once data is loaded
+            applyGlobalFilters();    // Apply "all" filter and render
 
         } catch (error) {
             console.error('Error loading dashboard:', error);
@@ -118,15 +152,136 @@
 
     async function loadData() {
         try {
-            const [devices, stats, topology] = await Promise.all([
+            // Collect specific bandwidth interface IDs from layout
+            let bandwidthIds = [];
+            if (currentDashboard && currentDashboard.layout_config) {
+                currentDashboard.layout_config.forEach(w => {
+                    if (w.type === 'bandwidth' && w.config && w.config.mode === 'specific' && w.config.deviceId && w.config.ifIndex) {
+                        bandwidthIds.push(`${w.config.deviceId}:${w.config.ifIndex}`);
+                    }
+                });
+            }
+            
+            const bwUrl = bandwidthIds.length > 0 ? `/api/bandwidth/current?ids=${bandwidthIds.join(',')}` : '/api/bandwidth/current';
+
+            const [devices, stats, topology, bandwidth] = await Promise.all([
                 fetch('/api/devices').then(r => r.json()),
                 fetch('/api/statistics').then(r => r.json()),
-                fetch('/api/topology').then(r => r.json())
+                fetch('/api/topology').then(r => r.json()),
+                fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] }))
             ]);
-            currentData = { devices, stats, connections: topology.connections };
+            originalData = { devices, stats, connections: topology.connections, bandwidth };
         } catch (e) {
             console.error("Error fetching data:", e);
         }
+    }
+
+    function updateFilterDropdowns() {
+        const locationSelect = document.getElementById('global-filter-location');
+        const typeSelect = document.getElementById('global-filter-type');
+        
+        // Extract unique locations and types
+        const locations = [...new Set(originalData.devices.map(d => d.location).filter(Boolean))].sort();
+        const types = [...new Set(originalData.devices.map(d => d.device_type).filter(Boolean))].sort();
+        
+        // Remember current selections
+        const currentLoc = locationSelect.value;
+        const currentType = typeSelect.value;
+        
+        // Rebuild Location Options
+        locationSelect.innerHTML = `<option value="all">{{ _('All Locations') }}</option>`;
+        locations.forEach(loc => {
+            const opt = document.createElement('option');
+            opt.value = loc;
+            opt.textContent = loc;
+            locationSelect.appendChild(opt);
+        });
+        
+        // Rebuild Type Options
+        typeSelect.innerHTML = `<option value="all">{{ _('All Types') }}</option>`;
+        types.forEach(type => {
+            const opt = document.createElement('option');
+            opt.value = type;
+            // Capitalize first letter for display
+            opt.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+            typeSelect.appendChild(opt);
+        });
+        
+        // Restore selections if they still exist
+        if (locations.includes(currentLoc)) locationSelect.value = currentLoc;
+        if (types.includes(currentType)) typeSelect.value = currentType;
+    }
+
+    function applyGlobalFilters() {
+        activeFilters.location = document.getElementById('global-filter-location').value;
+        activeFilters.type = document.getElementById('global-filter-type').value;
+        
+        let filteredDevices = originalData.devices;
+        
+        // Apply Location Filter
+        if (activeFilters.location !== 'all') {
+            filteredDevices = filteredDevices.filter(d => d.location === activeFilters.location);
+        }
+        
+        // Apply Type Filter
+        if (activeFilters.type !== 'all') {
+            filteredDevices = filteredDevices.filter(d => (d.device_type || 'other').toLowerCase() === activeFilters.type.toLowerCase());
+        }
+        
+        // Update connections (only keep connections where both devices exist in filtered list)
+        const deviceIds = new Set(filteredDevices.map(d => d.id));
+        const filteredConnections = originalData.connections.filter(c => 
+            deviceIds.has(c.device_id) && deviceIds.has(c.connected_to)
+        );
+        
+        // Recalculate Stats for the filtered subset
+        const total_devices = filteredDevices.length;
+        const devices_up = filteredDevices.filter(d => d.status === 'up').length;
+        const devices_down = filteredDevices.filter(d => d.status === 'down').length;
+        const devices_slow = filteredDevices.filter(d => d.status === 'slow' || (d.status === 'up' && parseFloat(d.response_time) > 500)).length;
+        
+        let uptime_percentage = 0;
+        let average_response_time = 0;
+        
+        if (total_devices > 0) {
+            uptime_percentage = Math.round(((devices_up + devices_slow) / total_devices) * 100);
+            
+            const responseTimes = filteredDevices
+                .map(d => parseFloat(d.response_time))
+                .filter(t => !isNaN(t) && t > 0);
+                
+            if (responseTimes.length > 0) {
+                const totalRt = responseTimes.reduce((a, b) => a + b, 0);
+                average_response_time = Math.round(totalRt / responseTimes.length * 100) / 100;
+            }
+        }
+        
+        const filteredStats = {
+            total_devices,
+            devices_up,
+            devices_down,
+            devices_slow,
+            uptime_percentage,
+            average_response_time
+        };
+        
+        // Update currentData state and re-render
+        currentData = {
+            devices: filteredDevices,
+            connections: filteredConnections,
+            stats: filteredStats,
+            bandwidth: originalData.bandwidth
+        };
+        
+        // Update status text
+        const statusText = document.getElementById('filter-status-text');
+        if (activeFilters.location === 'all' && activeFilters.type === 'all') {
+            statusText.textContent = `Showing all ${total_devices} devices`;
+        } else {
+            statusText.textContent = `Filtered: ${total_devices} devices match criteria`;
+        }
+        
+        render();
     }
 
     let grid = null;
@@ -176,7 +331,7 @@
         }
         grid = GridStack.init({
             cellHeight: 78, // Slightly more compact rows
-            margin: 6,      // Unified margin for all sides (reduced from verticalMargin: 10)
+            margin: 3,      // Unified margin for all sides (reduced for compactness)
             float: true, // MUST HAVE to keep widgets at their saved Y position
             staticGrid: true // Read-only mode for dashboard view
         });
@@ -191,14 +346,20 @@
     let debounceTimer;
     const debouncedReload = () => {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => loadData().then(render), 800);
+        debounceTimer = setTimeout(() => {
+            loadData().then(() => {
+                updateFilterDropdowns();
+                applyGlobalFilters();
+            });
+        }, 800);
     };
 
     socket.on('status_update', debouncedReload);
 
     socket.on('statistics_update', (stats) => {
-        currentData.stats = stats;
-        render();
+        // We only use server-side stats if no filters are applied, but it's safer
+        // to just trigger a full reload to get the latest raw devices so local filtering is accurate.
+        debouncedReload();
     });
 
     socket.on('topology_updated', debouncedReload);

@@ -1,10 +1,11 @@
 """
 Device management API routes
 """
-from flask import Blueprint, jsonify, request, Response, current_app
+from flask import Blueprint, jsonify, request, Response, current_app, session
 import csv
 import io
 from .auth import login_required, operator_required
+from .audit import log_audit
 
 devices_bp = Blueprint('devices', __name__)
 
@@ -61,6 +62,7 @@ def add_device():
         monitor = _get_monitor()
         status = monitor.check_device(device)
         _get_socketio().emit('status_update', status, namespace='/')
+        log_audit('create', 'device', 'device', result['id'], data['name'])
         return jsonify(result), 201
     else:
         return jsonify(result), 400
@@ -90,6 +92,7 @@ def update_device(device_id):
         dns_query_domain=data.get('dns_query_domain'),
         location_type=data.get('location_type')
     )
+    log_audit('update', 'device', 'device', device_id, data.get('name'))
     return jsonify(result)
 
 
@@ -99,6 +102,7 @@ def delete_device(device_id):
     """Delete a device"""
     result = _get_db().delete_device(device_id)
     _get_socketio().emit('device_deleted', {'id': device_id}, namespace='/')
+    log_audit('delete', 'device', 'device', device_id)
     return jsonify(result)
 
 
@@ -279,6 +283,7 @@ def export_devices_csv():
         writer.writerow(row)
     
     output.seek(0)
+    log_audit('export', 'device', details={'format': 'csv', 'count': len(devices)})
     return Response(
         output.getvalue(),
         mimetype='text/csv',
@@ -342,6 +347,7 @@ def import_devices_csv():
                 results['failed'] += 1
                 results['errors'].append(f"Row {i}: {result.get('error', 'Unknown error')}")
         
+        log_audit('import', 'device', details={'imported': results['imported'], 'failed': results['failed']})
         return jsonify(results)
         
     except Exception as e:

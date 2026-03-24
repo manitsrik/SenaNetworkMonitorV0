@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import asyncio
 import ssl
 import socket
+import threading
 
 # SNMP imports
 try:
@@ -43,6 +44,26 @@ class NetworkMonitor:
         self.monitoring_active = False
         self.alerter = None  # Will be set by app.py
         self.max_workers = Config.MONITOR_MAX_WORKERS
+        
+        # Dedicated Asyncio thread for SNMP (Stable Architecture)
+        self._loop = None
+        self._thread = None
+        if SNMP_AVAILABLE:
+            self._start_asyncio_thread()
+    
+    def _start_asyncio_thread(self):
+        """Start a persistent background thread with an asyncio event loop"""
+        self._loop = asyncio.new_event_loop()
+        def _run_loop(loop):
+            asyncio.set_event_loop(loop)
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            loop.run_forever()
+        
+        import sys
+        self._thread = threading.Thread(target=_run_loop, args=(self._loop,), daemon=True)
+        self._thread.start()
+        print("[MONITOR] Dedicated Asyncio Worker Thread started (SNMP-ready)")
     
     def ping_device(self, ip_address):
         """
@@ -547,67 +568,69 @@ class NetworkMonitor:
         
         # Query system info using async API
         snmp_engine = SnmpEngine()
-        
-        transport = await UdpTransportTarget.create(
-            (ip_address, port), 
-            timeout=Config.SNMP_TIMEOUT, 
-            retries=1
-        )
-        
-        # Query all system MIB objects
-        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
-            snmp_engine,
-            auth_data,
-            transport,
-            ContextData(),
-            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.1.0')),  # sysDescr
-            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.3.0')),  # sysUptime
-            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.4.0')),  # sysContact
-            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.5.0')),  # sysName
-            ObjectType(ObjectIdentity('1.3.6.1.2.1.1.6.0'))   # sysLocation
-        )
-        
-        response_time = (time.time() - start_time) * 1000  # Convert to ms
-        
-        if errorIndication:
-            raise Exception(f"SNMP Error: {errorIndication}")
-        
-        if errorStatus:
-            raise Exception(f"SNMP Error: {errorStatus.prettyPrint()} at {errorIndex}")
-        
-        # Parse results
-        result = {
-            'uptime': None,
-            'sysname': None,
-            'sysdescr': None,
-            'syslocation': None,
-            'syscontact': None
-        }
-        
-        for varBind in varBinds:
-            oid = str(varBind[0])
-            value = varBind[1]
+        try:
+            transport = await UdpTransportTarget.create(
+                (ip_address, port), 
+                timeout=Config.SNMP_TIMEOUT, 
+                retries=1
+            )
             
-            if '1.3.6.1.2.1.1.1.0' in oid:  # sysDescr
-                result['sysdescr'] = str(value)[:255]  # Limit length
-            elif '1.3.6.1.2.1.1.3.0' in oid:  # sysUptime
-                try:
-                    ticks = int(value)
-                    seconds = ticks / 100
-                    days = int(seconds // 86400)
-                    hours = int((seconds % 86400) // 3600)
-                    minutes = int((seconds % 3600) // 60)
-                    result['uptime'] = f"{days}d {hours}h {minutes}m"
-                except:
-                    result['uptime'] = str(value)
-            elif '1.3.6.1.2.1.1.4.0' in oid:  # sysContact
-                result['syscontact'] = str(value)
-            elif '1.3.6.1.2.1.1.5.0' in oid:  # sysName
-                result['sysname'] = str(value)
-            elif '1.3.6.1.2.1.1.6.0' in oid:  # sysLocation
-                result['syslocation'] = str(value)
-        
-        return response_time, result
+            # Query all system MIB objects
+            errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                snmp_engine,
+                auth_data,
+                transport,
+                ContextData(),
+                ObjectType(ObjectIdentity('1.3.6.1.2.1.1.1.0')),  # sysDescr
+                ObjectType(ObjectIdentity('1.3.6.1.2.1.1.3.0')),  # sysUptime
+                ObjectType(ObjectIdentity('1.3.6.1.2.1.1.4.0')),  # sysContact
+                ObjectType(ObjectIdentity('1.3.6.1.2.1.1.5.0')),  # sysName
+                ObjectType(ObjectIdentity('1.3.6.1.2.1.1.6.0'))   # sysLocation
+            )
+            
+            response_time = (time.time() - start_time) * 1000  # Convert to ms
+            
+            if errorIndication:
+                raise Exception(f"SNMP Error: {errorIndication}")
+            
+            if errorStatus:
+                raise Exception(f"SNMP Error: {errorStatus.prettyPrint()} at {errorIndex}")
+            
+            # Parse results
+            result = {
+                'uptime': None,
+                'sysname': None,
+                'sysdescr': None,
+                'syslocation': None,
+                'syscontact': None
+            }
+            
+            for varBind in varBinds:
+                oid = str(varBind[0])
+                value = varBind[1]
+                
+                if '1.3.6.1.2.1.1.1.0' in oid:  # sysDescr
+                    result['sysdescr'] = str(value)[:255]  # Limit length
+                elif '1.3.6.1.2.1.1.3.0' in oid:  # sysUptime
+                    try:
+                        ticks = int(value)
+                        seconds = ticks / 100
+                        days = int(seconds // 86400)
+                        hours = int((seconds % 86400) // 3600)
+                        minutes = int((seconds % 3600) // 60)
+                        result['uptime'] = f"{days}d {hours}h {minutes}m"
+                    except:
+                        result['uptime'] = str(value)
+                elif '1.3.6.1.2.1.1.4.0' in oid:  # sysContact
+                    result['syscontact'] = str(value)
+                elif '1.3.6.1.2.1.1.5.0' in oid:  # sysName
+                    result['sysname'] = str(value)
+                elif '1.3.6.1.2.1.1.6.0' in oid:  # sysLocation
+                    result['syslocation'] = str(value)
+            
+            return response_time, result
+        finally:
+            snmp_engine.close_dispatcher()
 
     def check_snmp(self, ip_address, community='public', port=161, version='2c',
                    snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
@@ -632,22 +655,31 @@ class NetworkMonitor:
             }
         
         try:
-            def _run_snmp():
-                import sys
-                if sys.platform == 'win32':
-                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                return asyncio.run(
-                    asyncio.wait_for(
-                        self._check_snmp_async(
-                            ip_address, community, port, version,
-                            snmp_v3_username, snmp_v3_auth_protocol,
-                            snmp_v3_auth_password, snmp_v3_priv_protocol,
-                            snmp_v3_priv_password
-                        ),
-                        timeout=12
-                    )
-                )
-            response_time, snmp_data = tpool.execute(_run_snmp)
+            # Run coroutine in the dedicated asyncio thread
+            coro = self._check_snmp_async(
+                ip_address, community, port, version,
+                snmp_v3_username, snmp_v3_auth_protocol,
+                snmp_v3_auth_password, snmp_v3_priv_protocol,
+                snmp_v3_priv_password
+            )
+            
+            def _wait_for_result():
+                future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+                return future.result(timeout=12)
+            
+            try:
+                response_time, snmp_data = tpool.execute(_wait_for_result)
+            except Exception as e:
+                print(f"[ERROR] SNMP worker thread call failed for {ip_address}: {e}")
+                return {
+                    'status': 'down',
+                    'response_time': None,
+                    'uptime': None,
+                    'sysname': None,
+                    'sysdescr': None,
+                    'syslocation': None,
+                    'syscontact': None
+                }
             
             # Determine status based on response time
             status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
@@ -908,71 +940,73 @@ class NetworkMonitor:
             auth_data = CommunityData(community, mpModel=mp_model)
         
         snmp_engine = SnmpEngine()
-        
-        transport = await UdpTransportTarget.create(
-            (ip_address, port), 
-            timeout=5,
-            retries=1
-        )
-        
-        interfaces = {}
-        
-        # Query 28 interfaces x 2 OIDs = 56 OIDs (within reasonable limit)
-        objects = []
-        for i in range(1, 29):  # Query interfaces 1-28
-            objects.append(ObjectType(ObjectIdentity(f'1.3.6.1.2.1.2.2.1.2.{i}')))   # ifDescr
-            objects.append(ObjectType(ObjectIdentity(f'1.3.6.1.2.1.2.2.1.8.{i}')))   # ifOperStatus
-        
-        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
-            snmp_engine,
-            auth_data,
-            transport,
-            ContextData(),
-            *objects
-        )
-        
-        if errorIndication:
-            print(f"SNMP Interface Error: {errorIndication}")
-            return []
-        
-        # Parse results
-        for varBind in varBinds:
-            oid = str(varBind[0])
-            value = varBind[1]
+        try:
+            transport = await UdpTransportTarget.create(
+                (ip_address, port), 
+                timeout=5,
+                retries=1
+            )
             
-            # Skip noSuchInstance
-            if 'noSuch' in str(type(value).__name__):
-                continue
+            interfaces = {}
             
-            try:
-                parts = oid.split('.')
-                if_index = int(parts[-1])
-                oid_type = parts[-2]
-            except:
-                continue
+            # Query 28 interfaces x 2 OIDs = 56 OIDs (within reasonable limit)
+            objects = []
+            for i in range(1, 29):  # Query interfaces 1-28
+                objects.append(ObjectType(ObjectIdentity(f'1.3.6.1.2.1.2.2.1.2.{i}')))   # ifDescr
+                objects.append(ObjectType(ObjectIdentity(f'1.3.6.1.2.1.2.2.1.8.{i}')))   # ifOperStatus
             
-            if if_index not in interfaces:
-                interfaces[if_index] = {
-                    'index': if_index,
-                    'name': '',
-                    'speed': 'N/A',
-                    'oper_status': 'unknown',
-                    'bytes_in': 0,
-                    'bytes_out': 0
-                }
+            errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                snmp_engine,
+                auth_data,
+                transport,
+                ContextData(),
+                *objects
+            )
             
-            if oid_type == '2':  # ifDescr
-                interfaces[if_index]['name'] = str(value)
-            elif oid_type == '8':  # ifOperStatus
-                interfaces[if_index]['oper_status'] = 'up' if int(value) == 1 else 'down'
-        
-        # Convert to list
-        result = []
-        for if_index, if_data in sorted(interfaces.items()):
-            if if_data.get('name'):
-                result.append(if_data)
-        
-        return result
+            if errorIndication:
+                print(f"SNMP Interface Error: {errorIndication}")
+                return []
+            
+            # Parse results
+            for varBind in varBinds:
+                oid = str(varBind[0])
+                value = varBind[1]
+                
+                # Skip noSuchInstance
+                if 'noSuch' in str(type(value).__name__):
+                    continue
+                
+                try:
+                    parts = oid.split('.')
+                    if_index = int(parts[-1])
+                    oid_type = parts[-2]
+                except:
+                    continue
+                
+                if if_index not in interfaces:
+                    interfaces[if_index] = {
+                        'index': if_index,
+                        'name': '',
+                        'speed': 'N/A',
+                        'oper_status': 'unknown',
+                        'bytes_in': 0,
+                        'bytes_out': 0
+                    }
+                
+                if oid_type == '2':  # ifDescr
+                    interfaces[if_index]['name'] = str(value)
+                elif oid_type == '8':  # ifOperStatus
+                    interfaces[if_index]['oper_status'] = 'up' if int(value) == 1 else 'down'
+            
+            # Convert to list
+            result = []
+            for if_index, if_data in sorted(interfaces.items()):
+                if if_data.get('name'):
+                    result.append(if_data)
+            
+            return result
+        finally:
+            snmp_engine.close_dispatcher()
 
     def get_snmp_interfaces(self, ip_address, community='public', port=161, version='2c',
                             snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
@@ -986,19 +1020,18 @@ class NetworkMonitor:
             return []
         
         try:
-            def _run_snmp_interfaces():
-                import sys
-                if sys.platform == 'win32':
-                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                return asyncio.run(
-                    self._get_snmp_interfaces_async(
-                        ip_address, community, port, version,
-                        snmp_v3_username, snmp_v3_auth_protocol,
-                        snmp_v3_auth_password, snmp_v3_priv_protocol,
-                        snmp_v3_priv_password
-                    )
-                )
-            return tpool.execute(_run_snmp_interfaces)
+            coro = self._get_snmp_interfaces_async(
+                ip_address, community, port, version,
+                snmp_v3_username, snmp_v3_auth_protocol,
+                snmp_v3_auth_password, snmp_v3_priv_protocol,
+                snmp_v3_priv_password
+            )
+            
+            def _wait_for_snmp_interfaces():
+                future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+                return future.result(timeout=15)
+                
+            return tpool.execute(_wait_for_snmp_interfaces)
         except Exception as e:
             print(f"SNMP Interface Error for {ip_address}: {e}")
             return []
@@ -1046,38 +1079,41 @@ class NetworkMonitor:
         )
 
         snmp_engine = SnmpEngine()
-        transport = await UdpTransportTarget.create(
-            (ip_address, port), timeout=Config.SNMP_TIMEOUT, retries=1
-        )
+        try:
+            transport = await UdpTransportTarget.create(
+                (ip_address, port), timeout=Config.SNMP_TIMEOUT, retries=1
+            )
 
-        # Build OID objects
-        objects = [ObjectType(ObjectIdentity(item['oid'])) for item in oid_list]
+            # Build OID objects
+            objects = [ObjectType(ObjectIdentity(item['oid'])) for item in oid_list]
 
-        errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
-            snmp_engine, auth_data, transport, ContextData(), *objects
-        )
+            errorIndication, errorStatus, errorIndex, varBinds = await get_cmd(
+                snmp_engine, auth_data, transport, ContextData(), *objects
+            )
 
-        results = []
-        if errorIndication:
-            print(f"Custom OID Error: {errorIndication}")
-            for item in oid_list:
-                results.append({**item, 'value': f'Error: {errorIndication}'})
+            results = []
+            if errorIndication:
+                print(f"Custom OID Error: {errorIndication}")
+                for item in oid_list:
+                    results.append({**item, 'value': f'Error: {errorIndication}'})
+                return results
+
+            if errorStatus:
+                print(f"Custom OID Error: {errorStatus.prettyPrint()}")
+                for item in oid_list:
+                    results.append({**item, 'value': f'Error: {errorStatus.prettyPrint()}'})
+                return results
+
+            # Map results back to OID list
+            for i, varBind in enumerate(varBinds):
+                value = varBind[1]
+                val_str = str(value) if 'noSuch' not in str(type(value).__name__) else 'N/A'
+                if i < len(oid_list):
+                    results.append({**oid_list[i], 'value': val_str})
+
             return results
-
-        if errorStatus:
-            print(f"Custom OID Error: {errorStatus.prettyPrint()}")
-            for item in oid_list:
-                results.append({**item, 'value': f'Error: {errorStatus.prettyPrint()}'})
-            return results
-
-        # Map results back to OID list
-        for i, varBind in enumerate(varBinds):
-            value = varBind[1]
-            val_str = str(value) if 'noSuch' not in str(type(value).__name__) else 'N/A'
-            if i < len(oid_list):
-                results.append({**oid_list[i], 'value': val_str})
-
-        return results
+        finally:
+            snmp_engine.close_dispatcher()
 
     def query_custom_oids(self, ip_address, community='public', port=161, version='2c',
                           snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
@@ -1087,19 +1123,18 @@ class NetworkMonitor:
         if not SNMP_AVAILABLE or not oid_list:
             return []
         try:
-            def _run_custom_oids():
-                import sys
-                if sys.platform == 'win32':
-                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                return asyncio.run(
-                    self._query_custom_oids_async(
-                        ip_address, community, port, version,
-                        snmp_v3_username, snmp_v3_auth_protocol,
-                        snmp_v3_auth_password, snmp_v3_priv_protocol,
-                        snmp_v3_priv_password, oid_list
-                    )
-                )
-            return tpool.execute(_run_custom_oids)
+            coro = self._query_custom_oids_async(
+                ip_address, community, port, version,
+                snmp_v3_username, snmp_v3_auth_protocol,
+                snmp_v3_auth_password, snmp_v3_priv_protocol,
+                snmp_v3_priv_password, oid_list
+            )
+            
+            def _wait_for_custom_oids():
+                future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+                return future.result(timeout=20)
+                
+            return tpool.execute(_wait_for_custom_oids)
         except Exception as e:
             print(f"Custom OID Query Error: {e}")
             return [{'id': item['id'], 'oid': item['oid'], 'name': item['name'],
@@ -1135,65 +1170,68 @@ class NetworkMonitor:
             auth_data = CommunityData(community, mpModel=mp_model)
 
         snmp_engine = SnmpEngine()
-        transport = await UdpTransportTarget.create((ip_address, port), timeout=Config.SNMP_TIMEOUT, retries=1)
+        try:
+            transport = await UdpTransportTarget.create((ip_address, port), timeout=Config.SNMP_TIMEOUT, retries=1)
 
 
-        interfaces = {}
-        batch_size = 4  # 4 interfaces × 4 OIDs = 16 OIDs per GET — safe for all switches
+            interfaces = {}
+            batch_size = 4  # 4 interfaces × 4 OIDs = 16 OIDs per GET — safe for all switches
 
-        found_any = True
-        for batch_start in range(1, max_interfaces + 1, batch_size):
-            if not found_any:
-                break
-            batch_indices = list(range(batch_start, min(batch_start + batch_size, max_interfaces + 1)))
+            found_any = True
+            for batch_start in range(1, max_interfaces + 1, batch_size):
+                if not found_any:
+                    break
+                batch_indices = list(range(batch_start, min(batch_start + batch_size, max_interfaces + 1)))
 
-            # Build OID list for this batch: all 4 columns for each interface index
-            oids = []
-            col_map = {}
-            for idx in batch_indices:
-                for col_num, field in [(2, 'if_name'), (5, 'if_speed'), (10, 'bytes_in'), (16, 'bytes_out')]:
-                    oid_str = f'1.3.6.1.2.1.2.2.1.{col_num}.{idx}'
-                    oids.append(ObjectType(ObjectIdentity(oid_str)))
-                    col_map[oid_str] = (idx, field)
+                # Build OID list for this batch: all 4 columns for each interface index
+                oids = []
+                col_map = {}
+                for idx in batch_indices:
+                    for col_num, field in [(2, 'if_name'), (5, 'if_speed'), (10, 'bytes_in'), (16, 'bytes_out')]:
+                        oid_str = f'1.3.6.1.2.1.2.2.1.{col_num}.{idx}'
+                        oids.append(ObjectType(ObjectIdentity(oid_str)))
+                        col_map[oid_str] = (idx, field)
 
-            try:
-                errInd, errStat, errIdx, varBinds = await get_cmd(
-                    snmp_engine, auth_data, transport, ContextData(), *oids
-                )
-            except Exception as e:
-                print(f"[BW] get_cmd exception batch if{batch_start}-{batch_indices[-1]} @ {ip_address}: {e}")
-                break
-
-            if errInd:
-                print(f"[BW] get_cmd error batch if{batch_start} @ {ip_address}: {errInd}")
-                break
-            if errStat:
-                print(f"[BW] SNMP error batch if{batch_start} @ {ip_address}: {errStat.prettyPrint()}")
-                break
-
-            found_any = False
-            for vb in varBinds:
-                oid_str = str(vb[0])
-                val = vb[1]
-                val_type = type(val).__name__
-                if 'noSuch' in val_type or 'endOf' in val_type:
-                    continue
-                if oid_str not in col_map:
-                    continue
-                if_idx, field = col_map[oid_str]
-                if if_idx not in interfaces:
-                    interfaces[if_idx] = {'if_index': if_idx, 'if_name': '',
-                                          'if_speed': 0, 'bytes_in': 0, 'bytes_out': 0}
-                parser = str if field == 'if_name' else int
                 try:
-                    interfaces[if_idx][field] = parser(val)
-                    found_any = True
-                except Exception:
-                    pass
+                    errInd, errStat, errIdx, varBinds = await get_cmd(
+                        snmp_engine, auth_data, transport, ContextData(), *oids
+                    )
+                except Exception as e:
+                    print(f"[BW] get_cmd exception batch if{batch_start}-{batch_indices[-1]} @ {ip_address}: {e}")
+                    break
 
-        result = list(interfaces.values())
-        print(f"[BW] Polled {len(result)} interfaces from {ip_address}")
-        return result
+                if errInd:
+                    print(f"[BW] get_cmd error batch if{batch_start} @ {ip_address}: {errInd}")
+                    break
+                if errStat:
+                    print(f"[BW] SNMP error batch if{batch_start} @ {ip_address}: {errStat.prettyPrint()}")
+                    break
+
+                found_any = False
+                for vb in varBinds:
+                    oid_str = str(vb[0])
+                    val = vb[1]
+                    val_type = type(val).__name__
+                    if 'noSuch' in val_type or 'endOf' in val_type:
+                        continue
+                    if oid_str not in col_map:
+                        continue
+                    if_idx, field = col_map[oid_str]
+                    if if_idx not in interfaces:
+                        interfaces[if_idx] = {'if_index': if_idx, 'if_name': '',
+                                              'if_speed': 0, 'bytes_in': 0, 'bytes_out': 0}
+                    parser = str if field == 'if_name' else int
+                    try:
+                        interfaces[if_idx][field] = parser(val)
+                        found_any = True
+                    except Exception:
+                        pass
+
+            result = list(interfaces.values())
+            print(f"[BW] Polled {len(result)} interfaces from {ip_address}")
+            return result
+        finally:
+            snmp_engine.close_dispatcher()
 
     def poll_bandwidth(self, device):
         """
@@ -1216,17 +1254,18 @@ class NetworkMonitor:
         )
 
         try:
-            def _run_poll_bandwidth():
-                import sys
-                if sys.platform == 'win32':
-                    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                return asyncio.run(
-                    asyncio.wait_for(
-                        self._poll_bandwidth_async(ip_address, community, port, version, **kwargs),
-                        timeout=25
-                    )
-                )
-            samples = tpool.execute(_run_poll_bandwidth)
+            # Run coroutine in the dedicated asyncio thread
+            coro = self._poll_bandwidth_async(ip_address, community, port, version, **kwargs)
+            
+            def _wait_for_bandwidth():
+                future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+                return future.result(timeout=25)
+            
+            try:
+                samples = tpool.execute(_wait_for_bandwidth)
+            except Exception as e:
+                print(f"[ERROR] Bandwidth worker thread call failed for {ip_address}: {e}")
+                return
         except Exception as e:
             print(f"[BW] Poll error for {ip_address}: {e}")
             return

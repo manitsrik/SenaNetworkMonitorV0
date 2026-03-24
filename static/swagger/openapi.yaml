@@ -1,0 +1,1176 @@
+openapi: 3.0.3
+info:
+  title: NW Monitor API
+  description: |
+    REST API for the Network Monitor System.
+    Provides endpoints for device management, monitoring, topology,
+    dashboards, alerts, SLA reports, bandwidth, SNMP traps, syslog,
+    user management, audit logs, and system administration.
+  version: "1.2.0"
+  contact:
+    name: NW Monitor Admin
+
+servers:
+  - url: /
+    description: Current server
+
+tags:
+  - name: Devices
+    description: Device CRUD and CSV import/export
+  - name: Monitoring
+    description: Real-time status, statistics, and on-demand checks
+  - name: SNMP
+    description: SNMP interface data and custom OIDs
+  - name: Topology
+    description: Network topology connections
+  - name: Sub-Topologies
+    description: Sub-topology views
+  - name: Dashboards
+    description: Dashboard CRUD and ordering
+  - name: Alerts
+    description: Alert settings, history, and test notifications
+  - name: SLA
+    description: SLA reports and uptime data
+  - name: History
+    description: Historical status data
+  - name: Maintenance
+    description: Maintenance windows
+  - name: Discovery
+    description: Network device discovery
+  - name: Bandwidth
+    description: SNMP bandwidth monitoring
+  - name: SNMP Traps
+    description: SNMP trap management
+  - name: Syslog
+    description: Syslog messages
+  - name: Users
+    description: User management (admin only)
+  - name: Audit Log
+    description: User activity audit trail (admin only)
+  - name: System
+    description: Services and scheduled tasks
+
+# ============================================================
+paths:
+
+  # ---- Devices ----
+  /api/devices:
+    get:
+      tags: [Devices]
+      summary: List all devices
+      responses:
+        "200":
+          description: Array of devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+    post:
+      tags: [Devices]
+      summary: Add a new device
+      description: Requires operator role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceCreate"
+      responses:
+        "201":
+          description: Device created
+        "400":
+          description: Validation error
+
+  /api/devices/{device_id}:
+    put:
+      tags: [Devices]
+      summary: Update a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceCreate"
+      responses:
+        "200":
+          description: Device updated
+    delete:
+      tags: [Devices]
+      summary: Delete a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Device deleted
+
+  /api/devices/export/csv:
+    get:
+      tags: [Devices]
+      summary: Export devices as CSV
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv: {}
+
+  /api/devices/import/csv:
+    post:
+      tags: [Devices]
+      summary: Import devices from CSV
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import results
+
+  # ---- Monitoring ----
+  /api/status:
+    get:
+      tags: [Monitoring]
+      summary: Get all device statuses
+      responses:
+        "200":
+          description: Array of device statuses
+
+  /api/statistics:
+    get:
+      tags: [Monitoring]
+      summary: Get monitoring statistics summary
+      responses:
+        "200":
+          description: Statistics object
+
+  /api/statistics/trend:
+    get:
+      tags: [Monitoring]
+      summary: Get statistics trend data
+      parameters:
+        - name: hours
+          in: query
+          schema: { type: integer, default: 24 }
+      responses:
+        "200":
+          description: Trend data
+
+  /api/check/{device_id}:
+    post:
+      tags: [Monitoring]
+      summary: Trigger an immediate check for a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Check result
+
+  # ---- SNMP ----
+  /api/snmp/{device_id}/interfaces:
+    get:
+      tags: [SNMP]
+      summary: Get SNMP interface data
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Interface list
+
+  /api/snmp/{device_id}/custom-oids:
+    get:
+      tags: [SNMP]
+      summary: Get custom OIDs for a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Custom OID list
+    post:
+      tags: [SNMP]
+      summary: Add a custom OID to a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                oid:
+                  type: string
+                label:
+                  type: string
+      responses:
+        "201":
+          description: OID added
+
+  /api/snmp/custom-oids/{oid_id}:
+    delete:
+      tags: [SNMP]
+      summary: Delete a custom OID
+      parameters:
+        - name: oid_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: OID deleted
+
+  /api/snmp/{device_id}/custom-oids/query:
+    post:
+      tags: [SNMP]
+      summary: Query custom OIDs for a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: OID query results
+
+  # ---- Topology ----
+  /api/topology:
+    get:
+      tags: [Topology]
+      summary: Get topology (devices + connections)
+      responses:
+        "200":
+          description: Topology data
+
+  /api/topology/connection:
+    post:
+      tags: [Topology]
+      summary: Add a topology connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, connected_to]
+              properties:
+                device_id: { type: integer }
+                connected_to: { type: integer }
+                view_type: { type: string, default: standard }
+      responses:
+        "201":
+          description: Connection created
+
+  /api/topology/connection/{connection_id}:
+    delete:
+      tags: [Topology]
+      summary: Delete a topology connection
+      parameters:
+        - name: connection_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Connection deleted
+
+  # ---- Sub-Topologies ----
+  /api/sub-topologies:
+    get:
+      tags: [Sub-Topologies]
+      summary: List all sub-topologies
+      responses:
+        "200":
+          description: Array of sub-topologies
+    post:
+      tags: [Sub-Topologies]
+      summary: Create a sub-topology
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                device_ids:
+                  type: array
+                  items: { type: integer }
+                connections:
+                  type: array
+                  items: { type: object }
+      responses:
+        "201":
+          description: Sub-topology created
+
+  /api/sub-topologies/{sub_topo_id}:
+    get:
+      tags: [Sub-Topologies]
+      summary: Get a sub-topology with devices
+      parameters:
+        - $ref: "#/components/parameters/SubTopoId"
+      responses:
+        "200":
+          description: Sub-topology detail
+    put:
+      tags: [Sub-Topologies]
+      summary: Update a sub-topology
+      parameters:
+        - $ref: "#/components/parameters/SubTopoId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                device_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        "200":
+          description: Sub-topology updated
+    delete:
+      tags: [Sub-Topologies]
+      summary: Delete a sub-topology
+      parameters:
+        - $ref: "#/components/parameters/SubTopoId"
+      responses:
+        "200":
+          description: Sub-topology deleted
+
+  /api/sub-topologies/upload-bg:
+    post:
+      tags: [Sub-Topologies]
+      summary: Upload background image
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Upload result with URL
+
+  # ---- Dashboards ----
+  /api/dashboards:
+    get:
+      tags: [Dashboards]
+      summary: List all dashboards
+      responses:
+        "200":
+          description: Array of dashboards
+    post:
+      tags: [Dashboards]
+      summary: Create a dashboard (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                layout_config: { type: object }
+                is_public: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Dashboard created
+
+  /api/dashboards/{dashboard_id}:
+    get:
+      tags: [Dashboards]
+      summary: Get a specific dashboard
+      parameters:
+        - $ref: "#/components/parameters/DashboardId"
+      responses:
+        "200":
+          description: Dashboard detail
+    put:
+      tags: [Dashboards]
+      summary: Update a dashboard (admin)
+      parameters:
+        - $ref: "#/components/parameters/DashboardId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                layout_config: { type: object }
+                description: { type: string }
+                is_public: { type: integer }
+      responses:
+        "200":
+          description: Dashboard updated
+    delete:
+      tags: [Dashboards]
+      summary: Delete a dashboard (admin)
+      parameters:
+        - $ref: "#/components/parameters/DashboardId"
+      responses:
+        "200":
+          description: Dashboard deleted
+
+  /api/dashboards/reorder:
+    post:
+      tags: [Dashboards]
+      summary: Reorder dashboards (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dashboard_ids]
+              properties:
+                dashboard_ids:
+                  type: array
+                  items: { type: integer }
+      responses:
+        "200":
+          description: Order saved
+
+  # ---- Alerts ----
+  /api/alert-settings:
+    get:
+      tags: [Alerts]
+      summary: Get alert settings
+      responses:
+        "200":
+          description: Settings key-value object
+    post:
+      tags: [Alerts]
+      summary: Save alert settings (operator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: { type: string }
+      responses:
+        "200":
+          description: Settings saved
+
+  /api/alert-test/{channel}:
+    post:
+      tags: [Alerts]
+      summary: Send a test alert
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [email, line, telegram]
+      responses:
+        "200":
+          description: Test result
+
+  /api/alert-history:
+    get:
+      tags: [Alerts]
+      summary: Get alert history
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+      responses:
+        "200":
+          description: Array of alert events
+
+  /api/reports/test:
+    post:
+      tags: [Alerts]
+      summary: Send a test scheduled report (operator)
+      responses:
+        "200":
+          description: Report send result
+
+  # ---- SLA ----
+  /api/sla:
+    get:
+      tags: [SLA]
+      summary: Get SLA data for all devices
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+        - name: target
+          in: query
+          schema: { type: number, default: 99.9 }
+      responses:
+        "200":
+          description: SLA summary and device data
+
+  /api/sla/{device_id}:
+    get:
+      tags: [SLA]
+      summary: Get SLA data for a specific device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        "200":
+          description: Device SLA data
+
+  /api/sla/export/csv:
+    get:
+      tags: [SLA]
+      summary: Export SLA report as CSV
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        "200":
+          description: CSV download
+          content:
+            text/csv: {}
+
+  # ---- History ----
+  /api/devices/{device_id}/history:
+    get:
+      tags: [History]
+      summary: Get status history for a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - name: limit
+          in: query
+          schema: { type: integer, default: 150 }
+        - name: minutes
+          in: query
+          schema: { type: integer }
+        - name: sample
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Array of status records
+
+  /api/history:
+    get:
+      tags: [History]
+      summary: Get historical data with filters
+      parameters:
+        - name: start_date
+          in: query
+          schema: { type: string, format: date }
+        - name: end_date
+          in: query
+          schema: { type: string, format: date }
+        - name: device_id
+          in: query
+          schema: { type: integer }
+        - name: device_ids
+          in: query
+          description: Comma-separated device IDs
+          schema: { type: string }
+        - name: device_type
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Historical data
+
+  /api/history/stats:
+    get:
+      tags: [History]
+      summary: Get aggregated historical statistics
+      parameters:
+        - name: start_date
+          in: query
+          schema: { type: string, format: date }
+        - name: end_date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Aggregated stats
+
+  # ---- Maintenance ----
+  /api/maintenance:
+    get:
+      tags: [Maintenance]
+      summary: List all maintenance windows
+      responses:
+        "200":
+          description: Array of maintenance windows
+    post:
+      tags: [Maintenance]
+      summary: Create a maintenance window (operator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, start_time, end_time]
+              properties:
+                name: { type: string }
+                start_time: { type: string, format: date-time }
+                end_time: { type: string, format: date-time }
+                device_id: { type: integer }
+                recurring: { type: string }
+                description: { type: string }
+      responses:
+        "201":
+          description: Window created
+
+  /api/maintenance/{window_id}:
+    delete:
+      tags: [Maintenance]
+      summary: Delete a maintenance window (operator)
+      parameters:
+        - name: window_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Window deleted
+
+  /api/maintenance/active:
+    get:
+      tags: [Maintenance]
+      summary: Get currently active maintenance windows
+      parameters:
+        - name: device_id
+          in: query
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Active windows
+
+  # ---- Discovery ----
+  /api/discovery/scan:
+    post:
+      tags: [Discovery]
+      summary: Start a subnet scan (operator)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subnet]
+              properties:
+                subnet:
+                  type: string
+                  example: "192.168.1.0/24"
+      responses:
+        "200":
+          description: Scan started
+
+  /api/discovery/status:
+    get:
+      tags: [Discovery]
+      summary: Get current scan status
+      responses:
+        "200":
+          description: Scan progress
+
+  /api/discovery/results:
+    get:
+      tags: [Discovery]
+      summary: Get completed scan results
+      responses:
+        "200":
+          description: Discovered devices
+
+  /api/discovery/reset:
+    post:
+      tags: [Discovery]
+      summary: Cancel / reset running scan
+      responses:
+        "200":
+          description: Scan cancelled
+
+  /api/discovery/add:
+    post:
+      tags: [Discovery]
+      summary: Add discovered devices to monitoring
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [devices]
+              properties:
+                devices:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ip_address: { type: string }
+                      name: { type: string }
+                      device_type: { type: string }
+                      monitor_type: { type: string }
+      responses:
+        "200":
+          description: Add results
+
+  # ---- Bandwidth ----
+  /api/bandwidth/devices:
+    get:
+      tags: [Bandwidth]
+      summary: List SNMP devices for bandwidth monitoring
+      responses:
+        "200":
+          description: SNMP device list
+
+  /api/bandwidth/interfaces:
+    get:
+      tags: [Bandwidth]
+      summary: Get interfaces for a device
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Interface list
+
+  /api/bandwidth/history:
+    get:
+      tags: [Bandwidth]
+      summary: Get bandwidth time-series data
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: if_index
+          in: query
+          schema: { type: integer }
+        - name: minutes
+          in: query
+          schema: { type: integer, default: 60 }
+      responses:
+        "200":
+          description: Bandwidth history
+
+  /api/bandwidth/current:
+    get:
+      tags: [Bandwidth]
+      summary: Get top bandwidth interfaces (last 5 min)
+      responses:
+        "200":
+          description: Top interfaces
+
+  /api/bandwidth/poll:
+    post:
+      tags: [Bandwidth]
+      summary: Trigger manual bandwidth poll for a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id]
+              properties:
+                device_id: { type: integer }
+      responses:
+        "200":
+          description: Poll started
+
+  /api/bandwidth/debug:
+    get:
+      tags: [Bandwidth]
+      summary: List SNMP devices with debug URLs
+      responses:
+        "200":
+          description: Debug device list
+
+  /api/bandwidth/debug/{device_id}:
+    get:
+      tags: [Bandwidth]
+      summary: SNMP diagnostic for a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+      responses:
+        "200":
+          description: Diagnostic results
+
+  # ---- SNMP Traps ----
+  /api/traps:
+    get:
+      tags: [SNMP Traps]
+      summary: Get traps with filters
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: severity
+          in: query
+          schema: { type: string }
+        - name: source_ip
+          in: query
+          schema: { type: string }
+        - name: acknowledged
+          in: query
+          schema: { type: string, enum: ["true", "false"] }
+      responses:
+        "200":
+          description: Trap list
+
+  /api/traps/stats:
+    get:
+      tags: [SNMP Traps]
+      summary: Get trap statistics
+      responses:
+        "200":
+          description: Trap stats
+
+  /api/traps/{trap_id}/ack:
+    post:
+      tags: [SNMP Traps]
+      summary: Acknowledge a trap
+      parameters:
+        - name: trap_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Trap acknowledged
+
+  /api/traps/ack-all:
+    post:
+      tags: [SNMP Traps]
+      summary: Acknowledge all traps
+      responses:
+        "200":
+          description: All acknowledged
+
+  /api/traps/{trap_id}:
+    delete:
+      tags: [SNMP Traps]
+      summary: Delete a trap
+      parameters:
+        - name: trap_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Trap deleted
+
+  # ---- Syslog ----
+  /api/syslog:
+    get:
+      tags: [Syslog]
+      summary: Get syslog messages
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: severity
+          in: query
+          schema: { type: string }
+        - name: source_ip
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Syslog messages
+
+  /api/syslog/stats:
+    get:
+      tags: [Syslog]
+      summary: Get syslog statistics
+      responses:
+        "200":
+          description: Syslog stats
+
+  # ---- Users ----
+  /api/users:
+    get:
+      tags: [Users]
+      summary: List all users (admin)
+      responses:
+        "200":
+          description: Array of users
+    post:
+      tags: [Users]
+      summary: Create a new user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+      responses:
+        "201":
+          description: User created
+
+  /api/users/{user_id}:
+    put:
+      tags: [Users]
+      summary: Update a user (admin)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role: { type: string, enum: [admin, operator, viewer] }
+                display_name: { type: string }
+                email: { type: string }
+                is_active: { type: boolean }
+                password: { type: string }
+      responses:
+        "200":
+          description: User updated
+    delete:
+      tags: [Users]
+      summary: Delete a user (admin)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: User deleted
+
+  /api/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: Current user details
+
+  /api/users/me/password:
+    put:
+      tags: [Users]
+      summary: Change own password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "200":
+          description: Password changed
+
+  # ---- Audit Log ----
+  /api/audit-logs:
+    get:
+      tags: [Audit Log]
+      summary: Get paginated audit logs (admin)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: username
+          in: query
+          schema: { type: string }
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [login, logout, failed_login, create, update, delete, export, import]
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [auth, device, user, dashboard, topology, maintenance, settings]
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated audit logs
+
+  /api/audit-logs/stats:
+    get:
+      tags: [Audit Log]
+      summary: Get audit log statistics (admin)
+      responses:
+        "200":
+          description: Action counts
+
+  /api/audit-logs/export/csv:
+    get:
+      tags: [Audit Log]
+      summary: Export audit logs as CSV (admin)
+      responses:
+        "200":
+          description: CSV download
+          content:
+            text/csv: {}
+
+  # ---- System ----
+  /api/services/status:
+    get:
+      tags: [System]
+      summary: Get background service statuses
+      responses:
+        "200":
+          description: Service status
+
+  /api/tasks:
+    get:
+      tags: [System]
+      summary: List scheduled tasks
+      responses:
+        "200":
+          description: Task list
+
+  /api/tasks/{job_id}/run:
+    post:
+      tags: [System]
+      summary: Run a task immediately
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Task triggered
+
+  /api/tasks/{job_id}/pause:
+    post:
+      tags: [System]
+      summary: Pause a scheduled task
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Task paused
+
+  /api/tasks/{job_id}/resume:
+    post:
+      tags: [System]
+      summary: Resume a paused task
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Task resumed
+
+  /api/tasks/history:
+    get:
+      tags: [System]
+      summary: Get task execution history
+      parameters:
+        - name: job_id
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: Execution history
+
+# ============================================================
+components:
+  parameters:
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema: { type: integer }
+    DashboardId:
+      name: dashboard_id
+      in: path
+      required: true
+      schema: { type: integer }
+    SubTopoId:
+      name: sub_topo_id
+      in: path
+      required: true
+      schema: { type: integer }
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  schemas:
+    Device:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        ip_address: { type: string }
+        device_type: { type: string }
+        location: { type: string }
+        monitor_type: { type: string, enum: [ping, http, snmp, tcp, dns] }
+        status: { type: string, enum: [up, down, unknown] }
+        response_time: { type: number }
+        last_check: { type: string, format: date-time }
+
+    DeviceCreate:
+      type: object
+      required: [name, ip_address]
+      properties:
+        name: { type: string }
+        ip_address: { type: string }
+        device_type: { type: string }
+        location: { type: string }
+        monitor_type: { type: string, enum: [ping, http, snmp, tcp, dns], default: ping }
+        snmp_community: { type: string }
+        snmp_port: { type: integer, default: 161 }
+        snmp_version: { type: string, enum: ["1", "2c", "3"] }
+        tcp_port: { type: integer }
+        dns_query_domain: { type: string }
+        location_type: { type: string, enum: [on-premise, cloud] }
+
+    UserCreate:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        role: { type: string, enum: [admin, operator, viewer], default: viewer }
+        display_name: { type: string }
+        email: { type: string, format: email }

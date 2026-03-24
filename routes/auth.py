@@ -64,8 +64,22 @@ def login():
             session['user_id'] = user['id']
             session['role'] = user['role']
             session['display_name'] = user.get('display_name') or username
+            # Audit: successful login
+            from .audit import log_audit
+            log_audit('login', 'auth', details={'role': user['role']})
             return redirect(url_for('pages.index'))
         else:
+            # Audit: failed login attempt
+            try:
+                from flask import current_app
+                db2 = current_app.config['DB']
+                db2.add_audit_log(
+                    user_id=None, username=username,
+                    action='failed_login', category='auth',
+                    ip_address=request.remote_addr
+                )
+            except Exception:
+                pass
             return redirect(url_for('auth.login', error='invalid'))
     
     if 'logged_in' in session:
@@ -77,5 +91,13 @@ def login():
 @auth_bp.route('/logout')
 def logout():
     """Logout"""
+    # Audit: logout
+    if 'logged_in' in session:
+        try:
+            from .audit import log_audit
+            log_audit('logout', 'auth')
+        except Exception:
+            pass
     session.clear()
     return redirect(url_for('auth.login'))
+

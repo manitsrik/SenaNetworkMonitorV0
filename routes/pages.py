@@ -142,3 +142,20 @@ def print_sla():
     
     return render_template('reports/sla_print.html', summary=summary, devices=sla_data)
 
+
+@pages_bp.route('/audit-log')
+@admin_required
+def audit_log_page():
+    """Audit Log page (admin only)"""
+    return render_template('audit_log.html')
+
+
+@pages_bp.route('/set_lang/<lang>')
+def set_lang(lang):
+    """Switch language (th or en)"""
+    from flask import session, redirect, request, url_for
+    if lang in ['en', 'th']:
+        session['lang'] = lang
+    return redirect(request.referrer or url_for('pages.index'))
+
+

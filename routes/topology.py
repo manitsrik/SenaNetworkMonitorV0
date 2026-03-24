@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request, session, render_template, current
 import os
 import uuid
 from .auth import login_required, operator_required
+from .audit import log_audit
 
 topology_bp = Blueprint('topology', __name__)
 
@@ -50,6 +51,7 @@ def add_topology_connection():
                 'view_type': data.get('view_type', 'standard')
             }
         }, namespace='/')
+        log_audit('create', 'topology', 'connection', result['id'])
         return jsonify(result), 201
     else:
         return jsonify(result), 400
@@ -66,6 +68,7 @@ def delete_topology_connection(connection_id):
             'action': 'delete',
             'connection_id': connection_id
         }, namespace='/')
+        log_audit('delete', 'topology', 'connection', connection_id)
     
     return jsonify(result)
 
@@ -128,6 +131,7 @@ def create_sub_topology():
         device_ids = data.get('device_ids', [])
         connections = data.get('connections', [])
         db.update_sub_topology(sub_topo_id, device_ids=device_ids, connections=connections)
+        log_audit('create', 'topology', 'sub_topology', sub_topo_id, data['name'])
         return jsonify(result), 201
     
     return jsonify(result), 400
@@ -165,7 +169,7 @@ def update_sub_topology_route(sub_topo_id):
         node_positions=data.get('node_positions'),
         background_opacity=data.get('background_opacity')
     )
-    
+    log_audit('update', 'topology', 'sub_topology', sub_topo_id, data.get('name'))
     return jsonify(result)
 
 
@@ -174,6 +178,7 @@ def update_sub_topology_route(sub_topo_id):
 def delete_sub_topology_route(sub_topo_id):
     """Delete a sub-topology"""
     result = _get_db().delete_sub_topology(sub_topo_id)
+    log_audit('delete', 'topology', 'sub_topology', sub_topo_id)
     return jsonify(result)
 
 

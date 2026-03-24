@@ -87,16 +87,42 @@ def bandwidth_history():
 def bandwidth_current():
     """Get latest bandwidth for all SNMP devices (for dashboard/overview)"""
     db = _get_db()
+    
+    # Get top interfaces
     top = db.get_top_bandwidth_interfaces(minutes=5, top_n=20)
     
+    # Get specific interfaces if requested (format: ids=1:3,2:5)
+    ids_param = request.args.get('ids')
+    specific = []
+    if ids_param:
+        try:
+            interface_list = []
+            for item in ids_param.split(','):
+                if ':' in item:
+                    dev_id, if_idx = item.split(':')
+                    interface_list.append((int(dev_id), int(if_idx)))
+            if interface_list:
+                specific = db.get_bandwidth_interfaces_by_ids(interface_list, minutes=5)
+        except Exception as e:
+            print(f"[BW] Error parsing specific IDs: {e}")
+
+    # Merge and deduplicate
+    # We use (device_id, if_index) as unique key
+    merged = top
+    top_keys = set((row['device_id'], row['if_index']) for row in merged)
+    
+    for row in specific:
+        if (row['device_id'], row['if_index']) not in top_keys:
+            merged.append(row)
+
     # Format numbers for display
-    for row in top:
+    for row in merged:
         for key in ('avg_bps_in', 'avg_bps_out', 'max_bps_in', 'max_bps_out',
                     'avg_util_in', 'avg_util_out'):
             if row.get(key) is not None:
                 row[key] = round(float(row[key]), 2)
     
-    return jsonify({'success': True, 'top_interfaces': top})
+    return jsonify({'success': True, 'top_interfaces': merged})
 
 
 @bandwidth_bp.route('/api/bandwidth/poll', methods=['POST'])

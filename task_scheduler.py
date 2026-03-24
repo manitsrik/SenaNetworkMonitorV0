@@ -16,11 +16,12 @@ class TaskScheduler:
         # Use BlockingScheduler with a single-thread executor to ensure all jobs
         # run within the same greenlet context, avoiding thread-switching errors
         executors = {
-            'default': ThreadPoolExecutor(1)
+            'default': ThreadPoolExecutor(2)
         }
         job_defaults = {
             'coalesce': True,
-            'max_instances': 1
+            'max_instances': 1,
+            'misfire_grace_time': 60
         }
         self.scheduler = BlockingScheduler(executors=executors, job_defaults=job_defaults)
         self.db = db

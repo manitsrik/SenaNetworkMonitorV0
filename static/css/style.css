@@ -250,6 +250,17 @@ body {
     align-items: center;
 }
 
+.logout-btn {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1.1rem;
+    transition: all var(--transition-base);
+}
+
+.logout-btn:hover {
+    color: #ff4d4f; /* Bright red on hover */
+    transform: scale(1.1);
+}
+
 /* Main Wrapper */
 .main-wrapper {
     flex: 1;
@@ -360,14 +371,54 @@ body {
 /* Responsive Sidebar */
 @media (max-width: 768px) {
     .sidebar {
-        position: absolute;
+        position: fixed;
         height: 100%;
         transform: translateX(-100%);
         box-shadow: var(--shadow-lg);
+        z-index: 999;
     }
 
     .app-wrapper.sidebar-collapsed .sidebar {
         transform: translateX(0);
+    }
+    
+    .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 998;
+    }
+    
+    .app-wrapper.sidebar-collapsed .sidebar-backdrop {
+        display: block;
+    }
+
+    /* Reduce Header padding on mobile */
+    .top-header {
+        padding: 0 0.5rem;
+    }
+
+    .page-title-header {
+        font-size: 1rem;
+    }
+
+    /* Hide text labels in header, keep icons */
+    #system-status-header .status-text {
+        display: none;
+    }
+    
+    .lang-switch-wrapper {
+        margin-right: 5px !important;
+        gap: 4px !important;
+    }
+
+    /* Stats Row should span 2 columns on very small devices or 1 */
+    .stats-row {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     }
 }
 

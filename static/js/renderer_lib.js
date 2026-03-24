@@ -155,6 +155,9 @@ window.DashboardRenderer = {
                 case 'device_pie':
                     this.updateDevicePie(container, widget, widgetData, index);
                     break;
+                case 'bandwidth':
+                    this.updateBandwidth(container, widget, widgetData, index);
+                    break;
                 case 'trends':
                     // Silent update (already fetches internally)
                     this.renderResponseTrends(container, widget, widgetData, index);
@@ -214,6 +217,9 @@ window.DashboardRenderer = {
                     break;
                 case 'activity':
                     this.renderActivityLog(container, widget, widgetData);
+                    break;
+                case 'bandwidth':
+                    this.renderBandwidth(container, widget, widgetData, index);
                     break;
                 default:
                     container.innerHTML = `<p class="text-muted">Unknown widget type: ${widget.type}</p>`;
@@ -1573,6 +1579,208 @@ window.DashboardRenderer = {
         return '#ef4444';
     },
 
+    renderBandwidth: function (container, widget, data, index) {
+        this.updateBandwidth(container, widget, data, index);
+    },
+
+    updateBandwidth: function (container, widget, data, index) {
+        if (!data.bandwidth || !data.bandwidth.top_interfaces || data.bandwidth.top_interfaces.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 2rem; color: var(--text-muted); text-align: center; height: 100%; display: flex; align-items: center; justify-content: center;">
+                    <em>No bandwidth data available</em>
+                </div>`;
+            return;
+        }
+
+        const top = data.bandwidth.top_interfaces;
+        let displayData = [];
+        const mode = widget.config ? widget.config.mode : 'top';
+
+        if (mode === 'specific_chart' && widget.config.deviceId && widget.config.ifIndex) {
+            // Chart rendering for specific interface
+            const chartCanvasId = 'bwchart_' + widget.id;
+            
+            // Check if chart already drawn and we just need to update it (optional optimization)
+            // But usually container is cleared by dashboard engine. We'll draw fresh.
+            container.innerHTML = `
+                <div style="height: 100%; width: 100%; padding: 0.5rem; display: flex; flex-direction: column;">
+                    <div id="bwchart-loading-${widget.id}" style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 1rem;">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Loading chart data...
+                    </div>
+                    <div style="flex-grow: 1; position: relative;">
+                        <canvas id="${chartCanvasId}"></canvas>
+                    </div>
+                </div>
+            `;
+
+            // Asynchronously fetch history for this specific interface
+            fetch(`/api/bandwidth/history?device_id=${widget.config.deviceId}&if_index=${widget.config.ifIndex}&minutes=60`)
+                .then(r => r.json())
+                .then(hist => {
+                    const loadingEl = document.getElementById(`bwchart-loading-${widget.id}`);
+                    if (loadingEl) loadingEl.style.display = 'none';
+
+                    if (!hist.success || !hist.history || hist.history.length === 0) {
+                        const canvasContainer = document.getElementById(chartCanvasId)?.parentElement;
+                        if (canvasContainer) {
+                            canvasContainer.innerHTML = `
+                                <div style="display:flex; height:100%; align-items:center; justify-content:center; color: var(--text-muted); font-size: 0.8rem;">
+                                    No historical data found.
+                                </div>
+                            `;
+                        }
+                        return;
+                    }
+
+                    // Prepare data for Chart.js
+                    // Sort ascending by time
+                    const sortedHistory = hist.history.sort((a, b) => new Date(a.sampled_at) - new Date(b.sampled_at));
+                    
+                    const labels = [];
+                    const dataIn = [];
+                    const dataOut = [];
+                    
+                    sortedHistory.forEach(row => {
+                        const d = new Date(row.sampled_at);
+                        labels.push(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                        dataIn.push(row.bps_in ? parseFloat((row.bps_in / 1000000).toFixed(2)) : 0);
+                        dataOut.push(row.bps_out ? parseFloat((row.bps_out / 1000000).toFixed(2)) : 0);
+                    });
+
+                    const canvas = document.getElementById(chartCanvasId);
+                    if (!canvas) return; // widget might have been removed
+
+                    if (this.instances[widget.id]) {
+                        this.instances[widget.id].destroy();
+                    }
+
+                    const ctx = canvas.getContext('2d');
+                    this.instances[widget.id] = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: 'In (Mbps)',
+                                    data: dataIn,
+                                    borderColor: '#10b981',
+                                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                    fill: true,
+                                    tension: 0.4,
+                                    borderWidth: 2,
+                                    pointRadius: 0,
+                                    pointHitRadius: 10
+                                },
+                                {
+                                    label: 'Out (Mbps)',
+                                    data: dataOut,
+                                    borderColor: '#f59e0b',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                                    fill: true,
+                                    tension: 0.4,
+                                    borderWidth: 2,
+                                    pointRadius: 0,
+                                    pointHitRadius: 10
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: {
+                                mode: 'index',
+                                intersect: false,
+                            },
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top',
+                                    labels: { boxWidth: 10, font: { size: 10 }, color: '#9ca3af' }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return context.dataset.label + ': ' + context.parsed.y + ' Mbps';
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    grid: { display: false, drawBorder: false },
+                                    ticks: { maxTicksLimit: 6, color: '#9ca3af', font: { size: 9 } }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    grid: { color: 'rgba(255, 255, 255, 0.05)', drawBorder: false },
+                                    ticks: { color: '#9ca3af', font: { size: 9 } }
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(err => {
+                    console.error("Error loading bandwidth history:", err);
+                    const loadingEl = document.getElementById(`bwchart-loading-${widget.id}`);
+                    if (loadingEl) loadingEl.innerHTML = 'Error loading history';
+                });
+
+            return; // We exit early because rendering is async
+        }
+        else if (mode === 'specific' || mode === 'specific_table') {
+            // Find the specific interface in the pooled current data
+            const found = top.find(iface => 
+                iface.device_id == widget.config.deviceId && 
+                iface.if_index == widget.config.ifIndex
+            );
+            if (found) {
+                displayData = [found];
+            } else {
+                container.innerHTML = `
+                    <div style="padding: 1rem; color: var(--text-muted); text-align: center; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <span style="font-size: 1.5rem; margin-bottom: 0.5rem;">🔍</span>
+                        <div style="font-size: 0.8rem;">Interface not found in latest samples.</div>
+                        <div style="font-size: 0.7rem; opacity: 0.7;">Check if SNMP is working for this device.</div>
+                    </div>`;
+                return;
+            }
+        } else {
+            // Default "Top" mode
+            const limitCount = widget.h === 2 ? 5 : (widget.h >= 6 ? 20 : 10);
+            displayData = top.slice(0, limitCount);
+        }
+
+        let trs = displayData.map(iface => {
+            const inMbps = (iface.avg_bps_in / 1000000).toFixed(2);
+            const outMbps = (iface.avg_bps_out / 1000000).toFixed(2);
+            return `
+                <tr>
+                    <td style="padding: 0.5rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="${iface.hostname || iface.device_name}">
+                        <div style="font-weight: 500; color: var(--text-primary); text-overflow: ellipsis; overflow: hidden;">${iface.hostname || iface.device_name || 'Unknown'}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden;">${iface.if_name || iface.if_desc}</div>
+                    </td>
+                    <td style="padding: 0.5rem; border-bottom: 1px solid var(--border-color); text-align: right;">
+                        <span style="color: #10b981; font-weight: 500;">${inMbps}</span>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">In (Mbps)</div>
+                    </td>
+                    <td style="padding: 0.5rem; border-bottom: 1px solid var(--border-color); text-align: right;">
+                        <span style="color: #f59e0b; font-weight: 500;">${outMbps}</span>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">Out (Mbps)</div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="table-responsive" style="height: 100%; overflow-y: auto; padding: 0.5rem;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed;">
+                    <tbody>
+                        ${trs}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    },
     clearInstances: function () {
         Object.values(this.instances).forEach(inst => {
             if (inst.destroy) inst.destroy();
@@ -1595,6 +1803,7 @@ function getWidgetDefaultTitle(type) {
         case 'device_grid': return 'Device Status';
         case 'alerts': return 'Active Alerts';
         case 'activity': return 'Recent Activity';
+        case 'bandwidth': return 'Top Bandwidth';
         default: return 'Widget';
     }
 }

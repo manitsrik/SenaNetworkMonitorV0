@@ -3,6 +3,7 @@ User management API routes (Admin only)
 """
 from flask import Blueprint, jsonify, request, session, current_app
 from .auth import login_required, admin_required
+from .audit import log_audit
 
 users_bp = Blueprint('users', __name__)
 
@@ -37,6 +38,8 @@ def create_user():
     )
     
     if result['success']:
+        log_audit('create', 'user', 'user', result.get('id'), data['username'],
+                  details={'role': data.get('role', 'viewer')})
         return jsonify(result), 201
     return jsonify(result), 400
 
@@ -54,6 +57,7 @@ def update_user(user_id):
         is_active=data.get('is_active'),
         password=data.get('password')
     )
+    log_audit('update', 'user', 'user', user_id, details={'fields': list(data.keys())})
     return jsonify(result)
 
 
@@ -62,6 +66,7 @@ def update_user(user_id):
 def delete_user(user_id):
     """Delete a user"""
     result = _get_db().delete_user(user_id)
+    log_audit('delete', 'user', 'user', user_id)
     return jsonify(result)
 
 
@@ -96,4 +101,6 @@ def change_my_password():
         return jsonify({'success': False, 'error': 'Current password incorrect'}), 401
     
     result = db.update_user(user['id'], password=data['new_password'])
+    log_audit('update', 'user', 'user', user['id'], session.get('username'),
+              details={'action': 'password_change'})
     return jsonify(result)

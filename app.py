@@ -40,6 +40,18 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins=Config.SOCKETIO_CORS_ALLOWED_ORIGINS,
                    async_mode='eventlet')
 
+# Initialize Babel
+from flask_babel import Babel, gettext as _
+from flask import session
+
+def get_locale():
+    # if a user is logged in, use the locale from the session
+    return session.get('lang', 'en')
+
+babel = Babel(app, locale_selector=get_locale)
+app.config['BABEL_DEFAULT_LOCALE'] = 'en'
+app.config['BABEL_TRANSLATION_DIRECTORIES'] = 'translations'
+
 # Initialize core services
 db = Database()
 monitor = NetworkMonitor(db)
@@ -69,6 +81,24 @@ from routes import ALL_BLUEPRINTS
 
 for bp in ALL_BLUEPRINTS:
     app.register_blueprint(bp)
+
+# Swagger API Documentation UI
+from flask_swagger_ui import get_swaggerui_blueprint
+SWAGGER_URL = '/api/docs'
+API_SPEC_URL = '/static/swagger/openapi.yaml'
+swagger_bp = get_swaggerui_blueprint(SWAGGER_URL, API_SPEC_URL,
+    config={'app_name': 'NW Monitor API', 'layout': 'BaseLayout'})
+app.register_blueprint(swagger_bp, url_prefix=SWAGGER_URL)
+
+@app.route('/sw.js')
+def serve_sw():
+    from flask import send_from_directory
+    return send_from_directory('static', 'sw.js', mimetype='application/javascript')
+
+@app.route('/manifest.json')
+def serve_manifest():
+    from flask import send_from_directory
+    return send_from_directory('static', 'manifest.json', mimetype='application/json')
 
 # ============================================================================
 # Task Scheduler & Service Manager

@@ -26,13 +26,13 @@ class Config:
     
     # Connection Pool settings (PostgreSQL only)
     PG_POOL_MIN = int(os.environ.get('PG_POOL_MIN') or 2)
-    PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 25)  # Must exceed MONITOR_MAX_WORKERS + API headroom
+    PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 15)  # Must exceed MONITOR_MAX_WORKERS + API headroom
     
     # Monitoring settings
     PING_INTERVAL = 30  # seconds between ping checks
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
-    MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 20)  # parallel workers
+    MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 12)  # parallel workers
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = 'threading'

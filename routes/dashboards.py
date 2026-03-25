@@ -126,3 +126,95 @@ def reorder_dashboards():
     if result.get('success'):
         log_audit('update', 'dashboard', details={'action': 'reorder', 'order': dashboard_ids})
     return jsonify(result)
+
+
+# =========================================================================
+# Dashboard Template Routes
+# =========================================================================
+
+@dashboards_bp.route('/api/dashboards/templates', methods=['GET'])
+@login_required
+def get_templates():
+    """Get all dashboard templates"""
+    category = request.args.get('category')
+    templates = _get_db().get_dashboard_templates(category)
+    
+    for t in templates:
+        try:
+            if t['layout_config']:
+                t['layout_config'] = json.loads(t['layout_config'])
+        except:
+            t['layout_config'] = {}
+        try:
+            if t.get('variables'):
+                t['variables'] = json.loads(t['variables'])
+        except:
+            t['variables'] = {}
+    
+    return jsonify(templates)
+
+
+@dashboards_bp.route('/api/dashboards/templates', methods=['POST'])
+@admin_required
+def create_template():
+    """Create a new dashboard template"""
+    data = request.json
+    
+    if not data.get('name'):
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+    
+    layout_config = data.get('layout_config')
+    if isinstance(layout_config, (dict, list)):
+        layout_config = json.dumps(layout_config)
+    
+    variables = data.get('variables')
+    if isinstance(variables, dict):
+        variables = json.dumps(variables)
+    
+    result = _get_db().create_dashboard_template(
+        name=data['name'],
+        layout_config=layout_config,
+        description=data.get('description'),
+        variables=variables,
+        category=data.get('category', 'custom'),
+        created_by=session.get('user_id')
+    )
+    if result.get('success'):
+        log_audit('create', 'dashboard_template', 'dashboard_template', result.get('id'), data['name'])
+    return jsonify(result)
+
+
+@dashboards_bp.route('/api/dashboards/from-template/<int:template_id>', methods=['POST'])
+@admin_required
+def create_from_template(template_id):
+    """Create a new dashboard from a template"""
+    db = _get_db()
+    template = db.get_dashboard_template(template_id)
+    
+    if not template:
+        return jsonify({'error': 'Template not found'}), 404
+    
+    data = request.json or {}
+    name = data.get('name', template['name'] + ' (Copy)')
+    
+    result = db.create_dashboard(
+        name=name,
+        layout_config=template['layout_config'],
+        description=data.get('description', template.get('description', '')),
+        created_by=session.get('user_id'),
+        is_public=data.get('is_public', 0)
+    )
+    if result.get('success'):
+        log_audit('create', 'dashboard', 'dashboard', result.get('id'), 
+                  f'{name} (from template: {template["name"]})')
+    return jsonify(result)
+
+
+@dashboards_bp.route('/api/dashboards/templates/<int:template_id>', methods=['DELETE'])
+@admin_required
+def delete_template(template_id):
+    """Delete a dashboard template"""
+    result = _get_db().delete_dashboard_template(template_id)
+    log_audit('delete', 'dashboard_template', 'dashboard_template', template_id)
+    return jsonify(result)
+

@@ -34,7 +34,8 @@ def create_user():
         password=data['password'],
         role=data.get('role', 'viewer'),
         display_name=data.get('display_name'),
-        email=data.get('email')
+        email=data.get('email'),
+        auth_type=data.get('auth_type', 'local')
     )
     
     if result['success']:
@@ -55,7 +56,8 @@ def update_user(user_id):
         display_name=data.get('display_name'),
         email=data.get('email'),
         is_active=data.get('is_active'),
-        password=data.get('password')
+        password=data.get('password'),
+        auth_type=data.get('auth_type')
     )
     log_audit('update', 'user', 'user', user_id, details={'fields': list(data.keys())})
     return jsonify(result)

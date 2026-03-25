@@ -9,6 +9,30 @@ let cachedData = null; // Store fetched data
 let configuringIndex = -1;
 let grid = null; // GridStack instance
 
+// Dashboard Variables state
+let dashboardVariables = {
+    location: true,
+    deviceType: true,
+    monitorType: false,
+    status: false
+};
+
+function updateVariables() {
+    dashboardVariables.location = document.getElementById('var-location').checked;
+    dashboardVariables.deviceType = document.getElementById('var-deviceType').checked;
+    dashboardVariables.monitorType = document.getElementById('var-monitorType').checked;
+    dashboardVariables.status = document.getElementById('var-status').checked;
+}
+
+function loadVariablesUI(vars) {
+    if (!vars) return;
+    dashboardVariables = { ...dashboardVariables, ...vars };
+    document.getElementById('var-location').checked = !!dashboardVariables.location;
+    document.getElementById('var-deviceType').checked = !!dashboardVariables.deviceType;
+    document.getElementById('var-monitorType').checked = !!dashboardVariables.monitorType;
+    document.getElementById('var-status').checked = !!dashboardVariables.status;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Load initial data once
     fetchData().then(() => {
@@ -53,7 +77,16 @@ function loadDashboard(id) {
         .then(data => {
             document.getElementById('dashboard-name').value = data.name;
             document.getElementById('dashboard-public').value = data.is_public ? "1" : "0";
-            currentLayout = data.layout_config || [];
+            
+            // Handle both old (array) and new ({widgets, variables}) format
+            let config = data.layout_config || [];
+            if (Array.isArray(config)) {
+                currentLayout = config;
+            } else {
+                currentLayout = config.widgets || [];
+                loadVariablesUI(config.variables);
+            }
+            
             renderGrid();
         })
         .catch(err => console.error(err));
@@ -234,7 +267,10 @@ function saveDashboard() {
         const payload = {
             name: name,
             is_public: parseInt(isPublic),
-            layout_config: layoutToSave,
+            layout_config: {
+                widgets: layoutToSave,
+                variables: { ...dashboardVariables }
+            },
             description: ''
         };
 
@@ -466,3 +502,63 @@ window.loadBwInterfaces = function(deviceId, selectedIfIndex = null) {
             selector.innerHTML = '<option value="">Fetch failed</option>';
         });
 };
+
+// Save As Template
+function saveAsTemplate() {
+    const name = document.getElementById('dashboard-name').value;
+    if (!name.trim()) {
+        alert('Please enter a dashboard name first');
+        return;
+    }
+    
+    const templateName = prompt('Template name:', name + ' Template');
+    if (!templateName) return;
+    
+    const description = prompt('Template description (optional):', '');
+    
+    // Sync grid positions
+    if (grid) {
+        const items = grid.getGridItems();
+        items.forEach(el => {
+            const node = el.gridstackNode;
+            const index = el.dataset.index;
+            if (node && index !== undefined && currentLayout[index]) {
+                currentLayout[index].x = node.x;
+                currentLayout[index].y = node.y;
+                currentLayout[index].w = node.w || 4;
+                currentLayout[index].h = node.h || 4;
+            }
+        });
+    }
+    
+    let layoutToSave;
+    try {
+        layoutToSave = JSON.parse(JSON.stringify(currentLayout));
+    } catch (e) {
+        alert('Failed to prepare template data: ' + e.message);
+        return;
+    }
+    
+    fetch('/api/dashboards/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            name: templateName,
+            description: description || '',
+            layout_config: JSON.stringify({
+                widgets: layoutToSave,
+                variables: { ...dashboardVariables }
+            }),
+            category: 'custom'
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('Template saved successfully! \u2705');
+        } else {
+            alert('Error saving template: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(err => alert('Connection error: ' + err.message));
+}

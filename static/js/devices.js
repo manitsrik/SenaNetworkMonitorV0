@@ -69,7 +69,7 @@ function updateDevicesTable(devices) {
     if (devices.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                <td colspan="10" class="text-center" style="padding: 2rem; color: var(--text-muted);">
                     No devices found. Click "Add Device" to get started.
                 </td>
             </tr>
@@ -82,7 +82,10 @@ function updateDevicesTable(devices) {
         const locTypeLabel = locationTypeLabels[device.location_type] || 'On-Premise';
         return `
         <tr class="fade-in">
-            <td><strong>${device.name}</strong></td>
+            <td>
+                <strong>${device.name}</strong>
+                ${device.parent_device_id ? `<br><small style="color: var(--text-muted);">🔗 ${getParentName(device.parent_device_id)}</small>` : ''}
+            </td>
             <td><code>${device.ip_address}</code></td>
             <td>${device.device_type || 'N/A'}</td>
             <td>${device.location || 'N/A'}</td>
@@ -94,6 +97,12 @@ function updateDevicesTable(devices) {
             </td>
             <td>${device.response_time !== null && device.response_time !== undefined ? device.response_time + ' ms' : 'N/A'}</td>
             <td>${device.last_check ? formatDateTime(device.last_check) : 'Never'}</td>
+            <td style="text-align: center;">
+                <label class="switch">
+                    <input type="checkbox" ${device.is_enabled ? 'checked' : ''} onchange="toggleDevice(${device.id}, this)">
+                    <span class="slider"></span>
+                </label>
+            </td>
             <td>
                 <div style="display: flex; gap: 0.25rem;">
                     <button class="btn btn-sm" style="background: var(--success); color: white; padding: 0.25rem 0.5rem;" onclick="showDeviceGraph(${device.id})" title="Response Time Graph">
@@ -276,13 +285,17 @@ function showAddDeviceModal() {
     document.getElementById('expected-status-code').value = '200';
     // Reset location type to default
     document.getElementById('device-location-type').value = 'on-premise';
-    // Reset coordinates
+    // Reset coordinate fields
     document.getElementById('device-latitude').value = '';
     document.getElementById('device-longitude').value = '';
+    document.getElementById('device-enabled').checked = true;
     if (miniMapMarker && miniMap) {
         miniMap.removeLayer(miniMapMarker);
         miniMapMarker = null;
     }
+    
+    // Populate parent device dropdown
+    populateParentDeviceDropdown(null);
     
     updateIPFieldLabel();
     document.getElementById('device-modal').classList.add('active');
@@ -404,6 +417,11 @@ async function editDevice(deviceId) {
             // Load coordinates
             document.getElementById('device-latitude').value = device.latitude || '';
             document.getElementById('device-longitude').value = device.longitude || '';
+            document.getElementById('device-enabled').checked = !!device.is_enabled;
+
+            // Load parent device
+            populateParentDeviceDropdown(deviceId);
+            document.getElementById('parent-device').value = device.parent_device_id || '';
 
             updateIPFieldLabel();
             document.getElementById('device-modal').classList.add('active');
@@ -459,7 +477,9 @@ async function saveDevice(event) {
             location: getElementValue('device-location'),
             location_type: getElementValue('device-location-type', 'on-premise'),
             monitor_type: monitorType,
-            expected_status_code: 200
+            expected_status_code: 200,
+            is_enabled: document.getElementById('device-enabled').checked,
+            parent_device_id: getElementValue('parent-device') ? parseInt(getElementValue('parent-device')) : null
         };
 
         const latVal = getElementValue('device-latitude');
@@ -590,6 +610,42 @@ async function checkDeviceNow(deviceId) {
     } catch (error) {
         console.error('Error checking device:', error);
         alert('Error checking device. Please try again.');
+    }
+}
+
+// Toggle device monitoring status
+async function toggleDevice(deviceId, checkbox) {
+    const originalChecked = !checkbox.checked;
+    
+    try {
+        const response = await fetch(`/api/devices/${deviceId}/toggle`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Success - update local array to keep filters working
+            const deviceIndex = allDevices.findIndex(d => d.id === deviceId);
+            if (deviceIndex !== -1) {
+                allDevices[deviceIndex].is_enabled = result.is_enabled;
+                allDevices[deviceIndex].status = result.status;
+                if (!result.is_enabled) {
+                    allDevices[deviceIndex].response_time = null;
+                }
+            }
+            // Re-render table to reflect status change (badges, etc.)
+            filterDevices();
+        } else {
+            // Revert checkbox on failure
+            checkbox.checked = originalChecked;
+            alert('Error toggling device monitoring: ' + (result.error || 'Unknown error'));
+        }
+    } catch (error) {
+        // Revert checkbox on error
+        checkbox.checked = originalChecked;
+        console.error('Error toggling device:', error);
+        alert('Error toggling device monitoring. Please try again.');
     }
 }
 
@@ -1682,4 +1738,41 @@ function resetMinimap() {
     if (miniMap) {
         miniMap.setView([13.7563, 100.5018], 5);
     }
+}
+
+// ============================================================================
+// Alert Dependencies — Parent Device Helpers
+// ============================================================================
+
+/**
+ * Populate the parent device dropdown in the add/edit modal.
+ * Excludes the device being edited (to prevent circular reference).
+ */
+function populateParentDeviceDropdown(excludeDeviceId) {
+    const select = document.getElementById('parent-device');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">— None (Independent) —</option>';
+    
+    allDevices.forEach(device => {
+        // Don't allow a device to be its own parent
+        if (excludeDeviceId && device.id === excludeDeviceId) return;
+        
+        const meta = deviceTypeMetadata[device.device_type];
+        const icon = meta ? meta.icon : '⚙️';
+        const option = document.createElement('option');
+        option.value = device.id;
+        option.textContent = `${icon} ${device.name} (${device.ip_address})`;
+        select.appendChild(option);
+    });
+}
+
+/**
+ * Get parent device name by ID from the allDevices array.
+ */
+function getParentName(parentId) {
+    if (!parentId) return '';
+    const parent = allDevices.find(d => d.id === parentId);
+    if (!parent) return `ID:${parentId}`;
+    return parent.name;
 }

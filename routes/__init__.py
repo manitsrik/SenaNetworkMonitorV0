@@ -15,6 +15,8 @@ from .traps import traps_bp
 from .bandwidth import bandwidth_bp
 from .audit import audit_bp
 from .reports import reports_bp
+from .ldap import ldap_bp
+from .sso import sso_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -31,5 +33,7 @@ ALL_BLUEPRINTS = [
     bandwidth_bp,
     audit_bp,
     reports_bp,
+    ldap_bp,
+    sso_bp,
 ]
 

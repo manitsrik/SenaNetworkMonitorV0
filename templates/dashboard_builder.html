@@ -23,9 +23,34 @@
 
     .builder-layout {
         display: grid;
-        grid-template-columns: 250px 1fr;
+        grid-template-columns: 260px 1fr;
         height: 100%;
         overflow: hidden;
+    }
+
+    .var-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        padding: 0.5rem 0.75rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        transition: all 0.2s;
+        font-size: 0.85rem;
+    }
+    .var-toggle:hover {
+        border-color: var(--primary);
+    }
+    .var-toggle input[type="checkbox"] {
+        accent-color: var(--primary);
+        width: 16px;
+        height: 16px;
+    }
+    .var-toggle input[type="checkbox"]:checked + span {
+        color: var(--primary);
+        font-weight: 600;
     }
 
     .sidebar-builder {
@@ -319,6 +344,30 @@
                 </div>
             </div>
         </div>
+
+        <!-- Variables Section -->
+        <div style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+            <h3 style="margin-bottom: 1rem; font-size: 1rem;"><i class="fas fa-sliders-h" style="margin-right: 0.5rem;"></i>Variables (Filters)</h3>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 1rem;">เลือก filter ที่จะแสดงบน Dashboard</p>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <label class="var-toggle">
+                    <input type="checkbox" id="var-location" checked onchange="updateVariables()">
+                    <span><i class="fas fa-map-marker-alt"></i> Location</span>
+                </label>
+                <label class="var-toggle">
+                    <input type="checkbox" id="var-deviceType" checked onchange="updateVariables()">
+                    <span><i class="fas fa-server"></i> Device Type</span>
+                </label>
+                <label class="var-toggle">
+                    <input type="checkbox" id="var-monitorType" onchange="updateVariables()">
+                    <span><i class="fas fa-heartbeat"></i> Monitor Type</span>
+                </label>
+                <label class="var-toggle">
+                    <input type="checkbox" id="var-status" onchange="updateVariables()">
+                    <span><i class="fas fa-traffic-light"></i> Status</span>
+                </label>
+            </div>
+        </div>
     </div>
 
     <!-- Main Area -->
@@ -338,6 +387,9 @@
             </div>
             <button onclick="saveDashboard()" class="btn btn-primary">
                 <i class="fas fa-save"></i> Save
+            </button>
+            <button onclick="saveAsTemplate()" class="btn btn-secondary" title="Save as reusable template">
+                <i class="fas fa-copy"></i> Template
             </button>
         </div>
 

@@ -1,7 +1,9 @@
-# NW MonitorV0 — Enterprise Gap Analysis
+# NW MonitorV0 — Enterprise Monitoring Gap Analysis - v2.0
+> Date: 2026-03-25
+> Progress: 26/30 (87%) Tasks Completed
 ## เปรียบเทียบกับ SolarWinds / PRTG / ManageEngine / Zabbix / Grafana
 
-> **Document Version**: 1.2 | **อัปเดตล่าสุด**: 2 มีนาคม 2569 | **ผู้จัดทำ**: Development Team
+> **Document Version**: 1.9 | **อัปเดตล่าสุด**: 25 มีนาคม 2569 | **ผู้จัดทำ**: Development Team
 
 ---
 
@@ -47,7 +49,7 @@
 | **Bandwidth/NetFlow** | ✅ | ✅ | ✅ | ✅ | via plugin | ✅ (SNMP) | ✔ มีแล้ว |
 | **Syslog Receiver** | ✅ | ✅ | ✅ | ✅ | via Loki | ❌ | 🟡 Medium |
 | **Custom Dashboards** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
-| **Auto-discovery** | ✅ | ✅ | ✅ | ✅ | — | ✅ (basic) | � ต้องพัฒนา |
+| **Auto-discovery** | ✅ | ✅ | ✅ | ✅ | — | ✅ (basic) |  ต้องพัฒนา |
 | **Maps/Topology** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **Alerting: Multi-channel** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
 | **Alert Escalation** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
@@ -55,13 +57,13 @@
 | **RBAC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
 | **API (REST)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (internal) | 🟡 ขาด docs |
 | **High Availability** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🔴 High |
-| **Scalable Database** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (PostgreSQL) | � ต้องพัฒนา |
+| **Scalable Database** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (PostgreSQL) |  ต้องพัฒนา |
 | **Distributed Monitoring** | ✅ | ✅ | ✅ (Proxy) | ✅ | — | ❌ | 🔴 High |
 | **Event Correlation** | ✅ | ✅ | ✅ | ✅ | — | ❌ | 🟡 Medium |
 | **Configuration Backup** | ✅ | — | — | ✅ | — | ❌ | 🟡 Medium |
 | **Performance Graphing** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (basic) | 🟡 ต้องพัฒนา |
 | **Webhook/Integration** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🟡 Medium |
-| **LDAP/SSO Auth** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🟡 Medium |
+| **LDAP/SSO Auth** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (LDAP) | 🟡 ขาด SSO |
 | **Mobile App** | ✅ | ✅ | — | ✅ | ✅ | ❌ | 🟡 Medium |
 | **Plugin/Extension System** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🟡 Medium |
 | **Container/Cloud Monitoring** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🟡 Medium |
@@ -109,7 +111,7 @@
 | งาน | รายละเอียด | ความยาก | สถานะ | ต้องทำหลัง |
 |-----|-----------|---------|---------|-----------|
 | **3.1 Alert Escalation** | ถ้า alert level 1 ไม่ตอบใน X นาที → escalate ไป level 2 | Medium | ✅ เสร็จ | — |
-| **3.2 Alert Dependencies** | ถ้า Core Switch down → suppress alert ของอุปกรณ์ downstream | Medium | ⬜ | — |
+| **3.2 Alert Dependencies** | ถ้า Core Switch down → suppress alert ของอุปกรณ์ downstream | Medium | ✅ เสร็จ | — |
 | **3.3 Webhook Integration** | ส่ง alert ไป Slack, Microsoft Teams, PagerDuty, custom webhook | Easy | ✅ เสร็จ | — |
 | **3.4 Event Correlation** | จับกลุ่ม events ที่เกี่ยวข้อง เช่น เน็ตล่มหลายจุดพร้อมกัน | Hard | ⬜ | — |
 | **3.5 Anomaly Detection** | ใช้ baseline เตือนเมื่อค่าผิดปกติ (response time สูงผิดปกติ) | Hard | ⬜ | — |
@@ -124,7 +126,7 @@
 | **4.2 แผนที่ GIS** | วาง device บน Google Maps / OpenStreetMap | Medium | ✅ เสร็จ |
 | **4.3 PDF/Excel Reports** | ส่งออก SLA report, performance report เป็น PDF/Excel | Medium | ✅ เสร็จ |
 | **4.4 Custom Report Builder** | สร้าง report template เอง, schedule ส่งอัตโนมัติ | Medium | ✅ เสร็จ |
-| **4.5 Dashboard Variables/Templates** | ตัวแปรที่ filter dashboard ตาม site, device type ฯลฯ | Medium | ⬜ |
+| **4.5 Dashboard Variables/Templates** | ตัวแปรที่ filter dashboard ตาม site, device type ฯลฯ | Medium | ✅ เสร็จ |
 
 ---
 
@@ -132,9 +134,9 @@
 
 | งาน | รายละเอียด | ความยาก | สถานะ |
 |-----|-----------|---------|---------|
-| **5.1 LDAP/Active Directory Auth** | ใช้ user/group จาก AD สำหรับ authentication | Medium | ⬜ |
-| **5.2 SSO (SAML/OAuth2)** | Single Sign-On สำหรับองค์กรขนาดใหญ่ | Hard | ⬜ |
-| **5.3 Audit Log** | บันทึกทุก action ที่ user ทำ (who/what/when) | Easy | ✅ เสร็จ |
+| **5.1 LDAP/Active Directory Auth** | ใช้ user/group จาก AD สำหรับ authentication | Medium | ✅ เสร็จ |
+| **5.2 SSO (SAML/OAuth2)** | SSO support for Google/Microsoft/GitHub via OAuth2/OIDC | Hard | ✅ เสร็จ |
+| **5.3 MFA (2FA)** | Support for TOTP (Google Authenticator) | Hard | ⬜ |
 | **5.4 API Documentation (Swagger)** | เปิด public REST API พร้อม docs | Easy | ✅ เสร็จ |
 | **5.5 Plugin System** | ให้ user เขียน custom monitor/alerter ได้เอง | Hard | ⬜ |
 
@@ -223,11 +225,11 @@ quadrantChart
 |-------|:---:|:---:|:---:|:---:|--------|
 | **Phase 1** — Foundation & Scalability | 5 | 5 | 0 | 100% | ✅ เสร็จ |
 | **Phase 2** — Monitoring Depth | 6 | 5 | 0 | 83% | 🟡 กำลังดำเนินการ |
-| **Phase 3** — Alerting & Intelligence | 5 | 2 | 0 | 40% | 🟡 กำลังดำเนินการ |
-| **Phase 4** — Visualization & Reporting | 5 | 1 | 0 | 20% | 🟡 กำลังดำเนินการ |
-| **Phase 5** — Enterprise Security & Integration | 5 | 0 | 0 | 0% | ⬜ ยังไม่เริ่ม |
-| **Phase 6** — Accessibility & UX | 4 | 1 | 0 | 25% | 🟡 กำลังดำเนินการ |
-| **รวม** | **30** | **14** | **0** | **46%** | — |
+| **Phase 3** — Alerting & Intelligence | 5 | 3 | 0 | 60% | 🟡 กำลังดำเนินการ |
+| **Phase 4** — Visualization & Reporting | 5 | 5 | 0 | 100% | ✅ เสร็จ |
+| **Phase 5** — Enterprise Security & Integration | 5 | 3 | 0 | 60% | 🟡 กำลังดำเนินการ |
+| **Phase 6** — Accessibility & UX | 4 | 4 | 0 | 100% | ✅ เสร็จ |
+| **รวม** | **30** | **26** | **0** | **87%** | — |
 
 ```mermaid
 gantt
@@ -269,6 +271,10 @@ gantt
 
 | วันที่ | Version | รายละเอียดการเปลี่ยนแปลง |
 |--------|---------|-------------------------|
+| 25 มี.ค. 2569 | 1.9 | อัปเดต Task 5.1 LDAP/AD Auth เป็นเสร็จสมบูรณ์ — มี API routes (settings/save/test), LDAP settings UI ใน Settings page, รองรับ auth_type ldap ใน User Management, Test Connection. รวมความคืบหน้า 25/30 (83%) |
+| 25 มี.ค. 2569 | 1.8 | อัปเดต Task 3.2 Alert Dependencies เป็นเสร็จสมบูรณ์ — เพิ่ม parent-child relationship ใน DB/UI, ระบบระงับ Alert อัตโนมัติเมื่ออุปกรณ์ต้นทางล่ม และระบบแจ้งเตือนจำนวนอุปกรณ์ที่ได้รับผลกระทบ. รวมความคืบหน้า 24/30 (80%) |
+| 25 มี.ค. 2569 | 1.7 | อัปเดต Task 4.5 Dashboard Variables/Templates เป็นเสร็จสมบูรณ์ — มี dashboard_templates table, CRUD API routes, UI builder/view/template gallery. Phase 4 เสร็จ 5/5 (100%), รวมทั้งหมด 23/30 (77%) |
+| 25 มี.ค. 2569 | 1.6 | อัปเดต Progress Tracker ให้ตรงกับสถานะจริง — Phase 4 เสร็จ 4/5 (80%), Phase 5 เสร็จ 2/5 (40%), Phase 6 เสร็จ 4/4 (100%), รวมทั้งหมด 22/30 (73%) |
 | 24 มี.ค. 2569 | 1.5 | อัปเดตสถานะ Alert Escalation (Task 3.1) เป็นเสร็จสมบูรณ์ — เพิ่ม `last_status_change` ใน DB, เพิ่ม settings ใน UI, และ `check_alert_escalations` job แจ้งเตือนยกระดับอัตโนมัติ |
 | 11 มี.ค. 2569 | 1.4 | อัปเดตสถานะ Bandwidth Monitoring (Task 2.3) เป็นเสร็จสมบูรณ์ — SNMP interface counter polling ทุก 60 วินาที, คำนวณ bps/utilization, UI page พร้อม Chart.js time-series, interface table, top consumers, Poll Now. อัปเดต Quick Wins status, Progress Tracker 43% |
 | 2 มี.ค. 2569 | 1.3 | เพิ่ม SNMP v3 Support — รองรับ USM authentication (SHA/MD5) + encryption (AES128/DES) ครบทั้ง authPriv, authNoPriv, noAuthNoPriv พร้อม UI form สำหรับตั้งค่า |

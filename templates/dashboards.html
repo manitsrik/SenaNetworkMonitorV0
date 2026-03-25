@@ -77,6 +77,80 @@
     .btn-icon.delete:hover {
         color: var(--danger);
     }
+
+    /* Template Gallery Modal */
+    .template-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+        align-items: center;
+        justify-content: center;
+    }
+    .template-overlay.active {
+        display: flex;
+    }
+    .template-modal {
+        background: var(--bg-secondary);
+        border-radius: 1rem;
+        padding: 2rem;
+        width: 700px;
+        max-width: 90vw;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: var(--shadow-lg);
+    }
+    .template-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+    .template-card {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.25rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .template-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .template-card .template-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+        margin-bottom: 0.25rem;
+    }
+    .template-card .template-desc {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+    }
+    .template-card .template-meta {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+    .template-delete {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.8rem;
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+    }
+    .template-delete:hover {
+        color: var(--danger);
+        background: var(--bg-primary);
+    }
 </style>
 {% endblock %}
 
@@ -86,11 +160,16 @@
         <div>
             <p class="text-muted">Manage and view custom dashboards</p>
         </div>
+        <div style="display: flex; gap: 0.5rem;">
         {% if session.get('role') == 'admin' %}
+        <button onclick="openTemplateGallery()" class="btn btn-secondary">
+            <i class="fas fa-th-large"></i> Browse Templates
+        </button>
         <a href="/dashboard/new" class="btn btn-primary">
             <span>+</span> Create Dashboard
         </a>
         {% endif %}
+        </div>
     </div>
 
     <div id="dashboard-list" class="dashboard-grid">
@@ -98,6 +177,20 @@
         <div class="loading-state card w-col-12 text-center p-2">
             <div class="spinner"></div>
             Is Loading...
+        </div>
+    </div>
+</div>
+
+<!-- Template Gallery Modal -->
+<div class="template-overlay" id="template-overlay" onclick="if(event.target===this)closeTemplateGallery()">
+    <div class="template-modal">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="margin: 0;"><i class="fas fa-th-large" style="margin-right: 0.5rem;"></i>Dashboard Templates</h3>
+            <button onclick="closeTemplateGallery()" style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+        </div>
+        <p class="text-muted" style="margin-bottom: 1rem; font-size: 0.85rem;">เลือก template เพื่อสร้าง dashboard ใหม่อัตโนมัติ</p>
+        <div id="template-list" class="template-grid">
+            <div class="text-muted" style="grid-column: 1/-1; text-align: center; padding: 2rem;">Loading...</div>
         </div>
     </div>
 </div>
@@ -123,11 +216,10 @@
                 return;
             }
 
-            const currentUserId = {{ session.get('user_id')
-        }};
-    const isAdmin = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+            const currentUserId = {{ session.get('user_id') }};
+            const isAdmin = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 
-    container.innerHTML = dashboards.map(d => `
+            container.innerHTML = dashboards.map(d => `
                     <div class="dashboard-card">
                         <div class="dashboard-title">${d.name}</div>
                         <div class="dashboard-desc">${d.description || 'No description'}</div>
@@ -139,6 +231,8 @@
                                 <a href="/dashboard/${d.id}" class="btn-icon" title="View">👁️</a>
                                 ${(isAdmin || d.created_by === currentUserId) ? `
                                     <a href="/dashboard/${d.id}/edit" class="btn-icon" title="Edit">✏️</a>
+                                    <button onclick="saveAsTpl(${d.id}, '${d.name.replace(/'/g, "\\'")}')"
+                                        class="btn-icon" title="Save as Template">📋</button>
                                     <button onclick="deleteDashboard(${d.id})" class="btn-icon delete" title="Delete">🗑️</button>
                                 ` : ''}
                             </div>
@@ -164,6 +258,118 @@
         } catch (error) {
             console.error('Error:', error);
             alert('An error occurred');
+        }
+    }
+
+    // Save existing dashboard as template
+    async function saveAsTpl(dashboardId, dashboardName) {
+        const templateName = prompt('Template name:', dashboardName + ' Template');
+        if (!templateName) return;
+        
+        try {
+            // Get dashboard config first
+            const resp = await fetch(`/api/dashboards/${dashboardId}`);
+            const dashboard = await resp.json();
+            
+            const layoutConfig = dashboard.layout_config;
+            
+            const result = await fetch('/api/dashboards/templates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: templateName,
+                    description: dashboard.description || '',
+                    layout_config: typeof layoutConfig === 'string' ? layoutConfig : JSON.stringify(layoutConfig),
+                    category: 'custom'
+                })
+            });
+            const data = await result.json();
+            if (data.success) {
+                alert('Template saved! ✅');
+            } else {
+                alert('Error: ' + (data.error || 'Unknown'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    // Template Gallery
+    function openTemplateGallery() {
+        document.getElementById('template-overlay').classList.add('active');
+        loadTemplates();
+    }
+    function closeTemplateGallery() {
+        document.getElementById('template-overlay').classList.remove('active');
+    }
+
+    async function loadTemplates() {
+        const container = document.getElementById('template-list');
+        try {
+            const resp = await fetch('/api/dashboards/templates');
+            const templates = await resp.json();
+            
+            if (templates.length === 0) {
+                container.innerHTML = '<div class="text-muted" style="grid-column:1/-1; text-align:center; padding:2rem;">ยังไม่มี template — สร้าง dashboard แล้วกด "Save as Template"</div>';
+                return;
+            }
+            
+            const isAdmin = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+            
+            container.innerHTML = templates.map(t => {
+                const config = t.layout_config || {};
+                const widgets = Array.isArray(config) ? config : (config.widgets || []);
+                const widgetCount = widgets.length;
+                
+                return `
+                    <div class="template-card" onclick="useTemplate(${t.id}, '${t.name.replace(/'/g, "\\'")}')"
+                         title="Click to create dashboard from this template">
+                        ${isAdmin ? `<button class="template-delete" onclick="event.stopPropagation(); deleteTemplate(${t.id})" title="Delete template">×</button>` : ''}
+                        <div class="template-name">${t.name}</div>
+                        <div class="template-desc">${t.description || 'No description'}</div>
+                        <div class="template-meta">
+                            🧱 ${widgetCount} widget${widgetCount !== 1 ? 's' : ''}
+                            • ${t.category || 'custom'}
+                            • By ${t.creator_name || 'Unknown'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (err) {
+            container.innerHTML = '<div class="text-muted" style="grid-column:1/-1; text-align:center;">Error loading templates</div>';
+        }
+    }
+
+    async function useTemplate(templateId, templateName) {
+        const name = prompt('Dashboard name:', templateName);
+        if (!name) return;
+        
+        try {
+            const resp = await fetch(`/api/dashboards/from-template/${templateId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                closeTemplateGallery();
+                loadDashboards();
+                alert(`Dashboard "${name}" created from template! ✅`);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function deleteTemplate(templateId) {
+        if (!confirm('Delete this template?')) return;
+        try {
+            await fetch(`/api/dashboards/templates/${templateId}`, { method: 'DELETE' });
+            loadTemplates();
+        } catch (err) {
+            alert('Error: ' + err.message);
         }
     }
 </script>

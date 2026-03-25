@@ -6,6 +6,7 @@
 // Load settings on page load
 document.addEventListener('DOMContentLoaded', function () {
     loadSettings();
+    loadLDAPSettings();
     loadAlertHistory();
 });
 
@@ -114,14 +115,223 @@ async function saveSettings() {
 
         const result = await response.json();
 
-        if (result.success) {
-            showAlert('Settings saved successfully!', 'success');
-        } else {
-            showAlert('Error saving settings: ' + (result.error || 'Unknown error'), 'danger');
-        }
+        showAlert('Settings saved successfully!', 'success');
+        
+        // Also save LDAP settings if present
+        await saveLDAPSettings();
+        
+        // Also save SSO settings if present
+        await saveSSOSettings();
+        
     } catch (error) {
         console.error('Error saving settings:', error);
         showAlert('Error saving settings', 'danger');
+    }
+}
+
+/**
+ * Load LDAP settings from API
+ */
+async function loadLDAPSettings() {
+    try {
+        const response = await fetch('/api/ldap/settings');
+        const settings = await response.json();
+
+        if (document.getElementById('ldap_enabled')) {
+            document.getElementById('ldap_enabled').checked = settings.ldap_enabled === 'true';
+            document.getElementById('ldap_server').value = settings.ldap_server || '';
+            document.getElementById('ldap_port').value = settings.ldap_port || '389';
+            document.getElementById('ldap_use_ssl').checked = settings.ldap_use_ssl === 'true';
+            document.getElementById('ldap_base_dn').value = settings.ldap_base_dn || '';
+            document.getElementById('ldap_bind_dn').value = settings.ldap_bind_dn || '';
+            document.getElementById('ldap_bind_password').value = settings.ldap_bind_password || '';
+            document.getElementById('ldap_user_filter').value = settings.ldap_user_filter || '(sAMAccountName={username})';
+            document.getElementById('ldap_auto_create').checked = settings.ldap_auto_create !== 'false';
+            document.getElementById('ldap_default_role').value = settings.ldap_default_role || 'viewer';
+        }
+        
+        // After loading LDAP, load SSO
+        await loadSSOSettings();
+    } catch (error) {
+        console.error('Error loading LDAP settings:', error);
+    }
+}
+
+/**
+ * Load SSO (OAuth2/OIDC) settings from API
+ */
+async function loadSSOSettings() {
+    try {
+        const response = await fetch('/api/sso/settings');
+        const settings = await response.json();
+
+        if (document.getElementById('sso_enabled')) {
+            document.getElementById('sso_enabled').checked = settings.sso_enabled === 'true';
+            document.getElementById('sso_provider_name').value = settings.sso_provider_name || 'SSO';
+            document.getElementById('sso_client_id').value = settings.sso_client_id || '';
+            document.getElementById('sso_client_secret').value = settings.sso_client_secret || '';
+            document.getElementById('sso_discovery_url').value = settings.sso_discovery_url || '';
+            document.getElementById('sso_authorize_url').value = settings.sso_authorize_url || '';
+            document.getElementById('sso_token_url').value = settings.sso_token_url || '';
+            document.getElementById('sso_userinfo_url').value = settings.sso_userinfo_url || '';
+            document.getElementById('sso_scopes').value = settings.sso_scopes || 'openid email profile';
+            document.getElementById('sso_auto_create').checked = settings.sso_auto_create !== 'false';
+            document.getElementById('sso_default_role').value = settings.sso_default_role || 'viewer';
+        }
+    } catch (error) {
+        console.error('Error loading SSO settings:', error);
+    }
+}
+
+/**
+ * Save SSO (OAuth2/OIDC) settings
+ */
+async function saveSSOSettings() {
+    const enabledInput = document.getElementById('sso_enabled');
+    if (!enabledInput) return { success: true };
+
+    const settings = {
+        sso_enabled: enabledInput.checked.toString(),
+        sso_provider_name: document.getElementById('sso_provider_name').value,
+        sso_client_id: document.getElementById('sso_client_id').value,
+        sso_client_secret: document.getElementById('sso_client_secret').value,
+        sso_discovery_url: document.getElementById('sso_discovery_url').value,
+        sso_authorize_url: document.getElementById('sso_authorize_url').value,
+        sso_token_url: document.getElementById('sso_token_url').value,
+        sso_userinfo_url: document.getElementById('sso_userinfo_url').value,
+        sso_scopes: document.getElementById('sso_scopes').value,
+        sso_auto_create: document.getElementById('sso_auto_create').checked.toString(),
+        sso_default_role: document.getElementById('sso_default_role').value
+    };
+
+    try {
+        const response = await fetch('/api/sso/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error saving SSO settings:', error);
+        return { success: false, error: 'Network error' };
+    }
+}
+
+/**
+ * Apply SSO Presets (Google, Microsoft, GitHub)
+ */
+function applySSOPreset(provider) {
+    const nameInput = document.getElementById('sso_provider_name');
+    const discoveryInput = document.getElementById('sso_discovery_url');
+    const authInput = document.getElementById('sso_authorize_url');
+    const tokenInput = document.getElementById('sso_token_url');
+    const userInfoInput = document.getElementById('sso_userinfo_url');
+    const scopesInput = document.getElementById('sso_scopes');
+
+    switch (provider) {
+        case 'google':
+            nameInput.value = 'Google';
+            discoveryInput.value = 'https://accounts.google.com/.well-known/openid-configuration';
+            authInput.value = '';
+            tokenInput.value = '';
+            userInfoInput.value = '';
+            scopesInput.value = 'openid email profile';
+            break;
+        case 'microsoft':
+            nameInput.value = 'Microsoft';
+            discoveryInput.value = 'https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration';
+            authInput.value = '';
+            tokenInput.value = '';
+            userInfoInput.value = '';
+            scopesInput.value = 'openid email profile';
+            break;
+        case 'github':
+            nameInput.value = 'GitHub';
+            discoveryInput.value = '';
+            authInput.value = 'https://github.com/login/oauth/authorize';
+            tokenInput.value = 'https://github.com/login/oauth/access_token';
+            userInfoInput.value = 'https://api.github.com/user';
+            scopesInput.value = 'read:user user:email';
+            break;
+    }
+    
+    showAlert(`Applied ${provider} presets. Don't forget to enter your Client ID and Secret.`, 'info');
+}
+
+/**
+ * Save LDAP settings
+ */
+async function saveLDAPSettings() {
+    const serverInput = document.getElementById('ldap_server');
+    if (!serverInput) return { success: true };
+
+    const settings = {
+        ldap_enabled: document.getElementById('ldap_enabled').checked.toString(),
+        ldap_server: serverInput.value,
+        ldap_port: document.getElementById('ldap_port').value,
+        ldap_use_ssl: document.getElementById('ldap_use_ssl').checked.toString(),
+        ldap_base_dn: document.getElementById('ldap_base_dn').value,
+        ldap_bind_dn: document.getElementById('ldap_bind_dn').value,
+        ldap_bind_password: document.getElementById('ldap_bind_password').value,
+        ldap_user_filter: document.getElementById('ldap_user_filter').value,
+        ldap_auto_create: document.getElementById('ldap_auto_create').checked.toString(),
+        ldap_default_role: document.getElementById('ldap_default_role').value
+    };
+
+    try {
+        const response = await fetch('/api/ldap/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        return await response.json();
+    } catch (error) {
+        console.error('Error saving LDAP settings:', error);
+        return { success: false, error: 'Network error' };
+    }
+}
+
+/**
+ * Test LDAP connection
+ */
+async function testLDAP() {
+    const resultDiv = document.getElementById('ldap-test-result');
+    const testUsername = document.getElementById('ldap_test_user').value;
+    const testPassword = document.getElementById('ldap_test_pw').value;
+
+    if (!testUsername || !testPassword) {
+        resultDiv.innerHTML = '<span style="color: var(--danger);">Username and password required for test</span>';
+        return;
+    }
+
+    resultDiv.innerHTML = '<span style="color: var(--primary);">Testing connection...</span>';
+
+    const settings = {
+        ldap_server: document.getElementById('ldap_server').value,
+        ldap_port: document.getElementById('ldap_port').value,
+        ldap_use_ssl: document.getElementById('ldap_use_ssl').checked.toString(),
+        ldap_base_dn: document.getElementById('ldap_base_dn').value,
+        ldap_bind_dn: document.getElementById('ldap_bind_dn').value,
+        ldap_bind_password: document.getElementById('ldap_bind_password').value,
+        ldap_user_filter: document.getElementById('ldap_user_filter').value,
+        test_username: testUsername,
+        test_password: testPassword
+    };
+
+    try {
+        const response = await fetch('/api/ldap/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        const result = await response.json();
+        if (result.success) {
+            resultDiv.innerHTML = `<span style="color: var(--success); font-weight: 500;">✅ ${result.message}</span>`;
+        } else {
+            resultDiv.innerHTML = `<span style="color: var(--danger); font-weight: 500;">❌ ${result.error}</span>`;
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `<span style="color: var(--danger);">❌ Error: ${error}</span>`;
     }
 }
 

@@ -262,6 +262,13 @@ This is an automated message from Network Monitor.
             print(f"[Alert] Skipping alert - device {device_id} is in maintenance mode")
             return False
         
+        # Check if parent device is down (Alert Dependencies)
+        if event_type == 'down':
+            down_parent = self.db.is_parent_device_down(device_id)
+            if down_parent:
+                print(f"[Alert] Suppressing alert for device {device_id} - parent '{down_parent.get('name')}' (ID:{down_parent.get('id')}) is down")
+                return False
+        
         # First check in-memory lock (prevents race conditions)
         if alert_key in self._recent_alerts:
             last_memory_time = self._recent_alerts[alert_key]
@@ -327,9 +334,22 @@ This is an automated message from Network Monitor.
         # Format message with device info
         full_message = f"Device: {device_name}\nIP: {device.get('ip_address', 'N/A')}\n\n{message}"
         
+        # Add downstream device count for down events (Alert Dependencies)
+        downstream_count = 0
+        if event_type == 'down':
+            try:
+                downstream_count = self.db.count_downstream_devices(device_id)
+                if downstream_count > 0:
+                    full_message += f"\n\n⚠️ {downstream_count} downstream device(s) affected — alerts suppressed"
+            except Exception as e:
+                print(f"[Alert] Error counting downstream devices: {e}")
+        
         # Determine emoji/prefix based on event type
         if event_type == 'down':
-            subject = f"🔴 Device DOWN: {device_name}"
+            if downstream_count > 0:
+                subject = f"🔴 Device DOWN: {device_name} ({downstream_count} downstream affected)"
+            else:
+                subject = f"🔴 Device DOWN: {device_name}"
         elif event_type == 'recovery':
             subject = f"🟢 Device RECOVERED: {device_name}"
         elif event_type == 'ssl_expiry':

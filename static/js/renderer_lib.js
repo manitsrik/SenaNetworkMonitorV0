@@ -33,6 +33,12 @@ window.DashboardRenderer = {
      */
 
     renderDashboard: function (container, layoutConfig, data, isEditMode = false) {
+        // Normalize layoutConfig: handle both array and {widgets, variables} object format
+        if (layoutConfig && !Array.isArray(layoutConfig) && typeof layoutConfig === 'object') {
+            layoutConfig = layoutConfig.widgets || [];
+        }
+        if (!layoutConfig) layoutConfig = [];
+
         // Check if we can do an incremental update
         if (!isEditMode && container.children.length === layoutConfig.length) {
             let structureMatch = true;

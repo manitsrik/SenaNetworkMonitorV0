@@ -56,7 +56,9 @@ def add_device():
         dns_query_domain=data.get('dns_query_domain', 'google.com'),
         location_type=data.get('location_type', 'on-premise'),
         latitude=data.get('latitude'),
-        longitude=data.get('longitude')
+        longitude=data.get('longitude'),
+        is_enabled=data.get('is_enabled', True),
+        parent_device_id=data.get('parent_device_id')
     )
     
     if result['success']:
@@ -75,6 +77,11 @@ def add_device():
 def update_device(device_id):
     """Update a device"""
     data = request.json
+    # Handle parent_device_id — use sentinel to distinguish "not provided" vs "set to null"
+    parent_kw = {}
+    if 'parent_device_id' in data:
+        parent_kw['parent_device_id'] = data.get('parent_device_id')
+    
     result = _get_db().update_device(
         device_id=device_id,
         name=data.get('name'),
@@ -94,7 +101,9 @@ def update_device(device_id):
         dns_query_domain=data.get('dns_query_domain'),
         location_type=data.get('location_type'),
         latitude=data.get('latitude'),
-        longitude=data.get('longitude')
+        longitude=data.get('longitude'),
+        is_enabled=data.get('is_enabled'),
+        **parent_kw
     )
     log_audit('update', 'device', 'device', device_id, data.get('name'))
     return jsonify(result)
@@ -108,6 +117,19 @@ def delete_device(device_id):
     _get_socketio().emit('device_deleted', {'id': device_id}, namespace='/')
     log_audit('delete', 'device', 'device', device_id)
     return jsonify(result)
+
+
+@devices_bp.route('/api/devices/<int:device_id>/children', methods=['GET'])
+def get_device_children(device_id):
+    """Get child devices (devices that depend on this device)"""
+    db = _get_db()
+    children = db.get_child_devices(device_id)
+    downstream_count = db.count_downstream_devices(device_id)
+    return jsonify({
+        'device_id': device_id,
+        'children': children,
+        'total_downstream': downstream_count
+    })
 
 
 @devices_bp.route('/api/status', methods=['GET'])
@@ -356,3 +378,23 @@ def import_devices_csv():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@devices_bp.route('/api/devices/<int:device_id>/toggle', methods=['POST'])
+@login_required
+@operator_required
+def toggle_device(device_id):
+    """Toggle device monitoring status"""
+    db = _get_db()
+    result = db.toggle_device_monitoring(device_id)
+    
+    if result['success']:
+        action = 'enabled' if result['is_enabled'] else 'disabled'
+        log_audit(
+            session.get('username', 'system'),
+            'DEVICE_TOGGLE',
+            f'Device "{result["name"]}" monitoring {action}',
+            'devices',
+            device_id
+        )
+        
+    return jsonify(result), 200 if result['success'] else 400

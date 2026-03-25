@@ -240,6 +240,179 @@
                 </div>
             </div>
         </div>
+
+        <!-- LDAP / Active Directory Settings -->
+        <div class="card shadow-lg" style="border: 1px solid var(--primary-light);">
+            <div class="card-header" style="background: rgba(var(--primary-rgb, 99,102,241), 0.05);">
+                <h3 class="card-title">🛡️ LDAP / Active Directory</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="ldap_enabled"> Enabled
+                </label>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">LDAP Server (URL/IP)</label>
+                    <input type="text" id="ldap_server" class="form-control" placeholder="ldap.example.com or 192.168.1.10">
+                </div>
+                <div class="grid grid-2" style="gap: 1rem; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label class="form-label">Port</label>
+                        <input type="number" id="ldap_port" class="form-control" value="389">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" style="margin-top: 2rem;">
+                            <input type="checkbox" id="ldap_use_ssl"> Use SSL/TLS
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Base DN</label>
+                    <input type="text" id="ldap_base_dn" class="form-control" placeholder="dc=example,dc=com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bind DN (User for searching)</label>
+                    <input type="text" id="ldap_bind_dn" class="form-control" placeholder="cn=admin,dc=example,dc=com">
+                    <small style="color: var(--text-muted);">Optional if anonymous bind is allowed</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Bind Password</label>
+                    <input type="password" id="ldap_bind_password" class="form-control" placeholder="Required for Bind DN">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">User Search Filter</label>
+                    <input type="text" id="ldap_user_filter" class="form-control" value="(sAMAccountName={username})">
+                    <small style="color: var(--text-muted);">Use <code>{username}</code> as placeholder</small>
+                </div>
+                
+                <div style="background: rgba(var(--primary-rgb, 99,102,241), 0.03); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem; border: 1px dashed var(--border-color);">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 0.8rem;">Provisioning Settings</h4>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" id="ldap_auto_create" checked> Auto-create local user profile (Option A)
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Default Role for new users</label>
+                        <select id="ldap_default_role" class="form-control">
+                            <option value="viewer">Viewer</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 0.8rem;">Connection Test</h4>
+                    <div class="grid grid-2" style="gap: 0.5rem;">
+                        <input type="text" id="ldap_test_user" class="form-control" placeholder="Test Username">
+                        <input type="password" id="ldap_test_pw" class="form-control" placeholder="Test Password">
+                    </div>
+                    <button class="btn btn-secondary w-full" style="margin-top: 0.5rem; width: 100%;" onclick="testLDAP()">
+                        🔍 Test LDAP Connection
+                    </button>
+                    <div id="ldap-test-result" style="margin-top: 0.5rem; font-size: 0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SSO (OAuth2 / OIDC) Settings -->
+        <div class="card shadow-lg" style="border: 1px solid var(--primary-light);">
+            <div class="card-header" style="background: rgba(var(--primary-rgb, 99,102,241), 0.05); display: flex; justify-content: space-between; align-items: center;">
+                <h3 class="card-title">🔐 Single Sign-On (SSO)</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="sso_enabled"> Enabled
+                </label>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.25rem;">
+                    Configure OAuth2 or OpenID Connect (OIDC) providers like Google, Microsoft, or GitHub.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label">Provider Presets</label>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        <button class="btn btn-sm btn-secondary" style="flex: 1;" onclick="applySSOPreset('google')">
+                            <i class="fa-brands fa-google"></i> Google
+                        </button>
+                        <button class="btn btn-sm btn-secondary" style="flex: 1;" onclick="applySSOPreset('microsoft')">
+                            <i class="fa-brands fa-microsoft"></i> Microsoft
+                        </button>
+                        <button class="btn btn-sm btn-secondary" style="flex: 1;" onclick="applySSOPreset('github')">
+                            <i class="fa-brands fa-github"></i> GitHub
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Provider Name</label>
+                    <input type="text" id="sso_provider_name" class="form-control" placeholder="e.g., Google login">
+                </div>
+
+                <div class="grid grid-2" style="gap: 1rem;">
+                    <div class="form-group">
+                        <label class="form-label">Client ID *</label>
+                        <input type="text" id="sso_client_id" class="form-control" placeholder="OAuth2 Client ID">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Client Secret *</label>
+                        <input type="password" id="sso_client_secret" class="form-control" placeholder="OAuth2 Client Secret">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Discovery URL (OIDC only)</label>
+                    <input type="text" id="sso_discovery_url" class="form-control" placeholder="https://.../.well-known/openid-configuration">
+                    <small style="color: var(--text-muted);">Recommended for OIDC providers. Auto-fills other URLs.</small>
+                </div>
+
+                <div id="manual-sso-urls" style="border-top: 1px dashed var(--border-color); margin-top: 1rem; padding-top: 1rem;">
+                    <p style="font-size: 0.8rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Manual URL Configuration</p>
+                    <div class="form-group">
+                        <label class="form-label">Authorization URL</label>
+                        <input type="text" id="sso_authorize_url" class="form-control" placeholder="https://.../authorize">
+                    </div>
+                    <div class="grid grid-2" style="gap: 1rem;">
+                        <div class="form-group">
+                            <label class="form-label">Token URL</label>
+                            <input type="text" id="sso_token_url" class="form-control" placeholder="https://.../token">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Userinfo URL</label>
+                            <input type="text" id="sso_userinfo_url" class="form-control" placeholder="https://.../userinfo">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Scopes (space separated)</label>
+                        <input type="text" id="sso_scopes" class="form-control" value="openid email profile">
+                    </div>
+                </div>
+
+                <div style="background: rgba(var(--primary-rgb, 99,102,241), 0.03); padding: 1rem; border-radius: 0.5rem; margin-top: 1.25rem; border: 1px dashed var(--border-color);">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 0.8rem;">SSO Provisioning</h4>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" id="sso_auto_create" checked> Auto-create local user profile
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Default Role for new users</label>
+                        <select id="sso_default_role" class="form-control">
+                            <option value="viewer">Viewer</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1rem; font-size: 0.8rem; background: var(--bg-hover); padding: 0.75rem; border-radius: 4px; border: 1px solid var(--border-color);">
+                    <p style="margin-bottom: 0.25rem;"><strong>Redirect Callback URL:</strong></p>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <code id="callback-url-copy" style="color: var(--primary); font-weight: 600;">{{ request.url_root.rstrip('/') }}/sso/callback</code>
+                        <i class="fa-solid fa-copy" style="cursor: pointer; opacity: 0.7;" onclick="navigator.clipboard.writeText(document.getElementById('callback-url-copy').innerText); showAlert('URL copied to clipboard!', 'info')"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Save Button -->

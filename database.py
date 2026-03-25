@@ -186,6 +186,7 @@ class Database:
                 failure_count INTEGER DEFAULT 0,
                 latitude REAL,
                 longitude REAL,
+                is_enabled {bool_type} DEFAULT {bool_default_true},
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -245,7 +246,33 @@ class Database:
             except Exception:
                 if self.db_type == 'postgresql':
                     conn.rollback()
-                # Column already exists — ignore
+        # Column already exists — ignore
+        
+        # Migration: Add is_enabled column to existing devices table
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute(f'ALTER TABLE devices ADD COLUMN is_enabled {bool_type} DEFAULT {bool_default_true}')
+                conn.commit()
+            else:
+                cursor.execute(f'ALTER TABLE devices ADD COLUMN is_enabled {bool_type} DEFAULT {bool_default_true}')
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+            # Column already exists — ignore
+        
+        # Migration: Add parent_device_id column for Alert Dependencies
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute('ALTER TABLE devices ADD COLUMN parent_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL')
+                conn.commit()
+            else:
+                cursor.execute('ALTER TABLE devices ADD COLUMN parent_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL')
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+            # Column already exists — ignore
         
         # Default Alert Escalation Settings Let's ensure these exist 
         default_escalation_settings = {
@@ -333,6 +360,7 @@ class Database:
                 id {pk},
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
+                auth_type TEXT DEFAULT 'local',
                 role TEXT NOT NULL DEFAULT 'viewer',
                 display_name TEXT,
                 email TEXT,
@@ -342,6 +370,20 @@ class Database:
                 updated_at TIMESTAMP DEFAULT {timestamp_default}
             )
         ''')
+
+        # Migration: Add auth_type column to users table
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_type TEXT DEFAULT 'local'")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE users ADD COLUMN auth_type TEXT DEFAULT 'local'")
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+            # Column likely exists
 
         # Dashboards table
         cursor.execute(f'''
@@ -373,6 +415,21 @@ class Database:
                 conn.rollback()
             # Column likely exists
         
+        # Dashboard Templates table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS dashboard_templates (
+                id {pk},
+                name TEXT NOT NULL,
+                description TEXT,
+                layout_config TEXT,
+                variables TEXT,
+                category TEXT DEFAULT 'custom',
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (created_by) REFERENCES users (id)
+            )
+        ''')
+        
         # Sub-topologies table
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS sub_topologies (
@@ -389,6 +446,38 @@ class Database:
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
         ''')
+
+        # LDAP settings table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS ldap_settings (
+                id {pk},
+                setting_key TEXT UNIQUE NOT NULL,
+                setting_value TEXT,
+                updated_at TIMESTAMP DEFAULT {timestamp_default}
+            )
+        ''')
+
+        # Default LDAP Settings
+        default_ldap_settings = {
+            'ldap_enabled': 'false',
+            'ldap_server': '',
+            'ldap_port': '389',
+            'ldap_use_ssl': 'false',
+            'ldap_base_dn': '',
+            'ldap_bind_dn': '',
+            'ldap_bind_password': '',
+            'ldap_user_filter': '(sAMAccountName={username})',
+            'ldap_auto_create': 'true',
+            'ldap_default_role': 'viewer'
+        }
+        for k, v in default_ldap_settings.items():
+            try:
+                if self.db_type == 'postgresql':
+                    cursor.execute(f'INSERT INTO ldap_settings (setting_key, setting_value) VALUES ({ph}, {ph}) ON CONFLICT (setting_key) DO NOTHING', (k, v))
+                else:
+                    cursor.execute(f'INSERT OR IGNORE INTO ldap_settings (setting_key, setting_value) VALUES (?, ?)', (k, v))
+            except Exception:
+                pass
         
         # Devices belonging to a sub-topology
         cursor.execute(f'''
@@ -609,7 +698,7 @@ class Database:
                    snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
                    snmp_v3_priv_password=None,
                    tcp_port=80, dns_query_domain='google.com', location_type='on-premise',
-                   latitude=None, longitude=None):
+                   latitude=None, longitude=None, is_enabled=True, parent_device_id=None):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -628,8 +717,8 @@ class Database:
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
-                                       latitude, longitude)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       latitude, longitude, is_enabled, parent_device_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
@@ -639,7 +728,7 @@ class Database:
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE,
-                      latitude, longitude))
+                      latitude, longitude, is_enabled, parent_device_id))
                 device_id = cursor.fetchone()['id']
             else:
                 cursor.execute('''
@@ -650,8 +739,8 @@ class Database:
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
-                                       latitude, longitude)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       latitude, longitude, is_enabled, parent_device_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -660,7 +749,7 @@ class Database:
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE,
-                      latitude, longitude))
+                      latitude, longitude, 1 if is_enabled else 0, parent_device_id))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -701,7 +790,8 @@ class Database:
                      snmp_v3_auth_password=None, snmp_v3_priv_protocol=None,
                      snmp_v3_priv_password=None,
                      tcp_port=None, dns_query_domain=None, location_type=None,
-                     latitude=None, longitude=None):
+                     latitude=None, longitude=None, is_enabled=None,
+                     parent_device_id='__NOT_SET__'):
         """Update device information"""
         # Strip whitespace from IP address and name to prevent issues
         if ip_address:
@@ -772,6 +862,23 @@ class Database:
                 updates.append(f'longitude = {ph}')
                 params.append(longitude)
             
+            if is_enabled is not None:
+                updates.append(f'is_enabled = {ph}')
+                if self.db_type == 'postgresql':
+                    params.append(is_enabled)
+                else:
+                    params.append(1 if is_enabled else 0)
+                
+                # Update status and reset response time when toggled via modal
+                updates.append(f"status = {ph}")
+                params.append('disabled' if not is_enabled else 'unknown')
+                updates.append("response_time = NULL")
+            
+            # parent_device_id uses sentinel value to distinguish "not provided" from "set to None"
+            if parent_device_id != '__NOT_SET__':
+                updates.append(f'parent_device_id = {ph}')
+                params.append(parent_device_id)
+            
             if updates:
                 params.append(device_id)
                 query = f"UPDATE devices SET {', '.join(updates)} WHERE id = {ph}"
@@ -779,6 +886,155 @@ class Database:
                 conn.commit()
             
             return {'success': True}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+            
+    # =========================================================================
+    # Alert Dependencies — Helper Functions
+    # =========================================================================
+    
+    def is_parent_device_down(self, device_id):
+        """Check if any ancestor device is currently down (walk up dependency chain).
+        Returns the first down parent device dict, or None if all parents are up."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            visited = set()
+            current_id = device_id
+            
+            while current_id and current_id not in visited:
+                visited.add(current_id)
+                cursor.execute(
+                    f'SELECT parent_device_id FROM devices WHERE id = {self._ph()}',
+                    (current_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    break
+                
+                parent_id = row['parent_device_id'] if isinstance(row, dict) else row[0]
+                if not parent_id:
+                    break
+                
+                # Check if parent is down
+                cursor.execute(
+                    f'SELECT id, name, ip_address, status FROM devices WHERE id = {self._ph()}',
+                    (parent_id,)
+                )
+                parent = cursor.fetchone()
+                if parent:
+                    parent_dict = self._row_to_dict(parent)
+                    if parent_dict.get('status') == 'down':
+                        return parent_dict
+                
+                current_id = parent_id
+            
+            return None
+        finally:
+            self.release_connection(conn)
+    
+    def get_child_devices(self, device_id):
+        """Get all devices whose parent_device_id equals this device (direct children only)"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM devices WHERE parent_device_id = {self._ph()}',
+                (device_id,)
+            )
+            return self._rows_to_dicts(cursor.fetchall())
+        finally:
+            self.release_connection(conn)
+    
+    def count_downstream_devices(self, device_id):
+        """Count all downstream devices (recursive children)"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            count = 0
+            queue = [device_id]
+            visited = set()
+            
+            while queue:
+                current = queue.pop(0)
+                if current in visited:
+                    continue
+                visited.add(current)
+                
+                cursor.execute(
+                    f'SELECT id FROM devices WHERE parent_device_id = {self._ph()}',
+                    (current,)
+                )
+                children = cursor.fetchall()
+                for child in children:
+                    child_id = child['id'] if isinstance(child, dict) else child[0]
+                    if child_id not in visited:
+                        count += 1
+                        queue.append(child_id)
+            
+            return count
+        finally:
+            self.release_connection(conn)
+    
+    def get_dependency_info(self, device_id):
+        """Get parent device name for a given device"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'''SELECT p.id, p.name, p.ip_address, p.status 
+                    FROM devices d 
+                    JOIN devices p ON d.parent_device_id = p.id 
+                    WHERE d.id = {self._ph()}''',
+                (device_id,)
+            )
+            row = cursor.fetchone()
+            return self._row_to_dict(row) if row else None
+        finally:
+            self.release_connection(conn)
+    
+    def toggle_device_monitoring(self, device_id):
+        """Toggle the is_enabled status of a device"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            # Get current status
+            cursor.execute(f'SELECT is_enabled, name FROM devices WHERE id = {ph}', (device_id,))
+            device = cursor.fetchone()
+            if not device:
+                return {'success': False, 'error': 'Device not found'}
+            
+            new_status = not bool(device['is_enabled'])
+            
+            # When disabling, set status to 'disabled'
+            # When enabling, set status to 'unknown' to trigger re-check
+            status_update = 'disabled' if not new_status else 'unknown'
+            
+            if self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    UPDATE devices 
+                    SET is_enabled = %s, status = %s, response_time = NULL 
+                    WHERE id = %s
+                ''', (new_status, status_update, device_id))
+            else:
+                cursor.execute(f'''
+                    UPDATE devices 
+                    SET is_enabled = ?, status = ?, response_time = NULL 
+                    WHERE id = ?
+                ''', (1 if new_status else 0, status_update, device_id))
+                
+            conn.commit()
+            return {
+                'success': True, 
+                'is_enabled': new_status, 
+                'name': device['name'],
+                'status': status_update
+            }
         except Exception as e:
             if conn: conn.rollback()
             return {'success': False, 'error': str(e)}
@@ -1488,6 +1744,7 @@ class Database:
     def mark_device_escalated(self, device_id, level=1):
         """Mark a device as having had its alert escalated"""
         conn = self.get_connection()
+        cursor = self._cursor(conn)
         cursor.execute(f'UPDATE devices SET escalation_level = {self._ph()} WHERE id = {self._ph()}', (level, device_id))
         conn.commit()
         self.release_connection(conn)
@@ -1904,21 +2161,183 @@ class Database:
         self.release_connection(conn)
         return self._row_to_dict(row)
     
+    def get_ldap_settings(self):
+        """Get all LDAP settings as a dict"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute('SELECT setting_key, setting_value FROM ldap_settings')
+        rows = cursor.fetchall()
+        self.release_connection(conn)
+        return {row['setting_key']: row['setting_value'] for row in rows}
+
+    def save_ldap_setting(self, key, value):
+        """Save an LDAP setting"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        if self.db_type == 'postgresql':
+            cursor.execute(f'''
+                INSERT INTO ldap_settings (setting_key, setting_value, updated_at) 
+                VALUES ({ph}, {ph}, CURRENT_TIMESTAMP)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
+            ''', (key, str(value)))
+        else:
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO ldap_settings (setting_key, setting_value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (key, str(value)))
+        conn.commit()
+        self.release_connection(conn)
+        return True
+
+    # =========================================================================
+    # SSO (OAuth2/OIDC) Settings Methods
+    # =========================================================================
+
+    def get_sso_settings(self):
+        """Get all SSO settings as a dict (stored in ldap_settings table with sso_ prefix)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cursor.execute(f"SELECT setting_key, setting_value FROM ldap_settings WHERE setting_key LIKE {ph}", ('sso_%',))
+        rows = cursor.fetchall()
+        self.release_connection(conn)
+        return {row['setting_key']: row['setting_value'] for row in rows}
+
+    def save_sso_setting(self, key, value):
+        """Save an SSO setting (stored in ldap_settings table)"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        if self.db_type == 'postgresql':
+            cursor.execute(f'''
+                INSERT INTO ldap_settings (setting_key, setting_value, updated_at) 
+                VALUES ({ph}, {ph}, CURRENT_TIMESTAMP)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP
+            ''', (key, str(value)))
+        else:
+            cursor.execute(f'''
+                INSERT OR REPLACE INTO ldap_settings (setting_key, setting_value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (key, str(value)))
+        conn.commit()
+        self.release_connection(conn)
+        return True
+
+    def authenticate_ldap(self, username, password):
+        """
+        Authenticate a user against LDAP/AD.
+        Returns user info (dict) on success, None on failure.
+        """
+        settings = self.get_ldap_settings()
+        if settings.get('ldap_enabled', 'false').lower() != 'true':
+            return None
+
+        import ldap3
+        from ldap3 import Server, Connection, ALL, Tls
+        import ssl
+
+        try:
+            server_url = settings.get('ldap_server')
+            port = int(settings.get('ldap_port', 389))
+            use_ssl = settings.get('ldap_use_ssl', 'false').lower() == 'true'
+            
+            if not server_url:
+                return None
+
+            # Setup server
+            tls = None
+            if use_ssl:
+                tls = Tls(validate=ssl.CERT_NONE, version=ssl.PROTOCOL_TLSv1_2)
+            
+            server = Server(server_url, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL)
+            
+            # Bind with admin user to find the user DN
+            bind_dn = settings.get('ldap_bind_dn')
+            bind_pw = settings.get('ldap_bind_password')
+            
+            if bind_dn and bind_pw:
+                conn = Connection(server, user=bind_dn, password=bind_pw, auto_bind=True)
+            else:
+                # Anonymous bind
+                conn = Connection(server, auto_bind=True)
+
+            # Search for the user
+            base_dn = settings.get('ldap_base_dn', '')
+            user_filter = settings.get('ldap_user_filter', '(sAMAccountName={username})').replace('{username}', username)
+            
+            conn.search(base_dn, user_filter, attributes=['displayName', 'mail', 'cn'])
+            
+            if not conn.entries:
+                conn.unbind()
+                return None
+            
+            user_dn = conn.entries[0].entry_dn
+            user_info = {
+                'username': username,
+                'display_name': str(conn.entries[0].displayName) if hasattr(conn.entries[0], 'displayName') else username,
+                'email': str(conn.entries[0].mail) if hasattr(conn.entries[0], 'mail') else None
+            }
+            conn.unbind()
+
+            # Now try to bind as the user to verify password
+            user_conn = Connection(server, user=user_dn, password=password)
+            if user_conn.bind():
+                user_conn.unbind()
+                return user_info
+            
+            return None
+        except Exception as e:
+            print(f"[LDAP] Auth error for {username}: {e}")
+            return None
+
     def authenticate_user(self, username, password):
         """Authenticate a user and return user data if successful"""
         from werkzeug.security import check_password_hash
         
         user = self.get_user_by_username(username)
-        if not user:
-            return None
         
-        if not user.get('is_active', True):
-            return None
-        
-        if check_password_hash(user['password_hash'], password):
-            self.update_last_login(user['id'])
-            return user
-        
+        # 1. Try Local Authentication first if user exists
+        if user:
+            if not user.get('is_active', True):
+                return None
+                
+            # Check if it's a local user or LDAP user with local fallback
+            if user.get('auth_type', 'local') == 'local':
+                if check_password_hash(user['password_hash'], password):
+                    self.update_last_login(user['id'])
+                    return user
+            elif user.get('auth_type') == 'ldap':
+                # LDAP user - try LDAP bind
+                ldap_res = self.authenticate_ldap(username, password)
+                if ldap_res:
+                    self.update_last_login(user['id'])
+                    # Optional: update display_name/email from LDAP
+                    return user
+                return None
+
+        # 2. Try LDAP Authentication (Auto-provisioning)
+        settings = self.get_ldap_settings()
+        if settings.get('ldap_enabled', 'false').lower() == 'true' and settings.get('ldap_auto_create', 'true').lower() == 'true':
+            ldap_res = self.authenticate_ldap(username, password)
+            if ldap_res:
+                # User authenticated via LDAP but not in local DB yet
+                # Auto-create local profile (Option A)
+                role = settings.get('ldap_default_role', 'viewer')
+                res = self.add_user(
+                    username=username,
+                    password='LDAP_EXTERNAL_AUTH', # Dummy password
+                    role=role,
+                    display_name=ldap_res.get('display_name'),
+                    email=ldap_res.get('email')
+                )
+                if res['success']:
+                    new_user = self.get_user_by_id(res['id'])
+                    # Set auth_type to ldap
+                    self.update_user(new_user['id'], auth_type='ldap')
+                    self.update_last_login(new_user['id'])
+                    return new_user
+
         return None
     
     def update_last_login(self, user_id):
@@ -1937,7 +2356,7 @@ class Database:
         conn = self.get_connection()
         cursor = self._cursor(conn)
         cursor.execute('''
-            SELECT id, username, role, display_name, email, is_active, 
+            SELECT id, username, role, display_name, email, is_active, auth_type,
                    last_login, created_at, updated_at 
             FROM users ORDER BY created_at DESC
         ''')
@@ -1945,7 +2364,7 @@ class Database:
         self.release_connection(conn)
         return users
     
-    def add_user(self, username, password, role='viewer', display_name=None, email=None):
+    def add_user(self, username, password, role='viewer', display_name=None, email=None, auth_type='local'):
         """Add a new user"""
         from werkzeug.security import generate_password_hash
         
@@ -1955,20 +2374,23 @@ class Database:
         conn = self.get_connection()
         cursor = self._cursor(conn)
         
+        # LDAP users use a dummy password hash
+        pw_hash = 'LDAP_EXTERNAL_AUTH' if password == 'LDAP_EXTERNAL_AUTH' else generate_password_hash(password)
+        
         try:
             if self.db_type == 'postgresql':
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, role, display_name, email, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO users (username, password_hash, role, display_name, email, auth_type, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
-                ''', (username, generate_password_hash(password), role, display_name, email, 
+                ''', (username, pw_hash, role, display_name, email, auth_type,
                       datetime.now().isoformat()))
                 user_id = cursor.fetchone()['id']
             else:
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, role, display_name, email, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (username, generate_password_hash(password), role, display_name, email, 
+                    INSERT INTO users (username, password_hash, role, display_name, email, auth_type, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (username, pw_hash, role, display_name, email, auth_type,
                       datetime.now().isoformat()))
                 user_id = cursor.lastrowid
             conn.commit()
@@ -1982,7 +2404,7 @@ class Database:
             return {'success': False, 'error': str(e)}
     
     def update_user(self, user_id, role=None, display_name=None, email=None, 
-                    is_active=None, password=None):
+                    is_active=None, password=None, auth_type=None):
         """Update user details"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -2005,6 +2427,10 @@ class Database:
         if email is not None:
             updates.append(f'email = {ph}')
             params.append(email)
+            
+        if auth_type is not None:
+            updates.append(f'auth_type = {ph}')
+            params.append(auth_type)
         
         if is_active is not None:
             updates.append(f'is_active = {ph}')
@@ -2206,6 +2632,89 @@ class Database:
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
+
+    # =========================================================================
+    # Dashboard Template Methods
+    # =========================================================================
+
+    def create_dashboard_template(self, name, layout_config, description=None,
+                                   variables=None, category='custom', created_by=None):
+        """Create a new dashboard template"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                    INSERT INTO dashboard_templates (name, description, layout_config, variables, category, created_by, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                ''', (name, description, layout_config, variables, category, created_by,
+                      datetime.now().isoformat()))
+                template_id = cursor.fetchone()['id']
+            else:
+                cursor.execute('''
+                    INSERT INTO dashboard_templates (name, description, layout_config, variables, category, created_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (name, description, layout_config, variables, category, created_by,
+                      datetime.now().isoformat()))
+                template_id = cursor.lastrowid
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True, 'id': template_id}
+        except Exception as e:
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+
+    def get_dashboard_templates(self, category=None):
+        """Get all dashboard templates, optionally filtered by category"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        if category:
+            cursor.execute(f'''
+                SELECT dt.*, u.username as creator_name
+                FROM dashboard_templates dt
+                LEFT JOIN users u ON dt.created_by = u.id
+                WHERE dt.category = {ph}
+                ORDER BY dt.created_at DESC
+            ''', (category,))
+        else:
+            cursor.execute('''
+                SELECT dt.*, u.username as creator_name
+                FROM dashboard_templates dt
+                LEFT JOIN users u ON dt.created_by = u.id
+                ORDER BY dt.created_at DESC
+            ''')
+        
+        templates = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return templates
+
+    def get_dashboard_template(self, template_id):
+        """Get a specific dashboard template"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(f'''
+            SELECT dt.*, u.username as creator_name
+            FROM dashboard_templates dt
+            LEFT JOIN users u ON dt.created_by = u.id
+            WHERE dt.id = {self._ph()}
+        ''', (template_id,))
+        result = cursor.fetchone()
+        self.release_connection(conn)
+        return self._row_to_dict(result)
+
+    def delete_dashboard_template(self, template_id):
+        """Delete a dashboard template"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute(f'DELETE FROM dashboard_templates WHERE id = {self._ph()}', (template_id,))
+        conn.commit()
+        self.release_connection(conn)
+        return {'success': True}
 
     # =========================================================================
     # Sub-Topology Methods

@@ -863,7 +863,9 @@ class NetworkMonitor:
     
     def check_all_devices(self):
         """Check all devices in parallel using eventlet GreenPool"""
-        devices = self.db.get_all_devices()
+        all_devices = self.db.get_all_devices()
+        # Filter for enabled devices only
+        devices = [d for d in all_devices if d.get('is_enabled')]
         results = []
         
         if not devices:
@@ -908,7 +910,8 @@ class NetworkMonitor:
             'devices_slow': slow,
             'devices_down': down,
             'devices_unknown': unknown,
-            'uptime_percentage': round((up / total * 100), 2) if total > 0 else 0,
+            'devices_disabled': sum(1 for d in devices if not d.get('is_enabled')),
+            'uptime_percentage': round((up / (up + slow + down) * 100), 2) if (up + slow + down) > 0 else 0,
             'average_response_time': avg_response
         }
 
@@ -1320,8 +1323,9 @@ class NetworkMonitor:
 
     def poll_bandwidth_all_snmp_devices(self):
         """Poll bandwidth for all SNMP devices. Called by scheduler every 60s."""
-        devices = self.db.get_all_devices()
-        snmp_devices = [d for d in devices if d.get('monitor_type') == 'snmp']
+        all_devices = self.db.get_all_devices()
+        # Filter for enabled SNMP devices
+        snmp_devices = [d for d in all_devices if d.get('monitor_type') == 'snmp' and d.get('is_enabled')]
         if not snmp_devices:
             return
         

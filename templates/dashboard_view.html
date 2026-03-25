@@ -7,24 +7,45 @@
 {% set active_page = 'dashboard_view' %}
 
 {% block header_actions %}
-<div class="dashboard-filters-header" style="display: flex; gap: 1rem; align-items: center; margin-left: 1rem; border-left: 1px solid var(--border-color); padding-left: 1rem;">
+<div class="dashboard-filters-header" id="filters-header" style="display: flex; gap: 1rem; align-items: center; margin-left: 1rem; border-left: 1px solid var(--border-color); padding-left: 1rem;">
     <div style="font-weight: 600; color: var(--text-muted); font-size: 0.85rem;">
         <i class="fa-solid fa-filter"></i> <span class="d-none d-md-inline">{{ _('Filters') }}:</span>
     </div>
     
-    <div class="filter-group" style="display: flex; align-items: center; gap: 0.5rem;">
+    <div class="filter-group" id="filter-location-group" style="display: flex; align-items: center; gap: 0.5rem;">
         <label for="global-filter-location" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Location') }}</label>
         <select id="global-filter-location" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
             <option value="all">{{ _('All Locations') }}</option>
         </select>
     </div>
 
-    <div class="filter-group" style="display: flex; align-items: center; gap: 0.5rem;">
+    <div class="filter-group" id="filter-type-group" style="display: flex; align-items: center; gap: 0.5rem;">
         <label for="global-filter-type" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Device Type') }}</label>
         <select id="global-filter-type" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
             <option value="all">{{ _('All Types') }}</option>
         </select>
     </div>
+
+    <div class="filter-group" id="filter-monitor-group" style="display: none; align-items: center; gap: 0.5rem;">
+        <label for="global-filter-monitor" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Monitor') }}</label>
+        <select id="global-filter-monitor" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
+            <option value="all">{{ _('All Monitors') }}</option>
+        </select>
+    </div>
+
+    <div class="filter-group" id="filter-status-group" style="display: none; align-items: center; gap: 0.5rem;">
+        <label for="global-filter-status" style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;" class="d-none d-md-block">{{ _('Status') }}</label>
+        <select id="global-filter-status" class="form-select form-select-sm" style="width: auto; min-width: 120px; padding: 0.15rem 1.5rem 0.15rem 0.5rem; height: auto; font-size: 0.85rem;" onchange="applyGlobalFilters()">
+            <option value="all">{{ _('All Status') }}</option>
+            <option value="up">✅ Up</option>
+            <option value="down">❌ Down</option>
+            <option value="slow">⚠️ Slow</option>
+        </select>
+    </div>
+    
+    <button onclick="resetFilters()" class="btn btn-xs btn-secondary" style="font-size: 0.75rem; padding: 0.15rem 0.5rem;" title="Reset all filters">
+        <i class="fa-solid fa-rotate-left"></i>
+    </button>
     
     <div style="font-size: 0.75rem; color: var(--text-muted); display: none; align-items: center;" id="filter-status-text" class="d-none d-lg-flex">
         Loading...
@@ -109,13 +130,16 @@
 <script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=3"></script>
 <script>
     let currentDashboard = null;
+    let dashboardVariables = { location: true, deviceType: true, monitorType: false, status: false };
     let originalData = { devices: [], stats: {}, connections: [] }; // The untouched source data
     let currentData = { devices: [], stats: {}, connections: [] };  // The filtered data sent to renderer
     
     // Filter State
     let activeFilters = {
         location: 'all',
-        type: 'all'
+        type: 'all',
+        monitorType: 'all',
+        status: 'all'
     };
 
     document.addEventListener('DOMContentLoaded', async () => {
@@ -127,6 +151,17 @@
             const response = await fetch(`/api/dashboards/${dashboardId}`);
             currentDashboard = await response.json();
 
+            // Handle both old (array) and new ({widgets, variables}) format
+            let config = currentDashboard.layout_config || [];
+            if (Array.isArray(config)) {
+                currentDashboard.layout_config = config;
+            } else {
+                currentDashboard.layout_config = config.widgets || [];
+                if (config.variables) {
+                    dashboardVariables = { ...dashboardVariables, ...config.variables };
+                }
+            }
+
             const titleElem = document.getElementById('dashboard-title');
             if (titleElem) titleElem.textContent = currentDashboard.name;
 
@@ -135,6 +170,9 @@
             if (headerTitle) headerTitle.textContent = currentDashboard.name;
 
             document.getElementById('dashboard-desc').textContent = currentDashboard.description || '';
+
+            // Apply filter visibility based on dashboard variables
+            updateFilterVisibility();
 
             // Initial data load
             await loadData();
@@ -149,6 +187,32 @@
                 </div>`;
         }
     });
+
+    function updateFilterVisibility() {
+        const locGroup = document.getElementById('filter-location-group');
+        const typeGroup = document.getElementById('filter-type-group');
+        const monitorGroup = document.getElementById('filter-monitor-group');
+        const statusGroup = document.getElementById('filter-status-group');
+        
+        if (locGroup) locGroup.style.display = dashboardVariables.location ? 'flex' : 'none';
+        if (typeGroup) typeGroup.style.display = dashboardVariables.deviceType ? 'flex' : 'none';
+        if (monitorGroup) monitorGroup.style.display = dashboardVariables.monitorType ? 'flex' : 'none';
+        if (statusGroup) statusGroup.style.display = dashboardVariables.status ? 'flex' : 'none';
+        
+        // Hide entire filter header if no filters enabled
+        const header = document.getElementById('filters-header');
+        const anyEnabled = dashboardVariables.location || dashboardVariables.deviceType || 
+                          dashboardVariables.monitorType || dashboardVariables.status;
+        if (header) header.style.display = anyEnabled ? 'flex' : 'none';
+    }
+
+    function resetFilters() {
+        document.getElementById('global-filter-location').value = 'all';
+        document.getElementById('global-filter-type').value = 'all';
+        document.getElementById('global-filter-monitor').value = 'all';
+        document.getElementById('global-filter-status').value = 'all';
+        applyGlobalFilters();
+    }
 
     async function loadData() {
         try {
@@ -179,14 +243,17 @@
     function updateFilterDropdowns() {
         const locationSelect = document.getElementById('global-filter-location');
         const typeSelect = document.getElementById('global-filter-type');
+        const monitorSelect = document.getElementById('global-filter-monitor');
         
-        // Extract unique locations and types
+        // Extract unique values
         const locations = [...new Set(originalData.devices.map(d => d.location).filter(Boolean))].sort();
         const types = [...new Set(originalData.devices.map(d => d.device_type).filter(Boolean))].sort();
+        const monitors = [...new Set(originalData.devices.map(d => d.monitor_type).filter(Boolean))].sort();
         
         // Remember current selections
         const currentLoc = locationSelect.value;
         const currentType = typeSelect.value;
+        const currentMonitor = monitorSelect.value;
         
         // Rebuild Location Options
         locationSelect.innerHTML = `<option value="all">{{ _('All Locations') }}</option>`;
@@ -202,19 +269,30 @@
         types.forEach(type => {
             const opt = document.createElement('option');
             opt.value = type;
-            // Capitalize first letter for display
             opt.textContent = type.charAt(0).toUpperCase() + type.slice(1);
             typeSelect.appendChild(opt);
+        });
+
+        // Rebuild Monitor Type Options
+        monitorSelect.innerHTML = `<option value="all">{{ _('All Monitors') }}</option>`;
+        monitors.forEach(mt => {
+            const opt = document.createElement('option');
+            opt.value = mt;
+            opt.textContent = mt.toUpperCase();
+            monitorSelect.appendChild(opt);
         });
         
         // Restore selections if they still exist
         if (locations.includes(currentLoc)) locationSelect.value = currentLoc;
         if (types.includes(currentType)) typeSelect.value = currentType;
+        if (monitors.includes(currentMonitor)) monitorSelect.value = currentMonitor;
     }
 
     function applyGlobalFilters() {
         activeFilters.location = document.getElementById('global-filter-location').value;
         activeFilters.type = document.getElementById('global-filter-type').value;
+        activeFilters.monitorType = document.getElementById('global-filter-monitor').value;
+        activeFilters.status = document.getElementById('global-filter-status').value;
         
         let filteredDevices = originalData.devices;
         
@@ -226,6 +304,20 @@
         // Apply Type Filter
         if (activeFilters.type !== 'all') {
             filteredDevices = filteredDevices.filter(d => (d.device_type || 'other').toLowerCase() === activeFilters.type.toLowerCase());
+        }
+
+        // Apply Monitor Type Filter
+        if (activeFilters.monitorType !== 'all') {
+            filteredDevices = filteredDevices.filter(d => (d.monitor_type || '').toLowerCase() === activeFilters.monitorType.toLowerCase());
+        }
+
+        // Apply Status Filter
+        if (activeFilters.status !== 'all') {
+            if (activeFilters.status === 'slow') {
+                filteredDevices = filteredDevices.filter(d => d.status === 'slow' || (d.status === 'up' && parseFloat(d.response_time) > 500));
+            } else {
+                filteredDevices = filteredDevices.filter(d => d.status === activeFilters.status);
+            }
         }
         
         // Update connections (only keep connections where both devices exist in filtered list)
@@ -275,7 +367,9 @@
         
         // Update status text
         const statusText = document.getElementById('filter-status-text');
-        if (activeFilters.location === 'all' && activeFilters.type === 'all') {
+        const isFiltered = activeFilters.location !== 'all' || activeFilters.type !== 'all' || 
+                          activeFilters.monitorType !== 'all' || activeFilters.status !== 'all';
+        if (!isFiltered) {
             statusText.textContent = `Showing all ${total_devices} devices`;
         } else {
             statusText.textContent = `Filtered: ${total_devices} devices match criteria`;
@@ -357,8 +451,6 @@
     socket.on('status_update', debouncedReload);
 
     socket.on('statistics_update', (stats) => {
-        // We only use server-side stats if no filters are applied, but it's safer
-        // to just trigger a full reload to get the latest raw devices so local filtering is accurate.
         debouncedReload();
     });
 

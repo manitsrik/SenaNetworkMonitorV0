@@ -57,6 +57,26 @@
                 </button>
             </form>
 
+            <!-- SSO Login Section (hidden by default, shown if SSO enabled) -->
+            <div id="sso-section" style="display: none; margin-top: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem;">
+                    <div style="flex: 1; height: 1px; background: var(--border-color, #e5e7eb);"></div>
+                    <span style="color: var(--text-muted, #9ca3af); font-size: 0.8rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;">OR</span>
+                    <div style="flex: 1; height: 1px; background: var(--border-color, #e5e7eb);"></div>
+                </div>
+                <a href="/sso/login" id="sso-btn" style="
+                    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+                    width: 100%; padding: 0.75rem 1rem; border-radius: 8px;
+                    background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1));
+                    border: 1px solid rgba(99,102,241,0.3);
+                    color: var(--primary, #6366f1); font-weight: 600; font-size: 0.95rem;
+                    text-decoration: none; transition: all 0.2s ease; cursor: pointer;
+                ">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span id="sso-btn-text">Sign in with SSO</span>
+                </a>
+            </div>
+
             <div class="login-footer">
                 <p>&copy; 2026 Network Monitor System</p>
                 <p style="font-size: 0.7rem; margin-top: 0.5rem; opacity: 0.7;">v1.2.0 • FortiStyle UI</p>
@@ -74,9 +94,8 @@
         if (error) {
             const errorMsg = document.getElementById('error-message');
             errorMsg.style.display = 'block';
-            errorMsg.className = 'error-message show'; // Re-use existing error styles if compatible, or add to css
+            errorMsg.className = 'error-message show';
 
-            // Inline style for error if not fully covered by css
             errorMsg.style.background = 'rgba(239, 68, 68, 0.1)';
             errorMsg.style.color = '#ef4444';
             errorMsg.style.padding = '0.75rem';
@@ -86,12 +105,31 @@
             errorMsg.style.textAlign = 'center';
             errorMsg.style.border = '1px solid rgba(239, 68, 68, 0.2)';
 
-            if (error === 'invalid') {
-                errorMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Invalid username or password';
-            } else if (error === 'required') {
-                errorMsg.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> All fields are required';
-            }
+            const messages = {
+                'invalid': '<i class="fa-solid fa-circle-exclamation"></i> Invalid username or password',
+                'required': '<i class="fa-solid fa-triangle-exclamation"></i> All fields are required',
+                'sso_disabled': '<i class="fa-solid fa-circle-exclamation"></i> SSO is not enabled',
+                'sso_error': '<i class="fa-solid fa-circle-exclamation"></i> SSO authentication failed',
+                'sso_no_userinfo': '<i class="fa-solid fa-circle-exclamation"></i> Could not retrieve user information from SSO provider',
+                'sso_no_email': '<i class="fa-solid fa-circle-exclamation"></i> SSO provider did not return an email address',
+                'sso_inactive': '<i class="fa-solid fa-circle-exclamation"></i> Your account has been deactivated',
+                'sso_no_account': '<i class="fa-solid fa-circle-exclamation"></i> No local account found. Contact admin to create one.',
+                'sso_create_failed': '<i class="fa-solid fa-circle-exclamation"></i> Failed to create account from SSO'
+            };
+
+            errorMsg.innerHTML = messages[error] || '<i class="fa-solid fa-circle-exclamation"></i> An error occurred';
         }
+
+        // Check if SSO is enabled and show/hide SSO button
+        fetch('/api/sso/enabled')
+            .then(r => r.json())
+            .then(data => {
+                if (data.enabled) {
+                    document.getElementById('sso-section').style.display = 'block';
+                    document.getElementById('sso-btn-text').textContent = 'Sign in with ' + (data.provider_name || 'SSO');
+                }
+            })
+            .catch(() => {});
     </script>
 </body>
 

@@ -219,6 +219,7 @@
                     <tr>
                         <th>User</th>
                         <th>Email</th>
+                        <th style="text-align: center;">Auth</th>
                         <th style="text-align: center;">Role</th>
                         <th style="text-align: center;">Status</th>
                         <th>Last Login</th>
@@ -279,6 +280,21 @@
                 <div class="form-group" style="flex: 1;">
                     <label class="form-label">Email</label>
                     <input type="email" id="user-email" class="form-input" placeholder="user@example.com">
+                </div>
+            </div>
+
+            <!-- Auth Type selection -->
+            <div class="form-group">
+                <label class="form-label">Authentication Type *</label>
+                <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="radio" name="auth_type" value="local" checked onclick="toggleAuthType('local')">
+                        <span>Local (Standard)</span>
+                    </label>
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="radio" name="auth_type" value="ldap" onclick="toggleAuthType('ldap')">
+                        <span>LDAP / Active Directory</span>
+                    </label>
                 </div>
             </div>
 
@@ -697,6 +713,11 @@
                 </td>
                 <td>${user.email || '<span style="color:var(--text-secondary)">-</span>'}</td>
                 <td style="text-align: center;">
+                    <span class="status-badge" style="background: ${user.auth_type === 'ldap' ? 'rgba(99,102,241,0.1)' : 'rgba(107,114,128,0.1)'}; color: ${user.auth_type === 'ldap' ? 'var(--primary)' : 'var(--text-secondary)'};">
+                        ${user.auth_type === 'ldap' ? 'LDAP' : 'Local'}
+                    </span>
+                </td>
+                <td style="text-align: center;">
                     <span class="role-badge ${roleClass}"><i class="fa-solid ${roleIcon}"></i> ${roleLabel}</span>
                 </td>
                 <td style="text-align: center;">${statusBadge}</td>
@@ -716,6 +737,22 @@
 
     function selectRole(role) {
         document.querySelector(`input[name="role"][value="${role}"]`).checked = true;
+    }
+
+    function toggleAuthType(type) {
+        const pwGroup = document.getElementById('user-password').closest('.form-group');
+        if (type === 'ldap') {
+            pwGroup.style.opacity = '0.5';
+            document.getElementById('user-password').disabled = true;
+            document.getElementById('user-password').placeholder = 'Auth via LDAP';
+            document.getElementById('password-hint').textContent = '(Managed by LDAP)';
+        } else {
+            pwGroup.style.opacity = '1';
+            document.getElementById('user-password').disabled = false;
+            document.getElementById('user-password').placeholder = '********';
+            const isEdit = !!document.getElementById('edit-user-id').value;
+            document.getElementById('password-hint').textContent = isEdit ? '(leave empty to keep)' : '(required, min 4 chars)';
+        }
     }
 
     function togglePassword() {
@@ -741,6 +778,9 @@
         document.getElementById('active-group').style.display = 'none';
         document.getElementById('user-username').disabled = false;
         selectRole('viewer');
+        // Reset auth type to local
+        document.querySelector('input[name="auth_type"][value="local"]').checked = true;
+        toggleAuthType('local');
         document.getElementById('user-modal').classList.add('active');
     }
 
@@ -762,6 +802,13 @@
         document.getElementById('user-active').checked = user.is_active;
         document.getElementById('active-group').style.display = 'block';
         selectRole(user.role);
+        
+        // Set auth type
+        const authType = user.auth_type || 'local';
+        const authRadio = document.querySelector(`input[name="auth_type"][value="${authType}"]`);
+        if (authRadio) authRadio.checked = true;
+        toggleAuthType(authType);
+
         document.getElementById('user-modal').classList.add('active');
     }
 
@@ -782,11 +829,14 @@
             username: document.getElementById('user-username').value,
             display_name: document.getElementById('user-displayname').value || null,
             email: document.getElementById('user-email').value || null,
-            role: selectedRole ? selectedRole.value : 'viewer'
+            role: selectedRole ? selectedRole.value : 'viewer',
+            auth_type: document.querySelector('input[name="auth_type"]:checked').value
         };
 
         const password = document.getElementById('user-password').value;
-        if (password) data.password = password;
+        if (password && data.auth_type === 'local') data.password = password;
+        if (data.auth_type === 'ldap' && !isEdit) data.password = 'LDAP_EXTERNAL_AUTH';
+        
         if (isEdit) data.is_active = document.getElementById('user-active').checked;
 
         try {

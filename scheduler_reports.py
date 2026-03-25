@@ -177,14 +177,14 @@ class ReportGenerator:
 '''
         return html
     
-    def send_report_email(self, html_content, subject=None):
+    def send_report_email(self, html_content, subject=None, to_email=None):
         """Send the report via email"""
         smtp_server = self._get_setting('smtp_server')
         smtp_port = int(self._get_setting('smtp_port', 587))
         smtp_user = self._get_setting('smtp_user')
         smtp_password = self._get_setting('smtp_password')
         smtp_from = self._get_setting('smtp_from')
-        recipient = self._get_setting('report_recipient') or self._get_setting('email_recipient')
+        recipient = to_email or self._get_setting('report_recipient') or self._get_setting('email_recipient')
         
         if not all([smtp_server, smtp_user, smtp_password, recipient]):
             return {'success': False, 'error': 'Email settings not configured'}
@@ -202,11 +202,14 @@ class ReportGenerator:
             html_part = MIMEText(html_content, 'html')
             msg.attach(html_part)
             
+            # Support multiple comma-separated recipients
+            rcpt_list = [r.strip() for r in recipient.split(',') if r.strip()]
+            
             # Send email
             with smtplib.SMTP(smtp_server, smtp_port) as server:
                 server.starttls()
                 server.login(smtp_user, smtp_password)
-                server.sendmail(msg['From'], [recipient], msg.as_string())
+                server.sendmail(msg['From'], rcpt_list, msg.as_string())
             
             return {'success': True}
         except Exception as e:

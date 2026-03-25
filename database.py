@@ -184,6 +184,8 @@ class Database:
                 ssl_status TEXT,
                 location_type TEXT DEFAULT 'on-premise',
                 failure_count INTEGER DEFAULT 0,
+                latitude REAL,
+                longitude REAL,
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -208,6 +210,58 @@ class Database:
                 if self.db_type == 'postgresql':
                     conn.rollback()
                 # Column already exists — ignore
+        
+        # Migration: Add latitude and longitude columns to existing devices table
+        location_columns = [
+            ('latitude', 'REAL'),
+            ('longitude', 'REAL'),
+        ]
+        for col_name, col_type in location_columns:
+            try:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+                    conn.commit()
+                else:
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+            except Exception:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                # Column already exists — ignore
+
+        # Migration: Add escalation columns
+        escalation_columns = [
+            ('last_status_change', 'TIMESTAMP'),
+            ('escalation_level', 'INTEGER DEFAULT 0'),
+        ]
+        for col_name, col_type in escalation_columns:
+            try:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+                    conn.commit()
+                else:
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+            except Exception:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                # Column already exists — ignore
+        
+        # Default Alert Escalation Settings Let's ensure these exist 
+        default_escalation_settings = {
+            'escalation_enabled': 'false',
+            'escalation_time_minutes': '15',
+            'escalation_email_recipient': '',
+            'escalation_telegram_chat_id': ''
+        }
+        for k, v in default_escalation_settings.items():
+            try:
+                if self.db_type == 'postgresql':
+                    cursor.execute(f'INSERT INTO alert_settings (setting_key, setting_value) VALUES ({ph}, {ph}) ON CONFLICT (setting_key) DO NOTHING', (k, v))
+                else:
+                    cursor.execute(f'INSERT OR IGNORE INTO alert_settings (setting_key, setting_value) VALUES (?, ?)', (k, v))
+            except Exception:
+                pass
         
         # Topology table
         cursor.execute(f'''
@@ -490,6 +544,35 @@ class Database:
                 VALUES ({self._ph(4)})
             ''', ('viewer', generate_password_hash('viewer'), 'viewer', 'Viewer User'))
         
+        # Custom Reports table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS custom_reports (
+                id {pk},
+                name TEXT NOT NULL,
+                description TEXT,
+                schedule_type TEXT DEFAULT 'none',
+                schedule_time TEXT,
+                schedule_day TEXT,
+                email_recipients TEXT,
+                created_by INTEGER,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (created_by) REFERENCES users(id)
+            )
+        ''')
+        
+        # Custom Report Widgets table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS custom_report_widgets (
+                id {pk},
+                report_id INTEGER NOT NULL,
+                widget_type TEXT NOT NULL,
+                widget_title TEXT,
+                config TEXT,
+                sort_order INTEGER DEFAULT 0,
+                FOREIGN KEY (report_id) REFERENCES custom_reports(id) ON DELETE CASCADE
+            )
+        ''')
+
         # =========================================================================
         # Performance Indexes
         # =========================================================================
@@ -525,7 +608,8 @@ class Database:
                    snmp_v3_username=None, snmp_v3_auth_protocol='SHA',
                    snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
                    snmp_v3_priv_password=None,
-                   tcp_port=80, dns_query_domain='google.com', location_type='on-premise'):
+                   tcp_port=80, dns_query_domain='google.com', location_type='on-premise',
+                   latitude=None, longitude=None):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -543,8 +627,9 @@ class Database:
                                        snmp_v3_username, snmp_v3_auth_protocol,
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
-                                       tcp_port, dns_query_domain, location_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       tcp_port, dns_query_domain, location_type,
+                                       latitude, longitude)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
@@ -553,7 +638,8 @@ class Database:
                       snmp_v3_auth_password, snmp_v3_priv_protocol,
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
-                      location_type or Config.DEFAULT_LOCATION_TYPE))
+                      location_type or Config.DEFAULT_LOCATION_TYPE,
+                      latitude, longitude))
                 device_id = cursor.fetchone()['id']
             else:
                 cursor.execute('''
@@ -563,8 +649,9 @@ class Database:
                                        snmp_v3_username, snmp_v3_auth_protocol,
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
-                                       tcp_port, dns_query_domain, location_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       tcp_port, dns_query_domain, location_type,
+                                       latitude, longitude)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -572,37 +659,40 @@ class Database:
                       snmp_v3_auth_password, snmp_v3_priv_protocol,
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
-                      location_type or Config.DEFAULT_LOCATION_TYPE))
+                      location_type or Config.DEFAULT_LOCATION_TYPE,
+                      latitude, longitude))
                 device_id = cursor.lastrowid
             conn.commit()
-            self.release_connection(conn)
             return {'success': True, 'id': device_id}
         except (sqlite3.IntegrityError, Exception) as e:
+            if conn: conn.rollback()
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower() or 'UNIQUE constraint' in str(e):
-                conn.rollback()
-                self.release_connection(conn)
                 return {'success': False, 'error': 'Device with this IP/URL, monitor type, and device type already exists'}
-            conn.rollback()
-            self.release_connection(conn)
             return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
     
     def get_all_devices(self):
         """Get all devices"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute('SELECT * FROM devices ORDER BY id')
-        devices = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return devices
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute('SELECT * FROM devices ORDER BY id')
+            devices = self._rows_to_dicts(cursor.fetchall())
+            return devices
+        finally:
+            self.release_connection(conn)
     
     def get_device(self, device_id):
         """Get a specific device"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute(f'SELECT * FROM devices WHERE id = {self._ph()}', (device_id,))
-        device = cursor.fetchone()
-        self.release_connection(conn)
-        return self._row_to_dict(device)
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'SELECT * FROM devices WHERE id = {self._ph()}', (device_id,))
+            device = cursor.fetchone()
+            return self._row_to_dict(device)
+        finally:
+            self.release_connection(conn)
     
     def update_device(self, device_id, name=None, ip_address=None, 
                      device_type=None, location=None, monitor_type=None,
@@ -610,7 +700,8 @@ class Database:
                      snmp_v3_username=None, snmp_v3_auth_protocol=None,
                      snmp_v3_auth_password=None, snmp_v3_priv_protocol=None,
                      snmp_v3_priv_password=None,
-                     tcp_port=None, dns_query_domain=None, location_type=None):
+                     tcp_port=None, dns_query_domain=None, location_type=None,
+                     latitude=None, longitude=None):
         """Update device information"""
         # Strip whitespace from IP address and name to prevent issues
         if ip_address:
@@ -619,86 +710,120 @@ class Database:
             name = name.strip()
         
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        
-        updates = []
-        params = []
-        
-        if name:
-            updates.append(f'name = {ph}')
-            params.append(name)
-        if ip_address:
-            updates.append(f'ip_address = {ph}')
-            params.append(ip_address)
-        if device_type:
-            updates.append(f'device_type = {ph}')
-            params.append(device_type)
-        if location:
-            updates.append(f'location = {ph}')
-            params.append(location)
-        if monitor_type:
-            updates.append(f'monitor_type = {ph}')
-            params.append(monitor_type)
-        if snmp_community:
-            updates.append(f'snmp_community = {ph}')
-            params.append(snmp_community)
-        if snmp_port is not None:
-            updates.append(f'snmp_port = {ph}')
-            params.append(snmp_port)
-        if snmp_version:
-            updates.append(f'snmp_version = {ph}')
-            params.append(snmp_version)
-        if snmp_v3_username is not None:
-            updates.append(f'snmp_v3_username = {ph}')
-            params.append(snmp_v3_username)
-        if snmp_v3_auth_protocol is not None:
-            updates.append(f'snmp_v3_auth_protocol = {ph}')
-            params.append(snmp_v3_auth_protocol)
-        if snmp_v3_auth_password is not None:
-            updates.append(f'snmp_v3_auth_password = {ph}')
-            params.append(snmp_v3_auth_password)
-        if snmp_v3_priv_protocol is not None:
-            updates.append(f'snmp_v3_priv_protocol = {ph}')
-            params.append(snmp_v3_priv_protocol)
-        if snmp_v3_priv_password is not None:
-            updates.append(f'snmp_v3_priv_password = {ph}')
-            params.append(snmp_v3_priv_password)
-        if tcp_port is not None:
-            updates.append(f'tcp_port = {ph}')
-            params.append(tcp_port)
-        if dns_query_domain:
-            updates.append(f'dns_query_domain = {ph}')
-            params.append(dns_query_domain)
-        if location_type:
-            updates.append(f'location_type = {ph}')
-            params.append(location_type)
-        
-        if updates:
-            params.append(device_id)
-            query = f"UPDATE devices SET {', '.join(updates)} WHERE id = {ph}"
-            cursor.execute(query, params)
-            conn.commit()
-        
-        self.release_connection(conn)
-        return {'success': True}
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            updates = []
+            params = []
+            
+            if name:
+                updates.append(f'name = {ph}')
+                params.append(name)
+            if ip_address:
+                updates.append(f'ip_address = {ph}')
+                params.append(ip_address)
+            if device_type:
+                updates.append(f'device_type = {ph}')
+                params.append(device_type)
+            if location:
+                updates.append(f'location = {ph}')
+                params.append(location)
+            if monitor_type:
+                updates.append(f'monitor_type = {ph}')
+                params.append(monitor_type)
+            if snmp_community:
+                updates.append(f'snmp_community = {ph}')
+                params.append(snmp_community)
+            if snmp_port is not None:
+                updates.append(f'snmp_port = {ph}')
+                params.append(snmp_port)
+            if snmp_version:
+                updates.append(f'snmp_version = {ph}')
+                params.append(snmp_version)
+            if snmp_v3_username is not None:
+                updates.append(f'snmp_v3_username = {ph}')
+                params.append(snmp_v3_username)
+            if snmp_v3_auth_protocol is not None:
+                updates.append(f'snmp_v3_auth_protocol = {ph}')
+                params.append(snmp_v3_auth_protocol)
+            if snmp_v3_auth_password is not None:
+                updates.append(f'snmp_v3_auth_password = {ph}')
+                params.append(snmp_v3_auth_password)
+            if snmp_v3_priv_protocol is not None:
+                updates.append(f'snmp_v3_priv_protocol = {ph}')
+                params.append(snmp_v3_priv_protocol)
+            if snmp_v3_priv_password is not None:
+                updates.append(f'snmp_v3_priv_password = {ph}')
+                params.append(snmp_v3_priv_password)
+            if tcp_port is not None:
+                updates.append(f'tcp_port = {ph}')
+                params.append(tcp_port)
+            if dns_query_domain:
+                updates.append(f'dns_query_domain = {ph}')
+                params.append(dns_query_domain)
+            if location_type:
+                updates.append(f'location_type = {ph}')
+                params.append(location_type)
+            if latitude is not None:
+                updates.append(f'latitude = {ph}')
+                params.append(latitude)
+            if longitude is not None:
+                updates.append(f'longitude = {ph}')
+                params.append(longitude)
+            
+            if updates:
+                params.append(device_id)
+                query = f"UPDATE devices SET {', '.join(updates)} WHERE id = {ph}"
+                cursor.execute(query, params)
+                conn.commit()
+            
+            return {'success': True}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
     
     def delete_device(self, device_id):
-        """Delete a device"""
+        """Delete a device and all its associated data"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
         ph = self._ph()
-        cursor.execute(f'DELETE FROM devices WHERE id = {ph}', (device_id,))
-        cursor.execute(f'DELETE FROM topology WHERE device_id = {ph} OR connected_to = {ph}', 
-                      (device_id, device_id))
-        cursor.execute(f'DELETE FROM status_history WHERE device_id = {ph}', (device_id,))
-        # Clean up sub-topology references
-        cursor.execute(f'DELETE FROM sub_topology_devices WHERE device_id = {ph}', (device_id,))
-        cursor.execute(f'DELETE FROM sub_topology_connections WHERE device_id = {ph} OR connected_to = {ph}',
-                      (device_id, device_id))
-        conn.commit()
-        self.release_connection(conn)
-        return {'success': True}
+        
+        try:
+            # 1. Delete from child tables first to avoid FK constraints
+            # Topology
+            cursor.execute(f'DELETE FROM topology WHERE device_id = {ph} OR connected_to = {ph}', (device_id, device_id))
+            
+            # History
+            cursor.execute(f'DELETE FROM status_history WHERE device_id = {ph}', (device_id,))
+            cursor.execute(f'DELETE FROM alert_history WHERE device_id = {ph}', (device_id,))
+            
+            # Sub-topology references
+            cursor.execute(f'DELETE FROM sub_topology_devices WHERE device_id = {ph}', (device_id,))
+            cursor.execute(f'DELETE FROM sub_topology_connections WHERE device_id = {ph} OR connected_to = {ph}', (device_id, device_id))
+            
+            # Maintenance windows
+            cursor.execute(f'DELETE FROM maintenance_windows WHERE device_id = {ph}', (device_id,))
+            
+            # Traps and Syslog (optional relations)
+            cursor.execute(f'DELETE FROM snmp_traps WHERE device_id = {ph}', (device_id,))
+            cursor.execute(f'DELETE FROM syslog_messages WHERE device_id = {ph}', (device_id,))
+            
+            # 2. Finally delete the device itself
+            # Note: custom_oids and bandwidth_history have ON DELETE CASCADE, 
+            # so they will be handled automatically by the DB.
+            cursor.execute(f'DELETE FROM devices WHERE id = {ph}', (device_id,))
+            
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            print(f"Error deleting device {device_id}: {e}")
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
     
     def update_device_status(self, device_id, status, response_time=None, http_status_code=None,
                              snmp_uptime=None, snmp_sysname=None, snmp_sysdescr=None,
@@ -706,230 +831,261 @@ class Database:
                              ssl_expiry_date=None, ssl_days_left=None, ssl_issuer=None, ssl_status=None):
         """Update device status"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        
-        now = datetime.now().isoformat()
-        
-        # Build update query dynamically based on provided values
-        update_parts = [f'status = {ph}', f'response_time = {ph}', f'last_check = {ph}', f'http_status_code = {ph}']
-        params = [status, response_time, now, http_status_code]
-        
-        if snmp_uptime is not None:
-            update_parts.append(f'snmp_uptime = {ph}')
-            params.append(snmp_uptime)
-        if snmp_sysname is not None:
-            update_parts.append(f'snmp_sysname = {ph}')
-            params.append(snmp_sysname)
-        if snmp_sysdescr is not None:
-            update_parts.append(f'snmp_sysdescr = {ph}')
-            params.append(snmp_sysdescr)
-        if snmp_syslocation is not None:
-            update_parts.append(f'snmp_syslocation = {ph}')
-            params.append(snmp_syslocation)
-        if snmp_syscontact is not None:
-            update_parts.append(f'snmp_syscontact = {ph}')
-            params.append(snmp_syscontact)
-        if ssl_expiry_date is not None:
-            update_parts.append(f'ssl_expiry_date = {ph}')
-            params.append(ssl_expiry_date)
-        if ssl_days_left is not None:
-            update_parts.append(f'ssl_days_left = {ph}')
-            params.append(ssl_days_left)
-        if ssl_issuer is not None:
-            update_parts.append(f'ssl_issuer = {ph}')
-            params.append(ssl_issuer)
-        if ssl_status is not None:
-            update_parts.append(f'ssl_status = {ph}')
-            params.append(ssl_status)
-        
-        params.append(device_id)
-        
-        cursor.execute(f'''
-            UPDATE devices 
-            SET {', '.join(update_parts)}
-            WHERE id = {ph}
-        ''', params)
-        
-        # Log to history
-        cursor.execute(f'''
-            INSERT INTO status_history (device_id, status, response_time, checked_at)
-            VALUES ({self._ph(4)})
-        ''', (device_id, status, response_time, now))
-        
-        conn.commit()
-        self.release_connection(conn)
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            now = datetime.now().isoformat()
+            
+            # Get old status and escalation level to detect changes accurately
+            cursor.execute(f'SELECT status, escalation_level FROM devices WHERE id = {ph}', (device_id,))
+            current_row = cursor.fetchone()
+            if current_row:
+                old_status = current_row['status']
+                old_escalation_level = current_row.get('escalation_level', 0)
+            else:
+                old_status = 'unknown'
+                old_escalation_level = 0
+            
+            # Build update query dynamically based on provided values
+            update_parts = [f'status = {ph}', f'response_time = {ph}', f'last_check = {ph}', f'http_status_code = {ph}']
+            params = [status, response_time, now, http_status_code]
+            
+            # Reset escalation track and record the state timestamp if device status transitioned
+            if status != old_status:
+                update_parts.append(f'last_status_change = {ph}')
+                params.append(now)
+                update_parts.append(f'escalation_level = {ph}')
+                params.append(0)
+            
+            if snmp_uptime is not None:
+                update_parts.append(f'snmp_uptime = {ph}')
+                params.append(snmp_uptime)
+            if snmp_sysname is not None:
+                update_parts.append(f'snmp_sysname = {ph}')
+                params.append(snmp_sysname)
+            if snmp_sysdescr is not None:
+                update_parts.append(f'snmp_sysdescr = {ph}')
+                params.append(snmp_sysdescr)
+            if snmp_syslocation is not None:
+                update_parts.append(f'snmp_syslocation = {ph}')
+                params.append(snmp_syslocation)
+            if snmp_syscontact is not None:
+                update_parts.append(f'snmp_syscontact = {ph}')
+                params.append(snmp_syscontact)
+            if ssl_expiry_date is not None:
+                update_parts.append(f'ssl_expiry_date = {ph}')
+                params.append(ssl_expiry_date)
+            if ssl_days_left is not None:
+                update_parts.append(f'ssl_days_left = {ph}')
+                params.append(ssl_days_left)
+            if ssl_issuer is not None:
+                update_parts.append(f'ssl_issuer = {ph}')
+                params.append(ssl_issuer)
+            if ssl_status is not None:
+                update_parts.append(f'ssl_status = {ph}')
+                params.append(ssl_status)
+            
+            params.append(device_id)
+            
+            cursor.execute(f'''
+                UPDATE devices 
+                SET {', '.join(update_parts)}
+                WHERE id = {ph}
+            ''', params)
+            
+            # Log to history
+            cursor.execute(f'''
+                INSERT INTO status_history (device_id, status, response_time, checked_at)
+                VALUES ({self._ph(4)})
+            ''', (device_id, status, response_time, now))
+            
+            conn.commit()
+            
+            return {
+                'old_status': old_status,
+                'old_escalation_level': old_escalation_level,
+                'new_status': status
+            }
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
+        finally:
+            self.release_connection(conn)
     
     def get_topology(self):
         """Get topology connections"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute('SELECT * FROM topology')
-        topology = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return topology
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute('SELECT * FROM topology')
+            topology = self._rows_to_dicts(cursor.fetchall())
+            return topology
+        finally:
+            self.release_connection(conn)
     
     def add_topology_connection(self, device_id, connected_to, view_type='standard'):
         """Add a topology connection"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        
-        # Check if connection already exists in this view
-        cursor.execute(f'''
-            SELECT id FROM topology 
-            WHERE ((device_id = {ph} AND connected_to = {ph}) 
-               OR (device_id = {ph} AND connected_to = {ph}))
-               AND (view_type = {ph} OR view_type IS NULL)
-        ''', (device_id, connected_to, connected_to, device_id, view_type))
-        
-        if cursor.fetchone():
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            # Check if connection already exists in this view
+            cursor.execute(f'''
+                SELECT id FROM topology 
+                WHERE ((device_id = {ph} AND connected_to = {ph}) 
+                   OR (device_id = {ph} AND connected_to = {ph}))
+                   AND (view_type = {ph} OR view_type IS NULL)
+            ''', (device_id, connected_to, connected_to, device_id, view_type))
+            
+            if cursor.fetchone():
+                return {'success': False, 'error': 'Connection already exists in this view'}
+            
+            if self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    INSERT INTO topology (device_id, connected_to, view_type)
+                    VALUES ({self._ph(3)})
+                    RETURNING id
+                ''', (device_id, connected_to, view_type))
+                connection_id = cursor.fetchone()['id']
+            else:
+                cursor.execute(f'''
+                    INSERT INTO topology (device_id, connected_to, view_type)
+                    VALUES ({self._ph(3)})
+                ''', (device_id, connected_to, view_type))
+                connection_id = cursor.lastrowid
+            conn.commit()
+            return {'success': True, 'id': connection_id}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
             self.release_connection(conn)
-            return {'success': False, 'error': 'Connection already exists in this view'}
-        
-        if self.db_type == 'postgresql':
-            cursor.execute(f'''
-                INSERT INTO topology (device_id, connected_to, view_type)
-                VALUES ({self._ph(3)})
-                RETURNING id
-            ''', (device_id, connected_to, view_type))
-            connection_id = cursor.fetchone()['id']
-        else:
-            cursor.execute(f'''
-                INSERT INTO topology (device_id, connected_to, view_type)
-                VALUES ({self._ph(3)})
-            ''', (device_id, connected_to, view_type))
-            connection_id = cursor.lastrowid
-        conn.commit()
-        self.release_connection(conn)
-        return {'success': True, 'id': connection_id}
     
     def delete_topology_connection(self, connection_id=None, device_id=None, connected_to=None):
         """Delete a topology connection by ID or by device pair"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        
-        if connection_id:
-            cursor.execute(f'DELETE FROM topology WHERE id = {ph}', (connection_id,))
-        elif device_id and connected_to:
-            cursor.execute(f'''
-                DELETE FROM topology 
-                WHERE (device_id = {ph} AND connected_to = {ph}) 
-                   OR (device_id = {ph} AND connected_to = {ph})
-            ''', (device_id, connected_to, connected_to, device_id))
-        else:
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            if connection_id:
+                cursor.execute(f'DELETE FROM topology WHERE id = {ph}', (connection_id,))
+            elif device_id and connected_to:
+                cursor.execute(f'''
+                    DELETE FROM topology 
+                    WHERE (device_id = {ph} AND connected_to = {ph}) 
+                       OR (device_id = {ph} AND connected_to = {ph})
+                ''', (device_id, connected_to, connected_to, device_id))
+            else:
+                return {'success': False, 'error': 'Must provide connection_id or both device_id and connected_to'}
+            
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
             self.release_connection(conn)
-            return {'success': False, 'error': 'Must provide connection_id or both device_id and connected_to'}
-        
-        conn.commit()
-        self.release_connection(conn)
-        return {'success': True}
     
     def get_device_history(self, device_id, limit=100, minutes=None, sample_count=None):
         """Get status history for a device, optionally sampled and padded into N points"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        
-        if sample_count and minutes:
-            # Time-bucket sampling logic
-            sample_count = int(sample_count)
-            minutes = int(minutes)
-            bucket_size_sec = max(1, (minutes * 60) / sample_count)
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
             
-            if self.db_type == 'postgresql':
-                time_group = "FLOOR(EXTRACT(EPOCH FROM h.checked_at::timestamp) / %d)" % bucket_size_sec
-                time_select = "to_char(MIN(h.checked_at::timestamp), 'YYYY-MM-DD HH24:MI:SS')"
-                time_filter = "NOW() - INTERVAL '%d minutes'" % minutes
-            else:
-                time_group = "CAST(strftime('%%s', h.checked_at) / %d AS INTEGER)" % bucket_size_sec
-                time_select = "datetime(MIN(h.checked_at))"
-                time_filter = "datetime('now', '-%d minutes')" % minutes
+            if sample_count and minutes:
+                # Time-bucket sampling logic
+                sample_count = int(sample_count)
+                minutes = int(minutes)
+                bucket_size_sec = max(1, (minutes * 60) / sample_count)
                 
-            query = f'''
-                SELECT 
-                    {time_select} as checked_at,
-                    AVG(response_time) as response_time,
-                    {time_group} as bucket_id
-                FROM status_history h
-                WHERE device_id = {ph} 
-                AND checked_at >= {time_filter}
-                GROUP BY {time_group}
-                ORDER BY checked_at DESC
-            '''
-            # Define buckets aligned with epoch
-            # IMPORTANT: PostgreSQL's EXTRACT(EPOCH FROM timestamp without time zone)
-            # and SQLite's strftime('%s') both treat stored timestamps AS IF they were UTC.
-            # Since checked_at is stored as local time (datetime.now().isoformat()),
-            # we must compute the Python-side epoch the same way: interpret local
-            # wall-clock values as UTC so bucket IDs match the SQL side.
-            import calendar
-            now_naive = datetime.now()  # local wall-clock time, no tzinfo
-            now_ts = int(calendar.timegm(now_naive.timetuple()))  # treat as UTC, matching SQL
-            current_bucket_id = int(now_ts / bucket_size_sec)
-            start_bucket_id = current_bucket_id - sample_count + 1
-            
-            query = f'''
-                SELECT 
-                    {time_select} as checked_at,
-                    AVG(response_time) as response_time,
-                    {time_group} as bucket_id
-                FROM status_history h
-                WHERE device_id = {ph} 
-                AND checked_at >= {time_filter}
-                GROUP BY {time_group}
-                ORDER BY bucket_id ASC
-            '''
-            cursor.execute(query, (device_id,))
-            raw_sampled = self._rows_to_dicts(cursor.fetchall())
-            self.release_connection(conn)
-            
-            # Map existing data to buckets
-            data_map = {int(row['bucket_id']): row for row in raw_sampled}
-            
-            padded_history = []
-            for b_id in range(start_bucket_id, current_bucket_id + 1):
-                if b_id in data_map:
-                    row = data_map[b_id]
-                    padded_history.append({
-                        'checked_at': row['checked_at'],
-                        'response_time': row['response_time'],
-                        'status': 'up' if row['response_time'] is not None else 'down'
-                    })
+                if self.db_type == 'postgresql':
+                    time_group = "FLOOR(EXTRACT(EPOCH FROM h.checked_at::timestamp) / %d)" % bucket_size_sec
+                    time_select = "to_char(MIN(h.checked_at::timestamp), 'YYYY-MM-DD HH24:MI:SS')"
+                    time_filter = "NOW() - INTERVAL '%d minutes'" % minutes
                 else:
-                    # Calculate time for the bucket for display
-                    # Use utcfromtimestamp since bucket IDs use "naive as UTC" epoch
-                    bucket_start_ts = b_id * bucket_size_sec
-                    bucket_time = datetime.utcfromtimestamp(bucket_start_ts).isoformat()
-                    padded_history.append({
-                        'checked_at': bucket_time,
-                        'response_time': None,
-                        'status': 'unknown'
-                    })
+                    time_group = "CAST(strftime('%%s', h.checked_at) / %d AS INTEGER)" % bucket_size_sec
+                    time_select = "datetime(MIN(h.checked_at))"
+                    time_filter = "datetime('now', '-%d minutes')" % minutes
+                    
+                query = f'''
+                    SELECT 
+                        {time_select} as checked_at,
+                        AVG(response_time) as response_time,
+                        {time_group} as bucket_id
+                    FROM status_history h
+                    WHERE device_id = {ph} 
+                    AND checked_at >= {time_filter}
+                    GROUP BY {time_group}
+                    ORDER BY checked_at DESC
+                '''
+                import calendar
+                now_naive = datetime.now()  # local wall-clock time, no tzinfo
+                now_ts = int(calendar.timegm(now_naive.timetuple()))  # treat as UTC, matching SQL
+                current_bucket_id = int(now_ts / bucket_size_sec)
+                start_bucket_id = current_bucket_id - sample_count + 1
+                
+                query = f'''
+                    SELECT 
+                        {time_select} as checked_at,
+                        AVG(response_time) as response_time,
+                        {time_group} as bucket_id
+                    FROM status_history h
+                    WHERE device_id = {ph} 
+                    AND checked_at >= {time_filter}
+                    GROUP BY {time_group}
+                    ORDER BY bucket_id ASC
+                '''
+                cursor.execute(query, (device_id,))
+                raw_sampled = self._rows_to_dicts(cursor.fetchall())
+                
+                # Map existing data to buckets
+                data_map = {int(row['bucket_id']): row for row in raw_sampled}
+                
+                padded_history = []
+                for b_id in range(start_bucket_id, current_bucket_id + 1):
+                    if b_id in data_map:
+                        row = data_map[b_id]
+                        padded_history.append({
+                            'checked_at': row['checked_at'],
+                            'response_time': row['response_time'],
+                            'status': 'up' if row['response_time'] is not None else 'down'
+                        })
+                    else:
+                        bucket_start_ts = b_id * bucket_size_sec
+                        bucket_time = datetime.utcfromtimestamp(bucket_start_ts).isoformat()
+                        padded_history.append({
+                            'checked_at': bucket_time,
+                            'response_time': None,
+                            'status': 'unknown'
+                        })
+                
+                return padded_history
             
-            return padded_history
-        
-        # Standard raw history (unchanged)
-        where_clause = f"WHERE device_id = {ph}"
-        params = [device_id]
-        
-        if minutes:
-            if self.db_type == 'postgresql':
-                where_clause += " AND checked_at >= NOW() - INTERVAL '%s minutes'" % int(minutes)
-            else:
-                where_clause += " AND checked_at >= datetime('now', '-%d minutes')" % int(minutes)
+            # Standard raw history
+            where_clause = f"WHERE device_id = {ph}"
+            params = [device_id]
             
-        cursor.execute(f'''
-            SELECT * FROM status_history 
-            {where_clause}
-            ORDER BY checked_at DESC 
-            LIMIT {ph}
-        ''', (*params, limit))
-            
-        history = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return history
+            if minutes:
+                if self.db_type == 'postgresql':
+                    where_clause += " AND checked_at >= NOW() - INTERVAL '%s minutes'" % int(minutes)
+                else:
+                    where_clause += " AND checked_at >= datetime('now', '-%d minutes')" % int(minutes)
+                
+            cursor.execute(f'''
+                SELECT * FROM status_history 
+                {where_clause}
+                ORDER BY checked_at DESC 
+                LIMIT {ph}
+            ''', (*params, limit))
+                
+            history = self._rows_to_dicts(cursor.fetchall())
+            return history
+        finally:
+            self.release_connection(conn)
     
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
         """Get historical data with optional filters"""
@@ -1173,41 +1329,53 @@ class Database:
         return history
     
     def get_failure_count(self, device_id):
-        """Get current failure count for a device"""
+        """Get current consecutive failure count for a device"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute(f'SELECT failure_count FROM devices WHERE id = {self._ph()}', (device_id,))
-        result = cursor.fetchone()
-        self.release_connection(conn)
-        if result is None:
-            return 0
-        r = self._row_to_dict(result)
-        return r['failure_count'] if r and r['failure_count'] else 0
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'SELECT failure_count FROM devices WHERE id = {self._ph()}', (device_id,))
+            result = cursor.fetchone()
+            if result is None:
+                return 0
+            r = self._row_to_dict(result)
+            return r['failure_count'] if r and r['failure_count'] else 0
+        finally:
+            self.release_connection(conn)
     
     def increment_failure_count(self, device_id):
         """Increment failure count for a device and return new count"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        cursor.execute(f'''
-            UPDATE devices 
-            SET failure_count = COALESCE(failure_count, 0) + 1
-            WHERE id = {ph}
-        ''', (device_id,))
-        cursor.execute(f'SELECT failure_count FROM devices WHERE id = {ph}', (device_id,))
-        result = cursor.fetchone()
-        conn.commit()
-        self.release_connection(conn)
-        r = self._row_to_dict(result)
-        return r['failure_count'] if r else 1
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cursor.execute(f'''
+                UPDATE devices 
+                SET failure_count = COALESCE(failure_count, 0) + 1
+                WHERE id = {ph}
+            ''', (device_id,))
+            cursor.execute(f'SELECT failure_count FROM devices WHERE id = {ph}', (device_id,))
+            result = cursor.fetchone()
+            conn.commit()
+            r = self._row_to_dict(result)
+            return r['failure_count'] if r else 1
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
+        finally:
+            self.release_connection(conn)
     
     def reset_failure_count(self, device_id):
         """Reset failure count to 0 when device is up"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute(f'UPDATE devices SET failure_count = 0 WHERE id = {self._ph()}', (device_id,))
-        conn.commit()
-        self.release_connection(conn)
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'UPDATE devices SET failure_count = 0 WHERE id = {self._ph()}', (device_id,))
+            conn.commit()
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
+        finally:
+            self.release_connection(conn)
     
     # =========================================================================
     # Maintenance Windows Methods
@@ -1248,24 +1416,81 @@ class Database:
     def get_all_maintenance_windows(self):
         """Get all maintenance windows with device info"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute('''
-            SELECT mw.*, d.name as device_name, d.ip_address
-            FROM maintenance_windows mw
-            LEFT JOIN devices d ON mw.device_id = d.id
-            ORDER BY mw.start_time DESC
-        ''')
-        windows = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return windows
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute('''
+                SELECT mw.*, d.name as device_name, d.ip_address
+                FROM maintenance_windows mw
+                LEFT JOIN devices d ON mw.device_id = d.id
+                ORDER BY mw.start_time DESC
+            ''')
+            windows = self._rows_to_dicts(cursor.fetchall())
+            return windows
+        finally:
+            self.release_connection(conn)
     
     def get_active_maintenance(self, device_id=None):
         """Get currently active maintenance windows for a device or all devices"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            now = datetime.now().isoformat()
+            
+            if device_id:
+                cursor.execute(f'''
+                    SELECT * FROM maintenance_windows 
+                    WHERE (device_id = {ph} OR device_id IS NULL)
+                      AND start_time <= {ph} 
+                      AND end_time >= {ph}
+                ''', (device_id, now, now))
+            else:
+                cursor.execute(f'''
+                    SELECT * FROM maintenance_windows 
+                    WHERE start_time <= {ph} AND end_time >= {ph}
+                ''', (now, now))
+            
+            windows = self._rows_to_dicts(cursor.fetchall())
+            return windows
+        finally:
+            self.release_connection(conn)
         
-        now = datetime.now().isoformat()
+    def get_devices_for_escalation(self, minutes):
+        """Get list of ALL devices that have been down for more than 'minutes' and haven't been escalated yet"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            
+            if self.db_type == 'postgresql':
+                query = f'''
+                    SELECT id, name, ip_address, device_type, status, last_status_change, location
+                    FROM devices 
+                    WHERE status = 'down' 
+                    AND escalation_level = 0
+                    AND last_status_change <= NOW() - INTERVAL '{int(minutes)} minutes'
+                '''
+            else:
+                query = f'''
+                    SELECT id, name, ip_address, device_type, status, last_status_change, location
+                    FROM devices 
+                    WHERE status = 'down' 
+                    AND escalation_level = 0
+                    AND last_status_change <= datetime('now', '-{int(minutes)} minutes')
+                '''
+                
+            cursor.execute(query)
+            devices = self._rows_to_dicts(cursor.fetchall())
+            return devices
+        finally:
+            self.release_connection(conn)
+        
+    def mark_device_escalated(self, device_id, level=1):
+        """Mark a device as having had its alert escalated"""
+        conn = self.get_connection()
+        cursor.execute(f'UPDATE devices SET escalation_level = {self._ph()} WHERE id = {self._ph()}', (level, device_id))
+        conn.commit()
+        self.release_connection(conn)
         
         if device_id:
             cursor.execute(f'''
@@ -2152,27 +2377,34 @@ class Database:
     def get_custom_oids(self, device_id):
         """Get all custom OIDs for a device"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        cursor.execute(
-            f'SELECT * FROM custom_oids WHERE device_id = {self._ph()} ORDER BY id',
-            (device_id,)
-        )
-        oids = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return oids
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM custom_oids WHERE device_id = {self._ph()} ORDER BY id',
+                (device_id,)
+            )
+            oids = self._rows_to_dicts(cursor.fetchall())
+            return oids
+        finally:
+            self.release_connection(conn)
 
     def update_custom_oid_value(self, oid_id, value):
         """Update the last queried value of a custom OID"""
         conn = self.get_connection()
-        cursor = self._cursor(conn)
-        ph = self._ph()
-        now = datetime.now().isoformat()
-        cursor.execute(
-            f'UPDATE custom_oids SET last_value = {ph}, last_checked = {ph} WHERE id = {ph}',
-            (value, now, oid_id)
-        )
-        conn.commit()
-        self.release_connection(conn)
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            now = datetime.now().isoformat()
+            cursor.execute(
+                f'UPDATE custom_oids SET last_value = {ph}, last_checked = {ph} WHERE id = {ph}',
+                (value, now, oid_id)
+            )
+            conn.commit()
+        except Exception as e:
+            if conn: conn.rollback()
+            raise e
+        finally:
+            self.release_connection(conn)
 
     def delete_custom_oid(self, oid_id):
         """Delete a custom OID"""
@@ -2667,3 +2899,125 @@ class Database:
         conn.commit()
         self.release_connection(conn)
         return deleted
+
+    # =========================================================================
+    # Custom Reports Methods
+    # =========================================================================
+    
+    def get_custom_reports(self):
+        """Get all custom reports"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        cursor.execute('SELECT * FROM custom_reports ORDER BY created_at DESC')
+        reports = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return reports
+
+    def get_custom_report(self, report_id):
+        """Get a specific custom report and its widgets"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        cursor.execute(f'SELECT * FROM custom_reports WHERE id = {ph}', (report_id,))
+        report = self._row_to_dict(cursor.fetchone())
+        
+        if report:
+            cursor.execute(f'SELECT * FROM custom_report_widgets WHERE report_id = {ph} ORDER BY sort_order ASC', (report_id,))
+            report['widgets'] = self._rows_to_dicts(cursor.fetchall())
+            
+        self.release_connection(conn)
+        return report
+
+    def create_custom_report(self, data):
+        """Create a new custom report"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    INSERT INTO custom_reports (name, description, schedule_type, schedule_time, schedule_day, email_recipients, created_by)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                    RETURNING id
+                ''', (data.get('name'), data.get('description'), data.get('schedule_type', 'none'),
+                      data.get('schedule_time'), data.get('schedule_day'), data.get('email_recipients'),
+                      data.get('created_by')))
+                report_id = cursor.fetchone()['id']
+            else:
+                cursor.execute(f'''
+                    INSERT INTO custom_reports (name, description, schedule_type, schedule_time, schedule_day, email_recipients, created_by)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})
+                ''', (data.get('name'), data.get('description'), data.get('schedule_type', 'none'),
+                      data.get('schedule_time'), data.get('schedule_day'), data.get('email_recipients'),
+                      data.get('created_by')))
+                report_id = cursor.lastrowid
+                
+            # Insert widgets if provided
+            widgets = data.get('widgets', [])
+            if widgets:
+                for idx, w in enumerate(widgets):
+                    cursor.execute(f'''
+                        INSERT INTO custom_report_widgets (report_id, widget_type, widget_title, config, sort_order)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+                    ''', (report_id, w.get('widget_type'), w.get('widget_title'), w.get('config', '{}'), idx))
+                    
+            conn.commit()
+            return {'success': True, 'id': report_id}
+        except Exception as e:
+            conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def update_custom_report(self, report_id, data):
+        """Update an existing custom report"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        
+        try:
+            updates = []
+            params = []
+            for field in ['name', 'description', 'schedule_type', 'schedule_time', 'schedule_day', 'email_recipients']:
+                if field in data:
+                    updates.append(f'{field} = {ph}')
+                    params.append(data[field])
+                    
+            if updates:
+                params.append(report_id)
+                cursor.execute(f"UPDATE custom_reports SET {', '.join(updates)} WHERE id = {ph}", params)
+            
+            # Update widgets if provided (replace all)
+            if 'widgets' in data:
+                cursor.execute(f'DELETE FROM custom_report_widgets WHERE report_id = {ph}', (report_id,))
+                for idx, w in enumerate(data['widgets']):
+                    cursor.execute(f'''
+                        INSERT INTO custom_report_widgets (report_id, widget_type, widget_title, config, sort_order)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+                    ''', (report_id, w.get('widget_type'), w.get('widget_title'), w.get('config', '{}'), idx))
+                    
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def delete_custom_report(self, report_id):
+        """Delete a custom report"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        try:
+            cursor.execute(f'DELETE FROM custom_report_widgets WHERE report_id = {ph}', (report_id,))
+            cursor.execute(f'DELETE FROM custom_reports WHERE id = {ph}', (report_id,))
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)

@@ -265,7 +265,10 @@ This is an automated message from Network Monitor.
         # First check in-memory lock (prevents race conditions)
         if alert_key in self._recent_alerts:
             last_memory_time = self._recent_alerts[alert_key]
-            if (now - last_memory_time) < self._alert_lock_duration:
+            # Use shorter lock for recovery to ensure it gets through after escalation
+            lock_duration = timedelta(seconds=10) if event_type == 'recovery' else self._alert_lock_duration
+            if (now - last_memory_time) < lock_duration:
+                print(f"[Alert] Skipping alert - in-memory lock active for {alert_key}")
                 return False
         
         # Then check database cooldown
@@ -382,6 +385,77 @@ This is an automated message from Network Monitor.
         
         if not sent_any:
             print(f"[Alert] No channels enabled or all failed for {device_name}")
+            
+    def trigger_escalated_alert(self, device, downtime_minutes):
+        """
+        Trigger an escalated alert for a device that has been down for a prolonged period.
+        Sends specifically to the configured escalation channels.
+        """
+        device_id = device.get('id')
+        device_name = device.get('name', 'Unknown')
+        
+        # Format message
+        full_message = f"🚨 ESCALATED ALERT 🚨\n\nDevice: {device_name}\nIP: {device.get('ip_address', 'N/A')}\n\nThis device has been DOWN for over {downtime_minutes} minutes without recovery!"
+        subject = f"🚨 ESCALATION: {device_name} is STILL DOWN"
+        
+        sent_any = False
+        
+        # Settings lookups
+        escalation_email = self._get_setting('escalation_email_recipient', '')
+        escalation_telegram = self._get_setting('escalation_telegram_chat_id', '')
+        
+        # Force cache refresh so we can modify it below safely
+        self._get_settings()
+        
+        # Send via email
+        if self._get_setting('escalation_channel_email', 'false').lower() == 'true' and escalation_email:
+            original_recipient = self._settings_cache.get('email_recipient', '')
+            self._settings_cache['email_recipient'] = escalation_email
+            
+            result = self.send_email(subject, full_message)
+            
+            self._settings_cache['email_recipient'] = original_recipient
+            
+            self.db.log_alert(
+                device_id, 'escalation', f"Down for {downtime_minutes}m", 'email',
+                'sent' if result['success'] else 'failed',
+                result.get('error')
+            )
+            if result['success']:
+                sent_any = True
+                print(f"[Alert] Escalation Email sent for {device_name}")
+            else:
+                print(f"[Alert] Escalation Email failed for {device_name}: {result.get('error')}")
+
+        # Send via Telegram
+        if self._get_setting('escalation_channel_telegram', 'false').lower() == 'true' and escalation_telegram:
+            original_chat_id = self._settings_cache.get('telegram_chat_id', '')
+            self._settings_cache['telegram_chat_id'] = escalation_telegram
+            
+            telegram_message = f"{subject}\n\n{full_message}"
+            result = self.send_telegram(telegram_message)
+            
+            self._settings_cache['telegram_chat_id'] = original_chat_id
+            
+            self.db.log_alert(
+                device_id, 'escalation', f"Down for {downtime_minutes}m", 'telegram',
+                'sent' if result['success'] else 'failed',
+                result.get('error')
+            )
+            if result['success']:
+                sent_any = True
+                print(f"[Alert] Escalation Telegram sent for {device_name}")
+            else:
+                print(f"[Alert] Escalation Telegram failed for {device_name}: {result.get('error')}")
+                
+        if not sent_any:
+            print(f"[Alert] Escalation triggered for {device_name} but no channels succeeded or were configured.")
+            
+        # Mark escalation as sent in memory too, to prevent immediate duplication 
+        # (though escalation check often runs on a separate thread/interval)
+        self._mark_alert_sent(device_id, 'escalation')
+            
+        return sent_any
     
     def send_test_alert(self, channel):
         """

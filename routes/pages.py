@@ -150,6 +150,13 @@ def audit_log_page():
     return render_template('audit_log.html')
 
 
+@pages_bp.route('/map')
+@login_required
+def map_page():
+    """GIS Map page"""
+    return render_template('map.html')
+
+
 @pages_bp.route('/set_lang/<lang>')
 def set_lang(lang):
     """Switch language (th or en)"""

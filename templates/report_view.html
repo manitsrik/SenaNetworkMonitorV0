@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Report - {{ report.name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            color: #333;
+            line-height: 1.5;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 2cm;
+            font-size: 11pt;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 1.5cm;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+                background-color: #fff;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+            tr {
+                page-break-inside: avoid;
+            }
+            .widget-container {
+                page-break-inside: avoid;
+            }
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .title {
+            margin: 0;
+            color: #1e3a8a;
+            font-size: 24pt;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            margin: 0;
+            color: #6b7280;
+            font-size: 11pt;
+            margin-top: 5px;
+        }
+
+        .doc-info {
+            text-align: right;
+            font-size: 9pt;
+            color: #6b7280;
+        }
+
+        .widget-container {
+            margin-bottom: 2.5rem;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .widget-title {
+            color: #1e40af;
+            font-size: 14pt;
+            font-weight: 600;
+            margin-top: 0;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+        }
+
+        /* Summary Grid */
+        .summary-box {
+            display: flex;
+            gap: 15px;
+        }
+
+        .summary-card {
+            flex: 1;
+            padding: 15px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .summary-val {
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1e40af;
+        }
+
+        .summary-label {
+            font-size: 9pt;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 5px;
+        }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9.5pt;
+        }
+
+        th {
+            background-color: #f1f5f9;
+            color: #334155;
+            font-weight: 600;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 2px solid #cbd5e1;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: middle;
+        }
+
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 8pt;
+            font-weight: 600;
+        }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-warning { background: #fef9c3; color: #854d0e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-neutral { background: #f1f5f9; color: #475569; }
+
+        .footer {
+            margin-top: 30px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 8pt;
+            color: #94a3b8;
+            text-align: center;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            color: #94a3b8;
+            font-style: italic;
+            text-align: center;
+            padding: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <div>
+            <h1 class="title">{{ report.name }}</h1>
+            <p class="subtitle">{{ report.description or 'Custom Generated Report' }}</p>
+        </div>
+        <div class="doc-info">
+            <strong>Generated Date:</strong> <span id="current-date"></span><br>
+            <strong>Schedule:</strong> 
+            {% if report.schedule_type == 'none' %}
+                On-Demand
+            {% else %}
+                {{ report.schedule_type|title }} at {{ report.schedule_time }}
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not report.widgets %}
+        <div class="empty-state">No widgets configured for this report.</div>
+    {% endif %}
+
+    {% for widget in report.widgets %}
+        {% set data = widget_data[widget.id] %}
+        
+        <div class="widget-container">
+            <h2 class="widget-title">{{ widget.widget_title or widget.widget_type|replace('_', ' ')|title }}</h2>
+            
+            {% if widget.widget_type == 'uptime_summary' %}
+                <div class="summary-box">
+                    <div class="summary-card">
+                        <div class="summary-val">{{ data.total }}</div>
+                        <div class="summary-label">Total Devices</div>
+                    </div>
+                    <div class="summary-card" style="background-color: #f0fdf4; border-color: #bbf7d0;">
+                        <div class="summary-val" style="color: #15803d;">{{ data.up }}</div>
+                        <div class="summary-label">Up</div>
+                    </div>
+                    <div class="summary-card" style="background-color: #fefce8; border-color: #fef08a;">
+                        <div class="summary-val" style="color: #a16207;">{{ data.slow }}</div>
+                        <div class="summary-label">Slow</div>
+                    </div>
+                    <div class="summary-card" style="background-color: #fef2f2; border-color: #fecaca;">
+                        <div class="summary-val" style="color: #b91c1c;">{{ data.down }}</div>
+                        <div class="summary-label">Down</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-val">{{ data.uptime_percent }}%</div>
+                        <div class="summary-label">Network Uptime %</div>
+                    </div>
+                </div>
+
+            {% elif widget.widget_type == 'down_devices' %}
+                {% if data|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device Name</th>
+                            <th>IP Address</th>
+                            <th>Type</th>
+                            <th>Status</td>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in data %}
+                        <tr>
+                            <td><strong>{{ d.name }}</strong></td>
+                            <td style="color: #64748b;">{{ d.ip_address }}</td>
+                            <td>{{ d.device_type }}</td>
+                            <td><span class="badge badge-danger">DOWN</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">No devices are currently down. ✅</div>
+                {% endif %}
+
+            {% elif widget.widget_type == 'slow_devices' %}
+                {% if data|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device Name</th>
+                            <th>IP Address</th>
+                            <th>Type</th>
+                            <th>Response Time</td>
+                            <th>Status</td>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in data %}
+                        <tr>
+                            <td><strong>{{ d.name }}</strong></td>
+                            <td style="color: #64748b;">{{ d.ip_address }}</td>
+                            <td>{{ d.device_type }}</td>
+                            <td>{{ "%.1f"|format(d.response_time) }} ms</td>
+                            <td><span class="badge badge-warning">SLOW</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">No devices are currently slow. ✅</div>
+                {% endif %}
+
+            {% elif widget.widget_type == 'recent_alerts' %}
+                {% if data|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Event Type</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in data %}
+                        <tr>
+                            <td style="white-space: nowrap; color: #64748b;">{{ a.created_at|replace('T', ' ')|truncate(19, True, '') }}</td>
+                            <td>
+                                {% if a.event_type == 'up' or 'resolved' in a.event_type.lower() %}
+                                    <span class="badge badge-success">{{ a.event_type|upper }}</span>
+                                {% elif a.event_type == 'slow' %}
+                                    <span class="badge badge-warning">{{ a.event_type|upper }}</span>
+                                {% else %}
+                                    <span class="badge badge-danger">{{ a.event_type|upper }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ a.message }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">No recent alerts in the last 24 hours. ✅</div>
+                {% endif %}
+
+            {% elif widget.widget_type == 'bandwidth_top' %}
+                {% if data|length > 0 %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Device</th>
+                            <th>Interface</th>
+                            <th class="text-right">In (Mbps)</th>
+                            <th class="text-right">Out (Mbps)</th>
+                            <th class="text-right">Util In %</th>
+                            <th class="text-right">Util Out %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in data %}
+                        {% set bps_in = b.bps_in or 0 %}
+                        {% set bps_out = b.bps_out or 0 %}
+                        {% set util_in = b.util_in or 0 %}
+                        {% set util_out = b.util_out or 0 %}
+                        <tr>
+                            <td><strong>{{ b.device_name }}</strong></td>
+                            <td>{{ b.if_name }}</td>
+                            <td class="text-right">{{ "%.2f"|format(bps_in / 1000000) }}</td>
+                            <td class="text-right">{{ "%.2f"|format(bps_out / 1000000) }}</td>
+                            <td class="text-right">
+                                <span style="color: {% if util_in > 80 %}#dc2626{% elif util_in > 50 %}#d97706{% else %}#16a34a{% endif %}">
+                                    {{ "%.1f"|format(util_in) }}%
+                                </span>
+                            </td>
+                            <td class="text-right">
+                                <span style="color: {% if util_out > 80 %}#dc2626{% elif util_out > 50 %}#d97706{% else %}#16a34a{% endif %}">
+                                    {{ "%.1f"|format(util_out) }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">No bandwidth data available in the last hour.</div>
+                {% endif %}
+
+            {% endif %}
+        </div>
+    {% endfor %}
+
+    <div class="footer">
+        Automatically generated by NW Monitor System.
+    </div>
+
+    <!-- Buttons only visible on screen, hidden on print -->
+    <div class="no-print" style="position: fixed; top: 20px; right: 20px; display: flex; gap: 10px; z-index: 100;">
+        <button onclick="window.history.back()"
+            style="padding: 8px 16px; background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-family: inherit; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">⬅
+            Back</button>
+        <button onclick="window.print()"
+            style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: inherit; font-weight: 600; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">🖨️
+            Print to PDF</button>
+    </div>
+
+    <script>
+        document.getElementById('current-date').textContent = new Date().toLocaleString();
+    </script>
+</body>
+
+</html>

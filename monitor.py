@@ -788,8 +788,8 @@ class NetworkMonitor:
         # Update the result with final status
         result['status'] = final_status
         
-        # Update database
-        self.db.update_device_status(
+        # Update database and get transactional state changes
+        db_state = self.db.update_device_status(
             device['id'],
             final_status,
             result['response_time'],
@@ -815,9 +815,15 @@ class NetworkMonitor:
                 )
             
             # Alert on device RECOVERY 
-            # Trigger when: 1) status was down and now up, OR 2) had failures (threshold reached) and now success
+            # Trigger when: 
+            # 1) status was down and now up (using transactional DB state for accuracy)
+            # 2) it was up/slow but had an active escalation level (missed recovery)
+            db_old_status = db_state.get('old_status', 'unknown')
+            db_old_escalation = db_state.get('old_escalation_level', 0)
+            
             should_alert_recovery = (
-                (previous_status == 'down' and final_status in ('up', 'slow')) or
+                (db_old_status == 'down' and final_status in ('up', 'slow')) or
+                (db_old_escalation > 0 and final_status in ('up', 'slow')) or
                 (previous_failure_count >= Config.FAILURE_THRESHOLD and final_status in ('up', 'slow'))
             )
             if should_alert_recovery:

@@ -26,7 +26,7 @@ class Config:
     
     # Connection Pool settings (PostgreSQL only)
     PG_POOL_MIN = int(os.environ.get('PG_POOL_MIN') or 2)
-    PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 15)  # Must exceed MONITOR_MAX_WORKERS + API headroom
+    PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 30)  # Increased from 15 to handle concurrent monitoring and API headroom
     
     # Monitoring settings
     PING_INTERVAL = 30  # seconds between ping checks

@@ -9,35 +9,30 @@
 {% block head %}
 <!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <!-- Date Range Filter -->
-    <div class="card mb-2">
-        <div class="card-header">
-            <h3 class="card-title">Filter Options</h3>
-        </div>
-        <div class="card-body">
-            <div
-                style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: end;">
-                <div>
-                    <label
-                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Start
-                        Date</label>
-                    <input type="datetime-local" id="start-date" class="form-input" style="width: 100%;">
+    <div class="card mb-3 shadow-sm border-0">
+        <div class="card-body p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="m-0" style="color: var(--text-primary); font-weight: 600;"><i class="fas fa-filter text-muted me-2" style="font-size: 1rem;"></i> Filter Options</h4>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; background: var(--bg-tertiary); padding: 1.25rem; border-radius: var(--radius-lg);">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="display: block; margin-bottom: 0.4rem; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">Start Date</label>
+                    <input type="datetime-local" id="start-date" class="form-input" style="border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 </div>
-                <div>
-                    <label
-                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">End
-                        Date</label>
-                    <input type="datetime-local" id="end-date" class="form-input" style="width: 100%;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="display: block; margin-bottom: 0.4rem; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">End Date</label>
+                    <input type="datetime-local" id="end-date" class="form-input" style="border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                 </div>
-                <div>
-                    <label
-                        style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-weight: 500;">Device
-                        Type</label>
-                    <select id="device-type" class="form-input" style="width: 100%;">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="display: block; margin-bottom: 0.4rem; color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;">Device Type</label>
+                    <select id="device-type" class="form-select form-input" style="border: none; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                         <option value="">All Types</option>
                         <option value="server">🖥️ Servers</option>
                         <option value="switch">🔀 Switches</option>
@@ -52,15 +47,11 @@
                         <option value="other">⚙️ Other</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 0.5rem;">
-                    <button class="btn btn-primary" onclick="loadHistoricalData()" style="flex: 1;">
-                        🔍 Load Data
-                    </button>
-                    <button class="btn btn-secondary" onclick="setQuickRange('24h')">
-                        Last 24h
-                    </button>
-                    <button class="btn btn-secondary" onclick="setQuickRange('7d')">
-                        Last 7d
+                <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                    <button class="btn btn-secondary" onclick="setQuickRange('24h')" title="Last 24 Hours" style="height: 42px; border: none; background: var(--bg-secondary);">24h</button>
+                    <button class="btn btn-secondary" onclick="setQuickRange('7d')" title="Last 7 Days" style="height: 42px; border: none; background: var(--bg-secondary);">7d</button>
+                    <button class="btn btn-primary" onclick="loadHistoricalData()" style="height: 42px; padding: 0 1.5rem; border-radius: var(--radius-md);">
+                        <span style="font-size: 1.1rem; margin-right: 0.4rem;">🔍</span> Load Data
                     </button>
                 </div>
             </div>
@@ -68,45 +59,62 @@
     </div>
 
     <!-- Device Comparison Section -->
-    <div class="card mb-2">
-        <div class="card-header">
-            <h3 class="card-title">📊 Device Comparison</h3>
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="btn btn-sm btn-secondary" onclick="toggleSelectAll()">
-                    <span id="select-all-icon">☑️</span> Select All
+    <div class="card mb-3 shadow-sm border-0">
+        <div class="card-header" style="padding: 1.25rem; border-bottom: 1px solid var(--border-color); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <h3 class="card-title m-0" style="font-size: 1.1rem;">📊 Device Comparison</h3>
+                <span id="selected-count" class="status-badge" style="background: var(--primary-light); color: white; border: none;">
+                    <span id="count-value">0</span> selected
+                </span>
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <!-- Search input -->
+                <div style="position: relative; width: 250px;">
+                    <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 0.9rem; opacity: 0.5;">🔍</span>
+                    <input type="text" id="device-search" class="form-input" placeholder="Search devices..." onkeyup="filterDevices()" style="padding-left: 2.2rem; height: 38px; border-radius: 20px; border: 1px solid var(--border-color); font-size: 0.9rem;">
+                </div>
+                
+                <button class="btn btn-sm" onclick="toggleSelectAll()" style="height: 38px; border-radius: 20px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+                    <span id="select-all-icon">☑️</span> All
                 </button>
-                <button class="btn btn-sm btn-secondary" onclick="clearSelection()">
+                <button class="btn btn-sm" onclick="clearSelection()" style="height: 38px; border-radius: 20px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
                     🗑️ Clear
                 </button>
-                <button class="btn btn-primary btn-sm" onclick="loadMultiDeviceHistory()">
-                    📈 Compare Selected
+                <button class="btn btn-primary btn-sm" onclick="loadMultiDeviceHistory()" style="height: 38px; border-radius: 20px; padding: 0 1.2rem;">
+                    📈 Compare
                 </button>
             </div>
         </div>
-        <div class="card-body">
-            <div id="device-selector-loading" style="text-align: center; padding: 1rem; color: var(--text-muted);">
-                <div class="spinner" style="width: 24px; height: 24px; margin: 0 auto 0.5rem;"></div>
+        <div class="card-body" style="padding: 0; background: var(--bg-primary); border-radius: 0 0 var(--radius-lg) var(--radius-lg);">
+            <div id="device-selector-loading" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                <div class="spinner" style="width: 32px; height: 32px; margin: 0 auto 1rem;"></div>
                 Loading devices...
             </div>
-            <div id="device-selector" style="display: none;">
-                <div id="device-checkbox-list"
-                    style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">
-                    <!-- Device checkboxes will be dynamically added here -->
+            
+            <div id="device-selector" style="display: none; padding: 1.25rem;">
+                <div style="background: var(--bg-secondary); border-radius: var(--radius-md); padding: 1rem; max-height: 420px; overflow-y: auto; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); border: 1px solid var(--border-color);" class="custom-scrollbar">
+                    <div id="device-checkbox-list"
+                        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.25rem;">
+                        <!-- Device checkboxes will be dynamically added here -->
+                    </div>
                 </div>
-            </div>
-            <div id="selected-count" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.875rem;">
-                <span id="count-value">0</span> devices selected
             </div>
         </div>
     </div>
 
     <!-- Combined Comparison Chart -->
     <div id="comparison-chart-container" class="card mb-2" style="display: none;">
-        <div class="card-header">
-            <h3 class="card-title">Response Time Comparison</h3>
-            <span id="comparison-devices-badge" class="status-badge status-up">
-                <span id="comparison-devices-count">0</span> devices
-            </span>
+        <div class="card-header" style="justify-content: space-between; display: flex; align-items: center;">
+            <div>
+                <h3 class="card-title" style="display: inline-block; margin: 0; margin-right: 0.5rem;">Response Time Comparison</h3>
+                <span id="comparison-devices-badge" class="status-badge status-up">
+                    <span id="comparison-devices-count">0</span> devices
+                </span>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="resetComparisonZoom()" title="Reset Chart Zoom">
+                🔍 Reset Zoom
+            </button>
         </div>
         <div class="card-body">
             <div style="height: 400px; position: relative;">
@@ -139,11 +147,16 @@
 
     <!-- Historical Charts -->
     <div class="card mb-2">
-        <div class="card-header">
-            <h3 class="card-title">Response Time Trends</h3>
-            <span id="data-points-badge" class="status-badge status-up" style="display: none;">
-                <span id="data-points-count">0</span> data points
-            </span>
+        <div class="card-header" style="justify-content: space-between; display: flex; align-items: center;">
+            <div>
+                <h3 class="card-title" style="display: inline-block; margin: 0; margin-right: 0.5rem;">Response Time Trends</h3>
+                <span id="data-points-badge" class="status-badge status-up" style="display: none;">
+                    <span id="data-points-count">0</span> data points
+                </span>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="resetTrendZoom()" title="Reset All Charts Zoom">
+                🔍 Reset Zoom
+            </button>
         </div>
         <div class="card-body">
             <div id="loading-indicator" style="text-align: center; padding: 3rem; color: var(--text-muted);">

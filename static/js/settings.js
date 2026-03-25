@@ -41,6 +41,14 @@ async function loadSettings() {
         document.getElementById('telegram_bot_token').value = settings.telegram_bot_token || '';
         document.getElementById('telegram_chat_id').value = settings.telegram_chat_id || '';
 
+        // Escalation settings
+        document.getElementById('escalation_enabled').checked = settings.escalation_enabled === 'true';
+        document.getElementById('escalation_time_minutes').value = settings.escalation_time_minutes || '15';
+        document.getElementById('escalation_channel_email').checked = settings.escalation_channel_email === 'true';
+        document.getElementById('escalation_email_recipient').value = settings.escalation_email_recipient || '';
+        document.getElementById('escalation_channel_telegram').checked = settings.escalation_channel_telegram === 'true';
+        document.getElementById('escalation_telegram_chat_id').value = settings.escalation_telegram_chat_id || '';
+
         // Report settings
         document.getElementById('reports_enabled').checked = settings.reports_enabled === 'true';
         document.getElementById('report_time').value = settings.report_time || '08:00';
@@ -80,6 +88,14 @@ async function saveSettings() {
         telegram_enabled: document.getElementById('telegram_enabled').checked.toString(),
         telegram_bot_token: document.getElementById('telegram_bot_token').value,
         telegram_chat_id: document.getElementById('telegram_chat_id').value,
+
+        // Escalation
+        escalation_enabled: document.getElementById('escalation_enabled').checked.toString(),
+        escalation_time_minutes: document.getElementById('escalation_time_minutes').value,
+        escalation_channel_email: document.getElementById('escalation_channel_email').checked.toString(),
+        escalation_email_recipient: document.getElementById('escalation_email_recipient').value,
+        escalation_channel_telegram: document.getElementById('escalation_channel_telegram').checked.toString(),
+        escalation_telegram_chat_id: document.getElementById('escalation_telegram_chat_id').value,
 
         // Reports
         reports_enabled: document.getElementById('reports_enabled').checked.toString(),

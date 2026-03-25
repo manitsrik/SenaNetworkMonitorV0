@@ -1,0 +1,500 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - Custom Reports{% endblock %}
+
+{% block page_title %}Custom Reports{% endblock %}
+
+{% set active_page = 'reports_builder' %}
+
+{% block head %}
+<style>
+    .reports-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .report-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        transition: all 0.2s;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .report-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        border-color: var(--primary);
+    }
+
+    .report-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+    }
+
+    .report-desc {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 1.5rem;
+        flex-grow: 1;
+    }
+
+    .report-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: auto;
+        border-top: 1px solid var(--border-color);
+        padding-top: 1rem;
+    }
+
+    .report-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .btn-icon {
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        color: var(--text-muted);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+
+    .btn-icon:hover {
+        color: var(--primary);
+        background-color: var(--bg-tertiary);
+    }
+
+    .btn-icon.delete:hover {
+        color: var(--danger);
+    }
+
+    .builder-container {
+        display: none;
+        background-color: var(--bg-secondary);
+        border-radius: 0.75rem;
+        padding: 2rem;
+        margin-top: 1rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .widget-item {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .widget-handle {
+        cursor: grab;
+        color: var(--text-muted);
+        padding: 0.5rem;
+    }
+
+    .widget-content {
+        flex-grow: 1;
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 1rem;
+    }
+    
+    .schedule-options {
+        display: none;
+        margin-top: 1rem;
+        padding: 1rem;
+        background-color: var(--bg-tertiary);
+        border-radius: 0.5rem;
+    }
+
+    .schedule-options.active {
+        display: block;
+    }
+    
+    .form-label {
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        margin-bottom: 0.25rem;
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- List View -->
+    <div id="list-view">
+        <div class="flex-between mb-2">
+            <div>
+                <p class="text-muted">Build custom reports and schedule them for email delivery.</p>
+            </div>
+            {% if session.get('role') == 'admin' %}
+            <button class="btn btn-primary" onclick="showBuilder()">
+                <span>+</span> New Custom Report
+            </button>
+            {% endif %}
+        </div>
+
+        <div id="reports-list" class="reports-grid">
+            <div class="loading-state card w-col-12 text-center p-2">
+                <div class="spinner"></div>
+                Loading reports...
+            </div>
+        </div>
+    </div>
+
+    <!-- Builder View -->
+    <div id="builder-view" class="builder-container">
+        <div class="flex-between mb-2" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+            <h2 id="builder-title" style="margin: 0;">Create Custom Report</h2>
+            <div class="flex" style="gap: 1rem;">
+                <button class="btn btn-secondary" onclick="hideBuilder()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveReport()">Save Report</button>
+            </div>
+        </div>
+
+        <div class="grid-2 mt-2 gap-2">
+            <div>
+                <div class="form-group">
+                    <label class="form-label">Report Name <span class="text-danger">*</span></label>
+                    <input type="text" id="report-name" class="form-control" placeholder="e.g. Weekly Management Summary" required>
+                </div>
+                <div class="form-group mt-1">
+                    <label class="form-label">Description</label>
+                    <textarea id="report-desc" class="form-control" rows="2" placeholder="Brief description of this report..."></textarea>
+                </div>
+            </div>
+
+            <div>
+                <div class="form-group">
+                    <label class="form-label">Email Schedule</label>
+                    <select id="report-schedule-type" class="form-control" onchange="toggleScheduleOptions()">
+                        <option value="none">Disabled (On-Demand Only)</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                    </select>
+                </div>
+
+                <div id="schedule-options" class="schedule-options">
+                    <div class="grid-2 gap-1" id="schedule-day-container">
+                        <div class="form-group" id="day-wrapper">
+                            <label class="form-label" id="day-label">Day</label>
+                            <select id="report-schedule-day" class="form-control">
+                                <!-- Options populated by JS -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Time</label>
+                            <input type="time" id="report-schedule-time" class="form-control" value="08:00">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group mt-1">
+                        <label class="form-label">Recipients (comma separated)</label>
+                        <input type="text" id="report-recipients" class="form-control" placeholder="manager@company.com, admin@company.com">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="mt-3 mb-2" style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">Report Widgets</h3>
+        
+        <div id="widgets-container">
+            <!-- Widgets injected here -->
+        </div>
+
+        <div class="mt-2 text-center p-2" style="border: 1px dashed var(--border-color); border-radius: 0.5rem;">
+            <div class="flex center gap-1" style="justify-content: center;">
+                <select id="new-widget-type" class="form-control" style="max-width: 250px;">
+                    <option value="uptime_summary">Uptime Summary</option>
+                    <option value="down_devices">Current Down Devices</option>
+                    <option value="slow_devices">Slow Devices</option>
+                    <option value="recent_alerts">Recent Alerts</option>
+                    <option value="bandwidth_top">Top Bandwidth Interfaces</option>
+                </select>
+                <button class="btn btn-secondary" onclick="addWidget()">+ Add Widget</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let currentReportId = null;
+    let reportWidgets = [];
+
+    document.addEventListener('DOMContentLoaded', loadReports);
+
+    async function loadReports() {
+        try {
+            const response = await fetch('/api/reports');
+            const reports = await response.json();
+
+            const container = document.getElementById('reports-list');
+
+            if (reports.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 4rem;">
+                        <p class="text-muted">No custom reports found. Click "New Custom Report" to build one.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const currentUserId = {{ session.get('user_id') }};
+            const isAdmin = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+
+            container.innerHTML = reports.map(r => {
+                let schedStr = r.schedule_type === 'none' ? '🔕 On Demand Only' 
+                             : `⏱️ ${r.schedule_type} at ${r.schedule_time || ''} ${r.schedule_day || ''}`;
+                             
+                return `
+                <div class="report-card">
+                    <div class="report-title">${r.name}</div>
+                    <div class="report-desc">${r.description || 'No description'}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+                        ${schedStr}<br>
+                        ${r.email_recipients ? '📧 ' + r.email_recipients.split(',').length + ' recipients' : ''}
+                    </div>
+                    <div class="report-meta">
+                        <span class="text-muted" style="font-size: 0.75rem;">
+                            Created: ${new Date(r.created_at).toLocaleDateString()}
+                        </span>
+                        <div class="report-actions">
+                            <a href="/reports/view/${r.id}" class="btn-icon" title="View & Print">👁️</a>
+                            ${(isAdmin || r.created_by === currentUserId) ? `
+                                <button onclick="editReport(${r.id})" class="btn-icon" title="Edit">✏️</button>
+                                <button onclick="deleteReport(${r.id})" class="btn-icon delete" title="Delete">🗑️</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Error loading reports:', error);
+            document.getElementById('reports-list').innerHTML = `<div class="text-danger m-2">Failed to load reports</div>`;
+        }
+    }
+
+    function toggleScheduleOptions() {
+        const type = document.getElementById('report-schedule-type').value;
+        const opts = document.getElementById('schedule-options');
+        const dayWrapper = document.getElementById('day-wrapper');
+        const dayLabel = document.getElementById('day-label');
+        const daySelect = document.getElementById('report-schedule-day');
+        
+        if (type === 'none') {
+            opts.classList.remove('active');
+            return;
+        }
+        
+        opts.classList.add('active');
+        
+        if (type === 'daily') {
+            dayWrapper.style.display = 'none';
+        } else if (type === 'weekly') {
+            dayWrapper.style.display = 'block';
+            dayLabel.textContent = 'Day of Week';
+            daySelect.innerHTML = `
+                <option value="Mon">Monday</option>
+                <option value="Tue">Tuesday</option>
+                <option value="Wed">Wednesday</option>
+                <option value="Thu">Thursday</option>
+                <option value="Fri">Friday</option>
+                <option value="Sat">Saturday</option>
+                <option value="Sun">Sunday</option>
+            `;
+        } else if (type === 'monthly') {
+            dayWrapper.style.display = 'block';
+            dayLabel.textContent = 'Day of Month';
+            let daysHtml = '';
+            for(let i=1; i<=28; i++) daysHtml += `<option value="${i}">${i}</option>`;
+            daysHtml += `<option value="last">Last Day</option>`;
+            daySelect.innerHTML = daysHtml;
+        }
+    }
+
+    function renderWidgets() {
+        const container = document.getElementById('widgets-container');
+        if (reportWidgets.length === 0) {
+            container.innerHTML = `<div class="text-center text-muted p-2">No widgets added yet.</div>`;
+            return;
+        }
+        
+        const widgetTypeNames = {
+            'uptime_summary': 'Uptime Summary',
+            'down_devices': 'Current Down Devices',
+            'slow_devices': 'Slow Devices',
+            'recent_alerts': 'Recent Alerts',
+            'bandwidth_top': 'Top Bandwidth Interfaces'
+        };
+
+        container.innerHTML = reportWidgets.map((w, index) => `
+            <div class="widget-item">
+                <div class="widget-handle" title="Drag to reorder (Coming soon)">
+                    <i class="fa-solid fa-bars"></i>
+                    <span class="ms-1" style="font-size:0.8rem">${index+1}</span>
+                </div>
+                <div class="widget-content">
+                    <div>
+                        <div style="font-weight: 600; font-size: 0.9rem;">${widgetTypeNames[w.widget_type] || w.widget_type}</div>
+                        <div class="text-muted" style="font-size: 0.75rem;">Type: ${w.widget_type}</div>
+                    </div>
+                    <div>
+                        <input type="text" class="form-control form-control-sm" placeholder="Custom Title (Optional)" 
+                               value="${w.widget_title || ''}" onchange="updateWidgetTitle(${index}, this.value)">
+                    </div>
+                </div>
+                <div>
+                    <button class="btn btn-sm btn-icon delete" onclick="removeWidget(${index})">🗑️</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function addWidget() {
+        const typeStr = document.getElementById('new-widget-type').value;
+        reportWidgets.push({
+            widget_type: typeStr,
+            widget_title: '',
+            config: {}
+        });
+        renderWidgets();
+    }
+
+    function removeWidget(index) {
+        reportWidgets.splice(index, 1);
+        renderWidgets();
+    }
+    
+    function updateWidgetTitle(index, val) {
+        reportWidgets[index].widget_title = val;
+    }
+
+    function showBuilder() {
+        document.getElementById('list-view').style.display = 'none';
+        document.getElementById('builder-view').style.display = 'block';
+        document.getElementById('builder-title').textContent = 'Create Custom Report';
+        
+        // Reset form
+        currentReportId = null;
+        document.getElementById('report-name').value = '';
+        document.getElementById('report-desc').value = '';
+        document.getElementById('report-schedule-type').value = 'none';
+        document.getElementById('report-schedule-time').value = '08:00';
+        document.getElementById('report-recipients').value = '';
+        reportWidgets = [];
+        toggleScheduleOptions();
+        renderWidgets();
+    }
+
+    function hideBuilder() {
+        document.getElementById('list-view').style.display = 'block';
+        document.getElementById('builder-view').style.display = 'none';
+    }
+
+    async function editReport(id) {
+        try {
+            const response = await fetch(`/api/reports/${id}`);
+            const report = await response.json();
+            
+            showBuilder();
+            document.getElementById('builder-title').textContent = 'Edit Custom Report';
+            currentReportId = report.id;
+            
+            document.getElementById('report-name').value = report.name || '';
+            document.getElementById('report-desc').value = report.description || '';
+            document.getElementById('report-schedule-type').value = report.schedule_type || 'none';
+            toggleScheduleOptions(); // Important to trigger day select populator
+            
+            if (report.schedule_day) {
+                document.getElementById('report-schedule-day').value = report.schedule_day;
+            }
+            if (report.schedule_time) {
+                document.getElementById('report-schedule-time').value = report.schedule_time;
+            }
+            document.getElementById('report-recipients').value = report.email_recipients || '';
+            
+            reportWidgets = report.widgets || [];
+            renderWidgets();
+            
+        } catch (error) {
+            console.error('Error fetching report:', error);
+            alert('Failed to load report for editing');
+            hideBuilder();
+        }
+    }
+
+    async function saveReport() {
+        const name = document.getElementById('report-name').value;
+        if (!name) {
+            alert('Report Name is required');
+            return;
+        }
+
+        const data = {
+            name: name,
+            description: document.getElementById('report-desc').value,
+            schedule_type: document.getElementById('report-schedule-type').value,
+            schedule_time: document.getElementById('report-schedule-time').value,
+            schedule_day: document.getElementById('report-schedule-day').value,
+            email_recipients: document.getElementById('report-recipients').value,
+            widgets: reportWidgets
+        };
+
+        try {
+            const url = currentReportId ? `/api/reports/${currentReportId}` : '/api/reports';
+            const method = currentReportId ? 'PUT' : 'POST';
+            
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                hideBuilder();
+                loadReports();
+            } else {
+                alert('Save failed: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Save error:', error);
+            alert('An error occurred while saving');
+        }
+    }
+
+    async function deleteReport(id) {
+        if (!confirm('Are you sure you want to delete this custom report?')) return;
+
+        try {
+            const response = await fetch(`/api/reports/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                loadReports();
+            } else {
+                alert('Failed to delete report');
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            alert('An error occurred');
+        }
+    }
+</script>
+{% endblock %}

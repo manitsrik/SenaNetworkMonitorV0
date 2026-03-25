@@ -276,8 +276,17 @@ function showAddDeviceModal() {
     document.getElementById('expected-status-code').value = '200';
     // Reset location type to default
     document.getElementById('device-location-type').value = 'on-premise';
+    // Reset coordinates
+    document.getElementById('device-latitude').value = '';
+    document.getElementById('device-longitude').value = '';
+    if (miniMapMarker && miniMap) {
+        miniMap.removeLayer(miniMapMarker);
+        miniMapMarker = null;
+    }
+    
     updateIPFieldLabel();
     document.getElementById('device-modal').classList.add('active');
+    initMinimap();
 }
 
 // Update IP field label based on monitor type
@@ -392,8 +401,24 @@ async function editDevice(deviceId) {
             // Load location type
             document.getElementById('device-location-type').value = device.location_type || 'on-premise';
 
+            // Load coordinates
+            document.getElementById('device-latitude').value = device.latitude || '';
+            document.getElementById('device-longitude').value = device.longitude || '';
+
             updateIPFieldLabel();
             document.getElementById('device-modal').classList.add('active');
+            
+            initMinimap();
+            if (device.latitude && device.longitude) {
+                setMarker(device.latitude, device.longitude);
+                setTimeout(() => miniMap.setView([device.latitude, device.longitude], 12), 250);
+            } else {
+                if (miniMapMarker && miniMap) {
+                    miniMap.removeLayer(miniMapMarker);
+                    miniMapMarker = null;
+                }
+                setTimeout(() => miniMap.setView([13.7563, 100.5018], 5), 250);
+            }
         }
     } catch (error) {
         console.error('Error loading device:', error);
@@ -436,6 +461,13 @@ async function saveDevice(event) {
             monitor_type: monitorType,
             expected_status_code: 200
         };
+
+        const latVal = getElementValue('device-latitude');
+        const lngVal = getElementValue('device-longitude');
+        if (latVal && !isNaN(parseFloat(latVal))) deviceData.latitude = parseFloat(latVal);
+        else deviceData.latitude = null;
+        if (lngVal && !isNaN(parseFloat(lngVal))) deviceData.longitude = parseFloat(lngVal);
+        else deviceData.longitude = null;
 
         // Add SNMP settings if SNMP monitor type is selected
         if (monitorType === 'snmp') {
@@ -1102,6 +1134,13 @@ async function setGraphPeriod(minutes, btn) {
     }
 }
 
+// Reset the graph zoom to default
+function resetGraphZoom() {
+    if (responseTimeChart) {
+        responseTimeChart.resetZoom();
+    }
+}
+
 // Create or update the response time chart
 function createResponseTimeChart() {
     const ctx = document.getElementById('response-time-chart').getContext('2d');
@@ -1147,6 +1186,17 @@ function createResponseTimeChart() {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
+                zoom: {
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x',
+                    },
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                    }
+                },
                 legend: {
                     display: false
                 },
@@ -1571,3 +1621,65 @@ document.addEventListener('click', (event) => {
         closeImportModal();
     }
 });
+
+// ==========================================
+// MiniMap Logic
+// ==========================================
+let miniMap = null;
+let miniMapMarker = null;
+
+function initMinimap() {
+    if (!miniMap) {
+        // Find the device-minimap element
+        const mapElement = document.getElementById('device-minimap');
+        if (!mapElement) return;
+
+        miniMap = L.map('device-minimap').setView([13.7563, 100.5018], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(miniMap);
+
+        miniMap.on('click', function(e) {
+            setMarker(e.latlng.lat, e.latlng.lng);
+        });
+    }
+    
+    // Invalidate size after modal shows so it renders correctly
+    setTimeout(() => {
+        if (miniMap) miniMap.invalidateSize();
+    }, 200);
+}
+
+function setMarker(lat, lng) {
+    if (miniMapMarker && miniMap) {
+        miniMap.removeLayer(miniMapMarker);
+    }
+    
+    const numericLat = parseFloat(lat);
+    const numericLng = parseFloat(lng);
+
+    if (isNaN(numericLat) || isNaN(numericLng)) return;
+
+    miniMapMarker = L.marker([numericLat, numericLng], { draggable: true }).addTo(miniMap);
+    
+    document.getElementById('device-latitude').value = numericLat.toFixed(6);
+    document.getElementById('device-longitude').value = numericLng.toFixed(6);
+
+    miniMapMarker.on('dragend', function(e) {
+        const position = miniMapMarker.getLatLng();
+        document.getElementById('device-latitude').value = position.lat.toFixed(6);
+        document.getElementById('device-longitude').value = position.lng.toFixed(6);
+    });
+}
+
+function resetMinimap() {
+    if (miniMapMarker && miniMap) {
+        miniMap.removeLayer(miniMapMarker);
+        miniMapMarker = null;
+    }
+    document.getElementById('device-latitude').value = '';
+    document.getElementById('device-longitude').value = '';
+    if (miniMap) {
+        miniMap.setView([13.7563, 100.5018], 5);
+    }
+}

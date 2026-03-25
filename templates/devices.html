@@ -6,6 +6,13 @@
 
 {% set active_page = 'devices' %}
 
+{% block head %}
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <!-- Page Header Actions -->
@@ -281,6 +288,25 @@
                 </select>
             </div>
 
+            <div class="form-group" style="border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem; background: rgba(0, 0, 0, 0.02);">
+                <label class="form-label" style="display: flex; justify-content: space-between;">
+                    <span>🗺️ GIS Coordinates</span>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="resetMinimap()" style="padding: 0 0.5rem;">Reset Map</button>
+                </label>
+                <div style="display: flex; gap: 1rem; margin-bottom: 0.5rem;">
+                    <div style="flex: 1;">
+                        <input type="number" step="any" id="device-latitude" class="form-input" placeholder="Latitude (e.g., 13.7563)">
+                    </div>
+                    <div style="flex: 1;">
+                        <input type="number" step="any" id="device-longitude" class="form-input" placeholder="Longitude (e.g., 100.5018)">
+                    </div>
+                </div>
+                <div id="device-minimap" style="height: 200px; width: 100%; border: 1px solid var(--border-color); border-radius: 4px; z-index: 1;"></div>
+                <small style="color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 5px;">
+                    Click on the map or drag the marker to set coordinates automatically.
+                </small>
+            </div>
+
             <div class="flex gap-1 mt-2">
                 <button type="submit" class="btn btn-primary" style="flex: 1;">
                     💾 Save Device
@@ -496,6 +522,9 @@
                 <button class="btn btn-primary" onclick="refreshGraphData()" style="flex: 1;">
                     🔄 Refresh Data
                 </button>
+                <button class="btn btn-secondary" onclick="resetGraphZoom()" title="Reset Chart Zoom">
+                    🔍 Reset Zoom
+                </button>
                 <button class="btn btn-secondary" onclick="closeGraphModal()">
                     Close
                 </button>
@@ -566,8 +595,9 @@
 {% block scripts %}
 <!-- Chart.js for real-time graphs -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script
-    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <!-- Devices Script -->
 <script src="{{ url_for('static', filename='js/devices.js') }}"></script>
 {% endblock %}

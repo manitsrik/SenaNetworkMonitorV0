@@ -1260,13 +1260,36 @@ tr:hover {
     gap: 1rem;
 }
 
+.grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
 .grid-4 {
     grid-template-columns: repeat(4, 1fr);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1200px) {
+    .grid-4 {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 992px) {
     .grid-4 {
         grid-template-columns: repeat(2, 1fr);
+    }
+    .grid-3 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .grid-4, .grid-3, .grid-2 {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -1651,4 +1674,50 @@ input:not(:checked)+.slider .moon-icon {
     margin: 0 !important;
     border: none !important;
     border-radius: 0 !important;
+}
+
+/* =========================================
+   Toast Notification (Alert)
+   ========================================= */
+.alert {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    z-index: 9999;
+    padding: 1rem 1.5rem;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    font-weight: 600;
+    color: #ffffff;
+    min-width: 300px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.alert-success {
+    background-color: var(--success);
+}
+
+.alert-danger {
+    background-color: var(--danger);
+}
+
+.alert-info {
+    background-color: var(--info);
+}
+
+.alert-warning {
+    background-color: var(--warning);
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
 }

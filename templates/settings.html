@@ -4,14 +4,15 @@
 
 {% block page_title %}Alert Settings{% endblock %}
 
+{% block header_actions %}
+<span class="text-muted" style="font-size: 0.85rem; font-weight: 400; padding-top: 3px;">| Configure notification channels and alert preferences</span>
+{% endblock %}
+
 {% set active_page = 'settings' %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Page Header -->
-    <div class="mb-2">
-        <p class="text-muted">Configure notification channels and alert preferences</p>
-    </div>
+    <!-- Alert Messages -->
 
     <!-- Alert Messages -->
     <div id="alert-message" class="alert" style="display: none;"></div>
@@ -142,6 +143,42 @@
                     <label class="form-label">LINE Notify Token</label>
                     <input type="password" id="line_notify_token" class="form-control" disabled
                         placeholder="Service discontinued">
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Escalation -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🚨 Alert Escalation</h3>
+                <label class="form-label" style="margin: 0;">
+                    <input type="checkbox" id="escalation_enabled"> Enabled
+                </label>
+            </div>
+            <div class="card-body">
+                <p style="color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1rem;">
+                    Automatically send a secondary alert to specific recipients if a device remains DOWN.
+                </p>
+                <div class="form-group">
+                    <label class="form-label">Escalate After (Minutes)</label>
+                    <input type="number" id="escalation_time_minutes" class="form-control" value="15" min="1">
+                    <small style="color: var(--text-muted);">Time after initial incident to trigger escalation</small>
+                </div>
+                
+                <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; font-size: 1rem;">Escalation Channels</h4>
+                
+                <div class="form-group" style="margin-left: 0.5rem;">
+                    <label class="form-label">
+                        <input type="checkbox" id="escalation_channel_email"> Email
+                    </label>
+                    <input type="email" id="escalation_email_recipient" class="form-control" style="margin-top: 0.5rem;" placeholder="manager@example.com">
+                </div>
+                
+                <div class="form-group" style="margin-left: 0.5rem; margin-top: 1rem;">
+                    <label class="form-label">
+                        <input type="checkbox" id="escalation_channel_telegram"> Telegram
+                    </label>
+                    <input type="text" id="escalation_telegram_chat_id" class="form-control" style="margin-top: 0.5rem;" placeholder="Team / Manager Chat ID">
                 </div>
             </div>
         </div>

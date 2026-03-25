@@ -6,6 +6,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <style>
     .bw-grid {
         display: grid;
@@ -206,6 +208,9 @@
     <button onclick="triggerPoll()" id="pollBtn" title="Force an SNMP poll now">
         <i class="fa-solid fa-bolt"></i> Poll Now
     </button>
+    <button onclick="resetBwZoom()" title="Reset Chart Zoom">
+        <i class="fa-solid fa-magnifying-glass-minus"></i> Reset Zoom
+    </button>
     <span class="refresh-badge" id="lastRefresh">—</span>
 </div>
 
@@ -299,6 +304,12 @@
     // ── Chart ────────────────────────────────────────────────────────────────────
     let bwChart = null;
 
+    function resetBwZoom() {
+        if (bwChart) {
+            bwChart.resetZoom();
+        }
+    }
+
     function initChart() {
         const ctx = document.getElementById('bwChart').getContext('2d');
         bwChart = new Chart(ctx, {
@@ -351,6 +362,17 @@
                     tooltip: {
                         callbacks: {
                             label: ctx => `${ctx.dataset.label}: ${fmtBps(ctx.parsed.y)}`
+                        }
+                    },
+                    zoom: {
+                        zoom: {
+                            wheel: { enabled: true },
+                            pinch: { enabled: true },
+                            mode: 'x',
+                        },
+                        pan: {
+                            enabled: true,
+                            mode: 'x',
                         }
                     }
                 }

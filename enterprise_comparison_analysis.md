@@ -50,7 +50,7 @@
 | **Auto-discovery** | ✅ | ✅ | ✅ | ✅ | — | ✅ (basic) | � ต้องพัฒนา |
 | **Maps/Topology** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **Alerting: Multi-channel** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
-| **Alert Escalation** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 🟡 Medium |
+| **Alert Escalation** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
 | **SLA Reporting** | ✅ | ✅ | ✅ | ✅ | — | ✅ (basic) | 🟡ต้องพัฒนา |
 | **RBAC** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
 | **API (REST)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (internal) | 🟡 ขาด docs |
@@ -108,7 +108,7 @@
 
 | งาน | รายละเอียด | ความยาก | สถานะ | ต้องทำหลัง |
 |-----|-----------|---------|---------|-----------|
-| **3.1 Alert Escalation** | ถ้า alert level 1 ไม่ตอบใน X นาที → escalate ไป level 2 | Medium | ⬜ | — |
+| **3.1 Alert Escalation** | ถ้า alert level 1 ไม่ตอบใน X นาที → escalate ไป level 2 | Medium | ✅ เสร็จ | — |
 | **3.2 Alert Dependencies** | ถ้า Core Switch down → suppress alert ของอุปกรณ์ downstream | Medium | ⬜ | — |
 | **3.3 Webhook Integration** | ส่ง alert ไป Slack, Microsoft Teams, PagerDuty, custom webhook | Easy | ✅ เสร็จ | — |
 | **3.4 Event Correlation** | จับกลุ่ม events ที่เกี่ยวข้อง เช่น เน็ตล่มหลายจุดพร้อมกัน | Hard | ⬜ | — |
@@ -120,10 +120,10 @@
 
 | งาน | รายละเอียด | ความยาก | สถานะ |
 |-----|-----------|---------|---------|
-| **4.1 Enhanced Charting** | Time-series graphs (ala Grafana) — zoom, drill-down, overlay metrics | Medium | ⬜ |
-| **4.2 แผนที่ GIS** | วาง device บน Google Maps / OpenStreetMap | Medium | ⬜ |
+| **4.1 Enhanced Charting** | Time-series graphs (ala Grafana) — zoom, drill-down, overlay metrics | Medium | ✅ เสร็จ |
+| **4.2 แผนที่ GIS** | วาง device บน Google Maps / OpenStreetMap | Medium | ✅ เสร็จ |
 | **4.3 PDF/Excel Reports** | ส่งออก SLA report, performance report เป็น PDF/Excel | Medium | ✅ เสร็จ |
-| **4.4 Custom Report Builder** | สร้าง report template เอง, schedule ส่งอัตโนมัติ | Medium | ⬜ |
+| **4.4 Custom Report Builder** | สร้าง report template เอง, schedule ส่งอัตโนมัติ | Medium | ✅ เสร็จ |
 | **4.5 Dashboard Variables/Templates** | ตัวแปรที่ filter dashboard ตาม site, device type ฯลฯ | Medium | ⬜ |
 
 ---
@@ -212,7 +212,7 @@ quadrantChart
 | 4 | API Documentation (Swagger) | 1 วัน | ⭐⭐⭐ | ✅ เสร็จ |
 | 5 | PDF report export | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 6 | SNMP v3 support | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
-| 7 | Alert escalation | 2-3 วัน | ⭐⭐⭐⭐ | ⬜ |
+| 7 | Alert escalation | 2-3 วัน | ⭐⭐⭐⭐ | ✅ เสร็จ |
 | 8 | Dark/Light theme | 1 วัน | ⭐⭐ | ✅ เสร็จ |
 
 ---
@@ -223,11 +223,11 @@ quadrantChart
 |-------|:---:|:---:|:---:|:---:|--------|
 | **Phase 1** — Foundation & Scalability | 5 | 5 | 0 | 100% | ✅ เสร็จ |
 | **Phase 2** — Monitoring Depth | 6 | 5 | 0 | 83% | 🟡 กำลังดำเนินการ |
-| **Phase 3** — Alerting & Intelligence | 5 | 1 | 0 | 20% | 🟡 กำลังดำเนินการ |
+| **Phase 3** — Alerting & Intelligence | 5 | 2 | 0 | 40% | 🟡 กำลังดำเนินการ |
 | **Phase 4** — Visualization & Reporting | 5 | 1 | 0 | 20% | 🟡 กำลังดำเนินการ |
 | **Phase 5** — Enterprise Security & Integration | 5 | 0 | 0 | 0% | ⬜ ยังไม่เริ่ม |
 | **Phase 6** — Accessibility & UX | 4 | 1 | 0 | 25% | 🟡 กำลังดำเนินการ |
-| **รวม** | **30** | **13** | **0** | **43%** | — |
+| **รวม** | **30** | **14** | **0** | **46%** | — |
 
 ```mermaid
 gantt
@@ -269,6 +269,7 @@ gantt
 
 | วันที่ | Version | รายละเอียดการเปลี่ยนแปลง |
 |--------|---------|-------------------------|
+| 24 มี.ค. 2569 | 1.5 | อัปเดตสถานะ Alert Escalation (Task 3.1) เป็นเสร็จสมบูรณ์ — เพิ่ม `last_status_change` ใน DB, เพิ่ม settings ใน UI, และ `check_alert_escalations` job แจ้งเตือนยกระดับอัตโนมัติ |
 | 11 มี.ค. 2569 | 1.4 | อัปเดตสถานะ Bandwidth Monitoring (Task 2.3) เป็นเสร็จสมบูรณ์ — SNMP interface counter polling ทุก 60 วินาที, คำนวณ bps/utilization, UI page พร้อม Chart.js time-series, interface table, top consumers, Poll Now. อัปเดต Quick Wins status, Progress Tracker 43% |
 | 2 มี.ค. 2569 | 1.3 | เพิ่ม SNMP v3 Support — รองรับ USM authentication (SHA/MD5) + encryption (AES128/DES) ครบทั้ง authPriv, authNoPriv, noAuthNoPriv พร้อม UI form สำหรับตั้งค่า |
 | 2 มี.ค. 2569 | 1.2 | อัปเดตจากการตรวจสอบโค้ดจริง: PostgreSQL dual-database support (Task 1.1 บางส่วน), Blueprint modular architecture เสร็จแล้ว 10 modules (Task 1.2 บางส่วน), เพิ่ม SNMP Interface Table, อัปเดตจุดแข็ง/จุดอ่อน, ปรับ Progress Tracker เป็น 10%, ลบ dependency 1.1 ที่ไม่จำเป็นแล้ว |

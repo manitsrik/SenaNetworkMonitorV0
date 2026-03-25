@@ -129,12 +129,147 @@ def scheduled_data_cleanup():
     db.cleanup_old_data()
     db.cleanup_job_history(days=7)
 
+def check_alert_escalations():
+    """Background task to check for and trigger escalated alerts"""
+    enabled = db.get_alert_setting('escalation_enabled')
+    if str(enabled).lower() != 'true':
+        return
+        
+    minutes_str = db.get_alert_setting('escalation_time_minutes')
+    try:
+        minutes = int(minutes_str) if minutes_str else 15
+    except ValueError:
+        minutes = 15
+        
+    devices_to_escalate = db.get_devices_for_escalation(minutes)
+    if not devices_to_escalate:
+        return
+        
+    print(f"Running scheduled escalation check: found {len(devices_to_escalate)} devices ready for escalation...")
+    for device in devices_to_escalate:
+        success = alerter.trigger_escalated_alert(device, minutes)
+        if success:
+            db.mark_device_escalated(device['id'])
+
+def check_custom_reports_schedule():
+    """Background task to generate and send custom reports according to their schedule"""
+    reports = db.get_custom_reports()
+    from flask import render_template
+    from routes.reports import view_report_page
+    from datetime import datetime, timedelta
+    
+    now = datetime.now()
+    current_time_str = now.strftime('%H:%M')
+    current_day_week = now.strftime('%a')[:3] # Mon, Tue, Wed...
+    current_day_month = str(now.day)
+    
+    for r in reports:
+        if r.get('schedule_type') == 'none':
+            continue
+            
+        # Time must match exactly (HH:MM) since this runs every minute
+        if r.get('schedule_time') != current_time_str:
+            continue
+            
+        if r.get('schedule_type') == 'weekly' and r.get('schedule_day') != current_day_week:
+            continue
+            
+        if r.get('schedule_type') == 'monthly':
+            if r.get('schedule_day') == 'last':
+                tomorrow = now + timedelta(days=1)
+                if tomorrow.day != 1:
+                    continue
+            elif r.get('schedule_day') != current_day_month:
+                continue
+                
+        # Send it
+        recipients = r.get('email_recipients', '')
+        if not recipients:
+            continue
+            
+        print(f"[CustomReports] Triggering scheduled report: {r['name']}")
+        try:
+            report_full = db.get_custom_report(r['id'])
+            
+            # Build widget data manually similar to routes/reports.py
+            widget_data = {}
+            if 'widgets' in report_full:
+                import json
+                from datetime import timedelta
+                for w in report_full['widgets']:
+                    try:
+                        if w['config'] and isinstance(w['config'], str):
+                            w['config'] = json.loads(w['config'])
+                    except:
+                        w['config'] = {}
+                        
+                    w_type = w['widget_type']
+                    wid = w['id']
+                    
+                    if w_type == 'uptime_summary':
+                        devices = db.get_all_devices()
+                        total = len(devices)
+                        up_count = sum(1 for d in devices if d.get('status') == 'up')
+                        down_count = sum(1 for d in devices if d.get('status') == 'down')
+                        slow_count = sum(1 for d in devices if d.get('status') == 'slow')
+                        uptime_percent = (up_count + slow_count) / total * 100 if total > 0 else 0
+                        widget_data[wid] = {
+                            'total': total, 'up': up_count, 'down': down_count,
+                            'slow': slow_count, 'uptime_percent': round(uptime_percent, 2)
+                        }
+                    elif w_type == 'down_devices':
+                        devices = db.get_all_devices()
+                        widget_data[wid] = [d for d in devices if d.get('status') == 'down']
+                    elif w_type == 'slow_devices':
+                        devices = db.get_all_devices()
+                        widget_data[wid] = [d for d in devices if d.get('status') == 'slow']
+                    elif w_type == 'recent_alerts':
+                        alerts = db.get_alert_history(limit=20)
+                        yesterday = (datetime.now() - timedelta(days=1)).isoformat()
+                        widget_data[wid] = [a for a in alerts if a.get('created_at', '') > yesterday]
+                    elif w_type == 'bandwidth_top':
+                        conn = db.get_connection()
+                        cursor = db._cursor(conn)
+                        ph = db._ph()
+                        cursor.execute(f'''
+                            SELECT d.name as device_name, b.if_name, b.util_in, b.util_out, b.bps_in, b.bps_out
+                            FROM bandwidth_history b
+                            JOIN devices d ON b.device_id = d.id
+                            WHERE b.sampled_at > {ph}
+                            ORDER BY (b.util_in + b.util_out) DESC
+                            LIMIT 10
+                        ''', ((datetime.now() - timedelta(hours=1)).isoformat(),))
+                        try:
+                            widget_data[wid] = db._rows_to_dicts(cursor.fetchall())
+                        except:
+                            widget_data[wid] = []
+                        db.release_connection(conn)
+
+            # Render HTML and send using app context
+            with app.app_context():
+                html_content = render_template('report_view.html', report=report_full, widget_data=widget_data)
+            
+            subject = f"Network Report: {r['name']}"
+            result = report_generator.send_report_email(html_content, subject=subject, to_email=recipients)
+            if result.get('success'):
+                print(f"[CustomReports] Sent report '{r['name']}' to {recipients}")
+            else:
+                print(f"[CustomReports] Failed to send report: {result.get('error')}")
+                
+        except Exception as e:
+            print(f"[CustomReports] Task error for {r['name']}: {e}")
+
+
 # Register tasks with metadata and history tracking
 task_scheduler.add_task('monitor_job', 'Device Monitoring', monitor_devices,
                         trigger='interval', seconds=Config.PING_INTERVAL)
 task_scheduler.add_task('bandwidth_poll', 'Bandwidth Polling',
                         lambda: monitor.poll_bandwidth_all_snmp_devices(),
                         trigger='interval', seconds=60)
+task_scheduler.add_task('alert_escalation', 'Alert Escalation Check', check_alert_escalations,
+                        trigger='interval', minutes=1)
+task_scheduler.add_task('custom_reports', 'Custom Reports Dispatch', check_custom_reports_schedule,
+                        trigger='interval', minutes=1)
 task_scheduler.add_task('daily_report', 'Daily Report', scheduled_daily_report,
                         trigger='cron', hour=8, minute=0)
 task_scheduler.add_task('cleanup', 'Data Cleanup', scheduled_data_cleanup,

@@ -14,6 +14,7 @@ from .maintenance import maintenance_bp
 from .traps import traps_bp
 from .bandwidth import bandwidth_bp
 from .audit import audit_bp
+from .reports import reports_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -29,5 +30,6 @@ ALL_BLUEPRINTS = [
     traps_bp,
     bandwidth_bp,
     audit_bp,
+    reports_bp,
 ]
 

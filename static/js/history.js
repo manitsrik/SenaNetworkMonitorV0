@@ -57,26 +57,25 @@ async function loadDeviceList() {
             checkbox.style.cssText = `
                 display: flex;
                 align-items: center;
-                gap: 0.75rem;
-                padding: 0.75rem;
-                background: var(--bg-tertiary);
+                gap: 0.5rem;
+                padding: 0.4rem 0.5rem;
                 border-radius: var(--radius-sm);
                 cursor: pointer;
-                transition: all 0.2s ease;
-                border: 2px solid transparent;
+                transition: background-color 0.15s ease;
+                border: 1px solid transparent;
             `;
             checkbox.innerHTML = `
                 <input type="checkbox" 
                        id="device-${device.id}" 
                        value="${device.id}" 
                        onchange="updateSelectedCount()"
-                       style="width: 18px; height: 18px; cursor: pointer;">
-                <span style="font-size: 1.25rem;">${typeInfo.icon}</span>
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                       style="width: 14px; height: 14px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                <span style="font-size: 1rem; line-height: 1; flex-shrink: 0;">${typeInfo.icon}</span>
+                <div style="flex: 1; min-width: 0; line-height: 1.2;">
+                    <div class="device-name" style="font-weight: 500; font-size: 0.85rem; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                         ${device.name}
                     </div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                    <div class="device-ip" style="font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                         ${device.ip_address}
                     </div>
                 </div>
@@ -84,14 +83,15 @@ async function loadDeviceList() {
 
             // Add hover effect
             checkbox.addEventListener('mouseenter', () => {
-                checkbox.style.background = 'var(--bg-secondary)';
-                checkbox.style.borderColor = 'var(--primary)';
+                const input = checkbox.querySelector('input');
+                if (!input.checked) {
+                    checkbox.style.background = 'rgba(156, 163, 175, 0.1)'; // subtle generic hover
+                }
             });
             checkbox.addEventListener('mouseleave', () => {
                 const input = checkbox.querySelector('input');
                 if (!input.checked) {
-                    checkbox.style.background = 'var(--bg-tertiary)';
-                    checkbox.style.borderColor = 'transparent';
+                    checkbox.style.background = 'transparent';
                 }
             });
 
@@ -118,12 +118,32 @@ function updateSelectedCount() {
     // Update visual state of checked items
     document.querySelectorAll('#device-checkbox-list label').forEach(label => {
         const input = label.querySelector('input');
+        const nameDiv = label.querySelector('.device-name');
+        const ipDiv = label.querySelector('.device-ip');
+        
         if (input.checked) {
-            label.style.background = 'var(--bg-secondary)';
-            label.style.borderColor = 'var(--primary)';
+            label.style.background = 'var(--primary)';
+            if(nameDiv) nameDiv.style.color = '#fff';
+            if(ipDiv) ipDiv.style.color = 'rgba(255,255,255,0.8)';
         } else {
-            label.style.background = 'var(--bg-tertiary)';
-            label.style.borderColor = 'transparent';
+            label.style.background = 'transparent';
+            if(nameDiv) nameDiv.style.color = 'var(--text-primary)';
+            if(ipDiv) ipDiv.style.color = 'var(--text-muted)';
+        }
+    });
+}
+
+// Filter devices based on search input
+function filterDevices() {
+    const searchText = document.getElementById('device-search').value.toLowerCase();
+    const items = document.querySelectorAll('.device-checkbox-item');
+    
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        if (text.includes(searchText)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
         }
     });
 }
@@ -196,6 +216,12 @@ async function loadMultiDeviceHistory() {
     } catch (error) {
         console.error('Error loading comparison data:', error);
         alert('Failed to load comparison data');
+    }
+}
+
+function resetComparisonZoom() {
+    if (comparisonChart) {
+        comparisonChart.resetZoom();
     }
 }
 
@@ -281,6 +307,17 @@ function displayComparisonChart(data, selectedIds) {
                 intersect: false
             },
             plugins: {
+                zoom: {
+                    zoom: {
+                        wheel: { enabled: true },
+                        pinch: { enabled: true },
+                        mode: 'x',
+                    },
+                    pan: {
+                        enabled: true,
+                        mode: 'x',
+                    }
+                },
                 legend: {
                     display: true,
                     position: 'top',
@@ -474,6 +511,12 @@ async function loadHistoricalData() {
     }
 }
 
+function resetTrendZoom() {
+    Object.values(charts).forEach(chart => {
+        if (chart) chart.resetZoom();
+    });
+}
+
 // Display historical charts
 function displayHistoricalCharts(data) {
     const container = document.getElementById('charts-container');
@@ -573,6 +616,17 @@ function displayHistoricalCharts(data) {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
+                    zoom: {
+                        zoom: {
+                            wheel: { enabled: true },
+                            pinch: { enabled: true },
+                            mode: 'x',
+                        },
+                        pan: {
+                            enabled: true,
+                            mode: 'x',
+                        }
+                    },
                     legend: {
                         display: true,
                         position: 'top',

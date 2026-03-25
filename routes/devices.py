@@ -54,7 +54,9 @@ def add_device():
         snmp_v3_priv_password=data.get('snmp_v3_priv_password'),
         tcp_port=data.get('tcp_port', 80),
         dns_query_domain=data.get('dns_query_domain', 'google.com'),
-        location_type=data.get('location_type', 'on-premise')
+        location_type=data.get('location_type', 'on-premise'),
+        latitude=data.get('latitude'),
+        longitude=data.get('longitude')
     )
     
     if result['success']:
@@ -90,7 +92,9 @@ def update_device(device_id):
         snmp_v3_priv_password=data.get('snmp_v3_priv_password'),
         tcp_port=data.get('tcp_port'),
         dns_query_domain=data.get('dns_query_domain'),
-        location_type=data.get('location_type')
+        location_type=data.get('location_type'),
+        latitude=data.get('latitude'),
+        longitude=data.get('longitude')
     )
     log_audit('update', 'device', 'device', device_id, data.get('name'))
     return jsonify(result)

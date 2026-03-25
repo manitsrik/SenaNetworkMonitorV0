@@ -96,6 +96,11 @@
                     </div>
                 </div>
 
+                <a href="/map" class="nav-item {% if active_page == 'map' %}active{% endif %}" style="margin-bottom: 0.5rem;">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                    <span>{{ _('Geographical Map') }}</span>
+                </a>
+
                 <div class="menu-label">{{ _('Resources') }}</div>
                 <a href="/devices" class="nav-item {% if active_page == 'devices' %}active{% endif %}">
                     <i class="fa-solid fa-server"></i>
@@ -130,6 +135,10 @@
                 <a href="/bandwidth" class="nav-item {% if active_page == 'bandwidth' %}active{% endif %}">
                     <i class="fa-solid fa-chart-area"></i>
                     <span>{{ _('Bandwidth') }}</span>
+                </a>
+                <a href="/reports/builder" class="nav-item {% if active_page == 'reports_builder' %}active{% endif %}">
+                    <i class="fa-solid fa-file-invoice"></i>
+                    <span>{{ _('Custom Reports') }}</span>
                 </a>
 
                 <div class="menu-label">{{ _('System') }}</div>

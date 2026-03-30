@@ -364,12 +364,26 @@ class Database:
                 role TEXT NOT NULL DEFAULT 'viewer',
                 display_name TEXT,
                 email TEXT,
+                telegram_chat_id TEXT,
                 is_active {bool_type} DEFAULT {bool_default_true},
                 last_login TIMESTAMP,
                 created_at TIMESTAMP DEFAULT {timestamp_default},
                 updated_at TIMESTAMP DEFAULT {timestamp_default}
             )
         ''')
+
+        # Migration: Add telegram_chat_id to users table
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
 
         # Migration: Add auth_type column to users table
         try:
@@ -604,6 +618,19 @@ class Database:
             )
         ''')
         
+        # User-Device Assignments table for specific notifications
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS user_device_assignments (
+                id {pk},
+                user_id INTEGER NOT NULL,
+                device_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE,
+                UNIQUE(user_id, device_id)
+            )
+        ''')
+        
         # Create default users if not exists
         from werkzeug.security import generate_password_hash
         
@@ -709,19 +736,20 @@ class Database:
         
         try:
             if self.db_type == 'postgresql':
+                status_init = 'disabled' if not is_enabled else 'unknown'
                 cursor.execute('''
                     INSERT INTO devices (name, ip_address, device_type, location, 
-                                       monitor_type, expected_status_code,
+                                       status, monitor_type, expected_status_code,
                                        snmp_community, snmp_port, snmp_version,
                                        snmp_v3_username, snmp_v3_auth_protocol,
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
-                      location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
+                      location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
                       snmp_v3_username, snmp_v3_auth_protocol,
                       snmp_v3_auth_password, snmp_v3_priv_protocol,
@@ -731,18 +759,19 @@ class Database:
                       latitude, longitude, is_enabled, parent_device_id))
                 device_id = cursor.fetchone()['id']
             else:
+                status_init = 'disabled' if not is_enabled else 'unknown'
                 cursor.execute('''
                     INSERT INTO devices (name, ip_address, device_type, location, 
-                                       monitor_type, expected_status_code,
+                                       status, monitor_type, expected_status_code,
                                        snmp_community, snmp_port, snmp_version,
                                        snmp_v3_username, snmp_v3_auth_protocol,
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
-                      location or Config.DEFAULT_LOCATION, monitor_type, expected_status_code,
+                      location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
                       snmp_v3_username, snmp_v3_auth_protocol,
                       snmp_v3_auth_password, snmp_v3_priv_protocol,
@@ -784,20 +813,22 @@ class Database:
             self.release_connection(conn)
     
     def update_device(self, device_id, name=None, ip_address=None, 
-                     device_type=None, location=None, monitor_type=None,
+                     device_type=None, location='__NOT_SET__', monitor_type=None,
                      snmp_community=None, snmp_port=None, snmp_version=None,
                      snmp_v3_username=None, snmp_v3_auth_protocol=None,
                      snmp_v3_auth_password=None, snmp_v3_priv_protocol=None,
                      snmp_v3_priv_password=None,
                      tcp_port=None, dns_query_domain=None, location_type=None,
-                     latitude=None, longitude=None, is_enabled=None,
+                     latitude='__NOT_SET__', longitude='__NOT_SET__', is_enabled=None,
                      parent_device_id='__NOT_SET__'):
         """Update device information"""
-        # Strip whitespace from IP address and name to prevent issues
+        # Strip whitespace from IP address and name
         if ip_address:
             ip_address = ip_address.strip()
         if name:
             name = name.strip()
+        if isinstance(location, str) and location != '__NOT_SET__':
+            location = location.strip()
         
         conn = self.get_connection()
         try:
@@ -816,7 +847,7 @@ class Database:
             if device_type:
                 updates.append(f'device_type = {ph}')
                 params.append(device_type)
-            if location:
+            if location != '__NOT_SET__':
                 updates.append(f'location = {ph}')
                 params.append(location)
             if monitor_type:
@@ -855,10 +886,10 @@ class Database:
             if location_type:
                 updates.append(f'location_type = {ph}')
                 params.append(location_type)
-            if latitude is not None:
+            if latitude != '__NOT_SET__':
                 updates.append(f'latitude = {ph}')
                 params.append(latitude)
-            if longitude is not None:
+            if longitude != '__NOT_SET__':
                 updates.append(f'longitude = {ph}')
                 params.append(longitude)
             
@@ -1093,15 +1124,23 @@ class Database:
             
             now = datetime.now().isoformat()
             
-            # Get old status and escalation level to detect changes accurately
-            cursor.execute(f'SELECT status, escalation_level FROM devices WHERE id = {ph}', (device_id,))
+            # Get old status, escalation level and enabled state to detect changes accurately
+            cursor.execute(f'SELECT status, escalation_level, is_enabled FROM devices WHERE id = {ph}', (device_id,))
             current_row = cursor.fetchone()
             if current_row:
                 old_status = current_row['status']
                 old_escalation_level = current_row.get('escalation_level', 0)
+                is_enabled = bool(current_row.get('is_enabled', True))
             else:
                 old_status = 'unknown'
                 old_escalation_level = 0
+                is_enabled = True
+            
+            # Force status to 'disabled' if device is disabled
+            if not is_enabled:
+                status = 'disabled'
+                response_time = None
+                http_status_code = None
             
             # Build update query dynamically based on provided values
             update_parts = [f'status = {ph}', f'response_time = {ph}', f'last_check = {ph}', f'http_status_code = {ph}']
@@ -1724,6 +1763,7 @@ class Database:
                     FROM devices 
                     WHERE status = 'down' 
                     AND escalation_level = 0
+                    AND is_enabled = TRUE
                     AND last_status_change <= NOW() - INTERVAL '{int(minutes)} minutes'
                 '''
             else:
@@ -1732,6 +1772,7 @@ class Database:
                     FROM devices 
                     WHERE status = 'down' 
                     AND escalation_level = 0
+                    AND is_enabled = 1
                     AND last_status_change <= datetime('now', '-{int(minutes)} minutes')
                 '''
                 
@@ -2356,7 +2397,7 @@ class Database:
         conn = self.get_connection()
         cursor = self._cursor(conn)
         cursor.execute('''
-            SELECT id, username, role, display_name, email, is_active, auth_type,
+            SELECT id, username, role, display_name, email, telegram_chat_id, is_active, auth_type,
                    last_login, created_at, updated_at 
             FROM users ORDER BY created_at DESC
         ''')
@@ -2364,7 +2405,7 @@ class Database:
         self.release_connection(conn)
         return users
     
-    def add_user(self, username, password, role='viewer', display_name=None, email=None, auth_type='local'):
+    def add_user(self, username, password, role='viewer', display_name=None, email=None, telegram_chat_id=None, auth_type='local'):
         """Add a new user"""
         from werkzeug.security import generate_password_hash
         
@@ -2380,17 +2421,17 @@ class Database:
         try:
             if self.db_type == 'postgresql':
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, role, display_name, email, auth_type, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO users (username, password_hash, role, display_name, email, telegram_chat_id, auth_type, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
-                ''', (username, pw_hash, role, display_name, email, auth_type,
+                ''', (username, pw_hash, role, display_name, email, telegram_chat_id, auth_type,
                       datetime.now().isoformat()))
                 user_id = cursor.fetchone()['id']
             else:
                 cursor.execute('''
-                    INSERT INTO users (username, password_hash, role, display_name, email, auth_type, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', (username, pw_hash, role, display_name, email, auth_type,
+                    INSERT INTO users (username, password_hash, role, display_name, email, telegram_chat_id, auth_type, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (username, pw_hash, role, display_name, email, telegram_chat_id, auth_type,
                       datetime.now().isoformat()))
                 user_id = cursor.lastrowid
             conn.commit()
@@ -2404,7 +2445,7 @@ class Database:
             return {'success': False, 'error': str(e)}
     
     def update_user(self, user_id, role=None, display_name=None, email=None, 
-                    is_active=None, password=None, auth_type=None):
+                    telegram_chat_id=None, is_active=None, password=None, auth_type=None):
         """Update user details"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -2427,6 +2468,10 @@ class Database:
         if email is not None:
             updates.append(f'email = {ph}')
             params.append(email)
+            
+        if telegram_chat_id is not None:
+            updates.append(f'telegram_chat_id = {ph}')
+            params.append(telegram_chat_id)
             
         if auth_type is not None:
             updates.append(f'auth_type = {ph}')
@@ -3528,5 +3573,87 @@ class Database:
         except Exception as e:
             conn.rollback()
             return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    # =========================================================================
+    # User-Device Assignment Methods
+    # =========================================================================
+
+    def assign_user_to_device(self, user_id, device_id):
+        """Assign a user to a device for notifications"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute('INSERT INTO user_device_assignments (user_id, device_id) VALUES (%s, %s) ON CONFLICT DO NOTHING', (user_id, device_id))
+            else:
+                cursor.execute('INSERT OR IGNORE INTO user_device_assignments (user_id, device_id) VALUES (?, ?)', (user_id, device_id))
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def unassign_user_from_device(self, user_id, device_id):
+        """Remove user assignment from a device"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        try:
+            cursor.execute(f'DELETE FROM user_device_assignments WHERE user_id = {self._ph()} AND device_id = {self._ph()}', (user_id, device_id))
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if conn: conn.rollback()
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def get_device_assignments(self, device_id):
+        """Get all users assigned to a device"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'''
+                SELECT u.id, u.username, u.display_name, u.email 
+                FROM users u
+                JOIN user_device_assignments a ON u.id = a.user_id
+                WHERE a.device_id = {self._ph()}
+            ''', (device_id,))
+            return self._rows_to_dicts(cursor.fetchall())
+        finally:
+            self.release_connection(conn)
+
+    def get_user_assignments(self, user_id):
+        """Get all devices assigned to a user"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'''
+                SELECT d.* 
+                FROM devices d
+                JOIN user_device_assignments a ON d.id = a.device_id
+                WHERE a.user_id = {self._ph()}
+            ''', (user_id,))
+            return self._rows_to_dicts(cursor.fetchall())
+        finally:
+            self.release_connection(conn)
+
+    def get_device_recipients(self, device_id):
+        """Get emails and telegram IDs for users assigned to a device"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'''
+                SELECT email, telegram_chat_id FROM users u
+                JOIN user_device_assignments a ON u.id = a.user_id
+                WHERE a.device_id = {self._ph()} AND u.is_active = {self._ph()}
+            ''', (device_id, True if self.db_type == 'postgresql' else 1))
+            rows = cursor.fetchall()
+            emails = [row['email'] for row in rows if row.get('email')]
+            telegram_ids = [row['telegram_chat_id'] for row in rows if row.get('telegram_chat_id')]
+            return {'emails': emails, 'telegram_ids': telegram_ids}
         finally:
             self.release_connection(conn)

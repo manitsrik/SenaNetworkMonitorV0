@@ -709,7 +709,23 @@ class NetworkMonitor:
             }
     
     def check_device(self, device):
-        """Check a single device and update database"""
+        """
+        Check a single device using its configured monitor type.
+        Returns a dictionary with the check results.
+        """
+        # Safety Guard: Do not check disabled devices
+        if not device.get('is_enabled'):
+            # Ensure status is 'disabled' in the database
+            self.db.update_device_status(device['id'], 'disabled')
+            return {
+                'id': device['id'],
+                'name': device['name'],
+                'ip_address': device['ip_address'],
+                'status': 'disabled',
+                'last_check': datetime.now().isoformat(),
+                'response_time': None
+            }
+            
         monitor_type = device.get('monitor_type', 'ping')
         previous_status = device.get('status', 'unknown')
         

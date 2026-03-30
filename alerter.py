@@ -54,7 +54,14 @@ class Alerter:
         smtp_user = settings.get('smtp_user', '').strip()
         smtp_password = settings.get('smtp_password', '')
         smtp_from = settings.get('smtp_from', '').strip() or smtp_user
-        recipient_str = (recipient or settings.get('email_recipient', '')).strip()
+        recipient_str = ""
+        if recipient:
+            if isinstance(recipient, list):
+                recipient_str = ', '.join(recipient)
+            else:
+                recipient_str = recipient.strip()
+        else:
+            recipient_str = settings.get('email_recipient', '').strip()
         
         # Support multiple recipients (comma-separated)
         recipients = [r.strip() for r in recipient_str.split(',') if r.strip()]
@@ -140,13 +147,22 @@ This is an automated message from Network Monitor.
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def send_telegram(self, message):
+    def send_telegram(self, message, recipient=None):
         """
         Send Telegram message via Bot API
+        Supports custom recipients (chat IDs)
         Returns: dict with 'success' and 'error' (if failed)
         """
         bot_token = self._get_setting('telegram_bot_token', '').strip()
-        chat_id_str = self._get_setting('telegram_chat_id', '').strip()
+        
+        chat_id_str = ""
+        if recipient:
+            if isinstance(recipient, list):
+                chat_id_str = ', '.join(recipient)
+            else:
+                chat_id_str = recipient.strip()
+        else:
+            chat_id_str = self._get_setting('telegram_chat_id', '').strip()
         
         if not bot_token or not chat_id_str:
             return {'success': False, 'error': 'Telegram settings incomplete (need Bot Token and Chat ID)'}
@@ -279,6 +295,10 @@ This is an automated message from Network Monitor.
                 return False
         
         # Then check database cooldown
+        # Bypass global cooldown for recovery alerts to ensure they always follow a down event
+        if event_type == 'recovery':
+            return True
+            
         cooldown = int(self._get_setting('alert_cooldown', 300))  # Default 5 minutes
         last_alert = self.db.get_last_alert_time(device_id, event_type)
         
@@ -357,11 +377,27 @@ This is an automated message from Network Monitor.
         else:
             subject = f"Alert: {device_name}"
         
+        # Get specific recipients for this device
+        recipients = self.db.get_device_recipients(device_id)
+        assigned_emails = recipients.get('emails') or []
+        assigned_telegram_ids = recipients.get('telegram_ids') or []
+        
+        # Get global recipients from settings
+        global_emails_str = self._get_setting('email_recipient', '').strip()
+        global_emails = [r.strip() for r in global_emails_str.split(',') if r.strip()]
+        
+        global_telegram_str = self._get_setting('telegram_chat_id', '').strip()
+        global_telegram_ids = [r.strip() for r in global_telegram_str.split(',') if r.strip()]
+        
+        # Merge lists (using set to avoid duplicates if a user is in both)
+        target_emails = list(set(assigned_emails + global_emails))
+        target_telegram_ids = list(set(assigned_telegram_ids + global_telegram_ids))
+        
         sent_any = False
         
         # Send via Email
         if self.is_enabled('email'):
-            result = self.send_email(subject, full_message)
+            result = self.send_email(subject, full_message, recipient=target_emails)
             self.db.log_alert(
                 device_id, event_type, message, 'email',
                 'sent' if result['success'] else 'failed',
@@ -369,7 +405,8 @@ This is an automated message from Network Monitor.
             )
             if result['success']:
                 sent_any = True
-                print(f"[Alert] Email sent for {device_name}: {event_type}")
+                recipient_info = f"{len(target_emails)} recipients" if target_emails else "global"
+                print(f"[Alert] Email sent for {device_name}: {event_type} (to {recipient_info})")
             else:
                 print(f"[Alert] Email failed for {device_name}: {result.get('error')}")
         
@@ -391,7 +428,7 @@ This is an automated message from Network Monitor.
         # Send via Telegram
         if self.is_enabled('telegram'):
             telegram_message = f"{subject}\n\n{full_message}"
-            result = self.send_telegram(telegram_message)
+            result = self.send_telegram(telegram_message, recipient=target_telegram_ids)
             self.db.log_alert(
                 device_id, event_type, message, 'telegram',
                 'sent' if result['success'] else 'failed',
@@ -399,7 +436,8 @@ This is an automated message from Network Monitor.
             )
             if result['success']:
                 sent_any = True
-                print(f"[Alert] Telegram sent for {device_name}: {event_type}")
+                recipient_info = f"{len(target_telegram_ids)} chat(s)" if target_telegram_ids else "global"
+                print(f"[Alert] Telegram sent for {device_name}: {event_type} (to {recipient_info})")
             else:
                 print(f"[Alert] Telegram failed for {device_name}: {result.get('error')}")
         

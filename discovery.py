@@ -10,6 +10,7 @@ import socket
 import ipaddress
 import eventlet
 from datetime import datetime
+from pythonping import ping
 
 
 class DeviceDiscovery:
@@ -52,6 +53,7 @@ class DeviceDiscovery:
         self._cancel_requested = False
         self._scan_progress = 0
         self._scan_total = 0
+        self._scan_skipped = 0
         self._scan_results = []
     
     @property
@@ -84,10 +86,23 @@ class DeviceDiscovery:
     
     def check_host_alive(self, ip_str):
         """
-        Fast host liveness check - sequential TCP connect to a few ports.
-        No nested GreenPool; runs inside a single worker green thread.
-        Returns True as soon as any port responds.
+        Fast host liveness check - ICMP ping followed by TCP connect to a few ports.
+        Returns True as soon as any check succeeds.
         """
+        if self._cancel_requested:
+            return False
+            
+        # 1. Try ICMP Ping (Fastest if allowed)
+        try:
+            # count=1, timeout=0.2 for maximum speed in discovery
+            response = ping(ip_str, count=1, timeout=0.2, verbose=False)
+            if response.success():
+                return True
+        except Exception:
+            # Fall back to TCP if ping fails (e.g. permission issues or blocked ICMP)
+            pass
+
+        # 2. Try TCP Probes
         for port in self.QUICK_PORTS:
             if self._cancel_requested:
                 return False
@@ -228,6 +243,7 @@ class DeviceDiscovery:
         self._cancel_requested = False
         self._scan_progress = 0
         self._scan_total = len(hosts_to_scan)
+        self._scan_skipped = len(skip_set)
         self._scan_results = []
         
         try:
@@ -249,8 +265,8 @@ class DeviceDiscovery:
         return {
             'success': True,
             'subnet': subnet_str,
-            'total_scanned': len(hosts_to_scan),
-            'total_skipped': len(skip_set),
+            'total_scanned': self._scan_total,
+            'total_skipped': self._scan_skipped,
             'discovered': len(self._scan_results),
             'devices': self._scan_results
         }
@@ -262,5 +278,6 @@ class DeviceDiscovery:
             'progress': self.progress,
             'scanned': self._scan_progress,
             'total': self._scan_total,
+            'skipped': self._scan_skipped,
             'discovered_so_far': len(self._scan_results)
         }

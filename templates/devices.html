@@ -11,6 +11,28 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+    .sortable-header {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        transition: background-color 0.2s;
+    }
+    .sortable-header:hover {
+        background-color: rgba(var(--primary-rgb, 99, 102, 241), 0.1) !important;
+    }
+    .sort-icon {
+        display: inline-block;
+        margin-left: 5px;
+        font-size: 0.8em;
+        vertical-align: middle;
+        opacity: 0.5;
+    }
+    .sort-icon.active {
+        opacity: 1;
+        color: var(--primary);
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -100,14 +122,14 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>Name</th>
-                            <th>IP</th>
-                            <th>Type</th>
-                            <th>Location</th>
-                            <th>Loc. Type</th>
-                            <th>Status</th>
-                            <th>Resp.</th>
-                            <th>Updated</th>
+                            <th class="sortable-header" onclick="handleSort('name')">Name <span id="sort-icon-name" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('ip_address')">IP <span id="sort-icon-ip_address" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('device_type')">Type <span id="sort-icon-device_type" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('location')">Location <span id="sort-icon-location" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('location_type')">Loc. Type <span id="sort-icon-location_type" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('status')">Status <span id="sort-icon-status" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('response_time')">Resp. <span id="sort-icon-response_time" class="sort-icon"></span></th>
+                            <th class="sortable-header" onclick="handleSort('last_check')">Updated <span id="sort-icon-last_check" class="sort-icon"></span></th>
                             <th>Monitor</th>
                             <th>Actions</th>
                         </tr>
@@ -607,6 +629,65 @@
                 </button>
                 <button class="btn btn-secondary" onclick="closeImportModal()">
                     Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Notification Assignments Modal -->
+<div id="assignment-modal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+        <div class="modal-header">
+            <h3>🔔 Notification Recipients - <span id="assignment-device-name"></span></h3>
+            <button class="modal-close" onclick="closeAssignmentModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <p class="text-muted mb-1">Users assigned here will receive notifications for this device. If no users are assigned, alerts will be sent to the global recipients.</p>
+            
+            <!-- Add Assignment Form -->
+            <div class="card mb-1" style="padding: 1rem; background: rgba(var(--primary-rgb, 99,102,241), 0.05);">
+                <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <label class="form-label" for="assign-user-select">Select User</label>
+                        <select id="assign-user-select" class="form-select">
+                            <option value="">-- Choose User --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="assignUserToDevice()">
+                        ➕ Assign
+                    </button>
+                </div>
+            </div>
+
+            <!-- Assignments List -->
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="card-title">Assigned Users</h4>
+                </div>
+                <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+                    <table style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Email</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assignments-table-body">
+                            <tr>
+                                <td colspan="3" class="text-center" style="padding: 1rem; color: var(--text-muted);">
+                                    No specific users assigned.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mt-2">
+                <button class="btn btn-secondary" onclick="closeAssignmentModal()" style="width: 100%;">
+                    Close
                 </button>
             </div>
         </div>

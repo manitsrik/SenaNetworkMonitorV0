@@ -76,6 +76,8 @@ def scan_results():
     
     return jsonify({
         'success': True,
+        'total_scanned': discovery._scan_total,
+        'total_skipped': discovery._scan_skipped,
         'discovered': len(results),
         'devices': results
     })

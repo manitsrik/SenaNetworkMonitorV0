@@ -1389,7 +1389,7 @@ tr:hover {
 }
 
 /* =========================================
-   Modern Theme Toggle Switch
+   Example Image - Theme Toggle Switch (Custom)
    ========================================= */
 
 .theme-switch-wrapper {
@@ -1399,76 +1399,100 @@ tr:hover {
 
 .theme-switch {
     display: inline-block;
-    height: 34px;
+    height: 32px;
     position: relative;
-    width: 60px;
+    width: 64px;
 }
 
 .theme-switch input {
     display: none;
 }
 
-.slider {
-    background-color: #ccc;
+.theme-slider, .theme-switch .slider {
+    background: linear-gradient(135deg, #FFC107 0%, #FF9800 100%); /* Yellow-Orange Gradient */
     bottom: 0;
     cursor: pointer;
     left: 0;
     position: absolute;
     right: 0;
     top: 0;
-    transition: .4s;
+    transition: background-color 0.4s;
     border-radius: 34px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 5px;
+    padding: 0 4px;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.2);
 }
 
-.slider:before {
-    background-color: #fff;
-    bottom: 4px;
+.theme-slider:before, .theme-switch .slider:before {
+    background: #ffffff;
+    bottom: 3px;
     content: "";
     height: 26px;
-    left: 4px;
+    left: 3px;
     position: absolute;
-    transition: .4s;
+    transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
     width: 26px;
     border-radius: 50%;
+    z-index: 5;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    /* In Light Mode (not checked), ball is on the right */
+    transform: translateX(32px);
+}
+
+/* Dark Mode (Checked) styling */
+input:checked + .theme-slider, 
+input:checked + .theme-switch .slider {
+    background-color: #000000; /* Pure Black for Dark Mode */
+}
+
+input:checked + .theme-slider:before,
+input:checked + .theme-switch .slider:before {
+    /* In Dark Mode (checked), ball is on the left */
+    transform: translateX(0);
+}
+
+.sun-icon, .moon-icon {
+    font-size: 16px;
     z-index: 2;
+    transition: opacity 0.3s ease;
+    width: 24px;
+    text-align: center;
+    color: #ffffff !important; /* All icons are white in this design */
 }
 
-input:checked+.slider {
-    background-color: var(--primary);
-}
-
-input:checked+.slider:before {
-    transform: translateX(26px);
-}
-
+/* Positioning Icons */
 .sun-icon {
-    color: #f39c12;
-    font-size: 14px;
-    z-index: 1;
-    margin-left: 5px;
-    transition: opacity 0.2s;
+    margin-left: 2px;
 }
 
 .moon-icon {
-    color: #f1c40f;
-    font-size: 14px;
-    z-index: 1;
-    margin-right: 5px;
-    transition: opacity 0.2s;
+    margin-right: 2px;
 }
 
-/* Hide sun when dark mode (checked) */
-input:checked+.slider .sun-icon {
-    opacity: 0.5;
+/* Icon visibility based on ball position */
+/* When ball is on the right (Light Mode), moon is HIDDEN on the right */
+input:not(:checked) + .theme-slider .moon-icon,
+input:not(:checked) + .theme-switch .slider .moon-icon {
+    opacity: 0; /* Hide moon completely in light mode */
 }
 
-/* Hide moon when light mode (unchecked) */
-input:not(:checked)+.slider .moon-icon {
-    opacity: 0.5;
+/* When ball is on the left (Dark Mode), sun is HIDDEN on the left */
+input:checked + .theme-slider .sun-icon,
+input:checked + .theme-switch .slider .sun-icon {
+    opacity: 0; /* Hide sun completely in dark mode */
+}
+
+/* Smooth scaling on hover */
+.theme-switch:hover .theme-slider:before,
+.theme-switch:hover .slider:before {
+    transform: scale(1.1) translateX(29px); /* Light mode hover adjustment */
+}
+
+input:checked + .theme-switch:hover .theme-slider:before,
+input:checked + .theme-switch:hover .slider:before {
+    transform: scale(1.1) translateX(0); /* Dark mode hover */
 }
 
 /* =========================================
@@ -1744,7 +1768,7 @@ input:not(:checked)+.slider .moon-icon {
     height: 0;
 }
 
-.slider {
+.switch .slider {
     position: absolute;
     cursor: pointer;
     top: 0;
@@ -1756,7 +1780,7 @@ input:not(:checked)+.slider .moon-icon {
     border-radius: 34px;
 }
 
-.slider:before {
+.switch .slider:before {
     position: absolute;
     content: "";
     height: 14px;
@@ -1768,14 +1792,14 @@ input:not(:checked)+.slider .moon-icon {
     border-radius: 50%;
 }
 
-input:checked + .slider {
+.switch input:checked + .slider {
     background-color: var(--primary);
 }
 
-input:focus + .slider {
+.switch input:focus + .slider {
     box-shadow: 0 0 1px var(--primary);
 }
 
-input:checked + .slider:before {
+.switch input:checked + .slider:before {
     transform: translateX(16px);
 }

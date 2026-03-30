@@ -35,6 +35,7 @@ def create_user():
         role=data.get('role', 'viewer'),
         display_name=data.get('display_name'),
         email=data.get('email'),
+        telegram_chat_id=data.get('telegram_chat_id'),
         auth_type=data.get('auth_type', 'local')
     )
     
@@ -55,6 +56,7 @@ def update_user(user_id):
         role=data.get('role'),
         display_name=data.get('display_name'),
         email=data.get('email'),
+        telegram_chat_id=data.get('telegram_chat_id'),
         is_active=data.get('is_active'),
         password=data.get('password'),
         auth_type=data.get('auth_type')

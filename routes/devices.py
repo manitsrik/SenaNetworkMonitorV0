@@ -63,9 +63,30 @@ def add_device():
     
     if result['success']:
         device = db.get_device(result['id'])
-        monitor = _get_monitor()
-        status = monitor.check_device(device)
-        _get_socketio().emit('status_update', status, namespace='/')
+        # Only run initial check if monitoring is enabled
+        if device.get('is_enabled'):
+            monitor = _get_monitor()
+            status = monitor.check_device(device)
+            # Socket update for the initial check result
+            socketio = _get_socketio()
+            socketio.emit('status_update', status, namespace='/')
+            
+            # Global statistics update
+            stats = monitor.get_statistics()
+            socketio.emit('statistics_update', stats, namespace='/')
+        else:
+            # Broadcast the new device even if not checked yet
+            socketio = _get_socketio()
+            socketio.emit('status_update', {
+                'id': device['id'],
+                'name': device['name'],
+                'ip_address': device['ip_address'],
+                'device_type': device.get('device_type'),
+                'monitor_type': device.get('monitor_type', 'ping'),
+                'status': device['status'],
+                'response_time': device['response_time'],
+                'last_check': device.get('last_check')
+            }, namespace='/')
         log_audit('create', 'device', 'device', result['id'], data['name'])
         return jsonify(result), 201
     else:
@@ -352,6 +373,13 @@ def import_devices_csv():
                 results['errors'].append(f"Row {i}: Name and IP address are required")
                 continue
             
+            # Handle is_enabled if present in CSV
+            is_enabled_raw = row.get('is_enabled', '').strip().lower()
+            if is_enabled_raw == '':
+                is_enabled = True # Default
+            else:
+                is_enabled = is_enabled_raw in ('true', '1', 'yes', 'on', 'enabled')
+
             result = db.add_device(
                 name=name,
                 ip_address=ip_address,
@@ -364,7 +392,8 @@ def import_devices_csv():
                 snmp_version=row.get('snmp_version', '').strip() or '2c',
                 tcp_port=int(row.get('tcp_port') or 80),
                 dns_query_domain=row.get('dns_query_domain', '').strip() or 'google.com',
-                expected_status_code=int(row.get('expected_status_code') or 200)
+                expected_status_code=int(row.get('expected_status_code') or 200),
+                is_enabled=is_enabled
             )
             
             if result['success']:

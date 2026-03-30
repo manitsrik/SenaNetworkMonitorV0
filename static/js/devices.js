@@ -10,6 +10,10 @@ let editingDeviceId = null;
 // Store all devices for filtering
 let allDevices = [];
 
+// Current sorting state
+let currentSortColumn = 'name';
+let currentSortDirection = 'asc';
+
 // Location type icon mapping
 const locationTypeIcons = {
     'cloud': '☁️',
@@ -54,7 +58,8 @@ async function loadDevices() {
         const devices = await response.json();
         allDevices = devices; // Store globally for filtering
         populateFilterOptions(devices); // Populate filter dropdowns
-        filterDevices(); // Apply current filters
+        updateSortIcons(); // Show default sort icon
+        filterDevices(); // Apply current filters and sorting
         updateDeviceCount(devices.length);
     } catch (error) {
         console.error('Error loading devices:', error);
@@ -118,6 +123,9 @@ function updateDevicesTable(devices) {
                         🔒
                     </button>
                     ` : ''}
+                    <button class="btn btn-sm" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem;" onclick="openAssignmentModal(${device.id}, '${device.name}')" title="Notification Recipients">
+                        🔔
+                    </button>
                     <button class="btn btn-sm btn-secondary" style="padding: 0.25rem 0.5rem;" onclick="editDevice(${device.id})" title="Edit">
                         ✏️
                     </button>
@@ -201,6 +209,82 @@ function getUniqueValues(devices, field) {
     return [...new Set(values)].sort();
 }
 
+// Handle header click for sorting
+function handleSort(column) {
+    if (currentSortColumn === column) {
+        // Cycle: asc -> desc -> none -> asc
+        if (currentSortDirection === 'asc') {
+            currentSortDirection = 'desc';
+        } else if (currentSortDirection === 'desc') {
+            currentSortDirection = 'none';
+        } else {
+            currentSortDirection = 'asc';
+        }
+    } else {
+        currentSortColumn = column;
+        currentSortDirection = 'asc';
+    }
+
+    updateSortIcons();
+    filterDevices();
+}
+
+// Update sort icons in the header
+function updateSortIcons() {
+    const columns = ['name', 'ip_address', 'device_type', 'location', 'location_type', 'status', 'response_time', 'last_check'];
+    columns.forEach(col => {
+        const icon = document.getElementById(`sort-icon-${col}`);
+        if (!icon) return;
+
+        if (col === currentSortColumn && currentSortDirection !== 'none') {
+            icon.innerHTML = currentSortDirection === 'asc' ? ' ↑' : ' ↓';
+            icon.classList.add('active');
+        } else {
+            icon.innerHTML = '';
+            icon.classList.remove('active');
+        }
+    });
+}
+
+// Sort devices array
+function sortDevices(devices) {
+    if (currentSortDirection === 'none' || !currentSortColumn) {
+        return devices;
+    }
+
+    const direction = currentSortDirection === 'asc' ? 1 : -1;
+
+    return [...devices].sort((a, b) => {
+        let valA = a[currentSortColumn];
+        let valB = b[currentSortColumn];
+
+        // Handle null/undefined
+        if (valA === null || valA === undefined) valA = '';
+        if (valB === null || valB === undefined) valB = '';
+
+        // Special handling for specific columns
+        if (currentSortColumn === 'response_time') {
+            const numA = parseFloat(valA) || 0;
+            const numB = parseFloat(valB) || 0;
+            return (numA - numB) * direction;
+        }
+
+        if (currentSortColumn === 'last_check') {
+            const dateA = valA ? new Date(valA) : new Date(0);
+            const dateB = valB ? new Date(valB) : new Date(0);
+            return (dateA - dateB) * direction;
+        }
+
+        // Default string comparison (case-insensitive)
+        valA = String(valA).toLowerCase();
+        valB = String(valB).toLowerCase();
+
+        if (valA < valB) return -1 * direction;
+        if (valA > valB) return 1 * direction;
+        return 0;
+    });
+}
+
 // Filter devices based on search and filters
 function filterDevices() {
     const searchTerm = document.getElementById('search-input').value.toLowerCase();
@@ -234,8 +318,9 @@ function filterDevices() {
         return matchesSearch && matchesType && matchesLocation && matchesStatus && matchesLocationType;
     });
 
-    updateDevicesTable(filteredDevices);
-    updateFilteredCount(filteredDevices.length, allDevices.length);
+    const sortedDevices = sortDevices(filteredDevices);
+    updateDevicesTable(sortedDevices);
+    updateFilteredCount(sortedDevices.length, allDevices.length);
 }
 
 // Update device count with filter info
@@ -1766,6 +1851,140 @@ function populateParentDeviceDropdown(excludeDeviceId) {
         select.appendChild(option);
     });
 }
+
+// ============================================================================
+// Notification Assignments
+// ============================================================================
+
+let currentAssignmentDeviceId = null;
+
+async function openAssignmentModal(deviceId, deviceName) {
+    currentAssignmentDeviceId = deviceId;
+    document.getElementById('assignment-device-name').textContent = deviceName;
+    document.getElementById('assignment-modal').classList.add('active');
+    
+    // Load data
+    await loadUsersForAssignment();
+    await loadAssignments(deviceId);
+}
+
+function closeAssignmentModal() {
+    document.getElementById('assignment-modal').classList.remove('active');
+    currentAssignmentDeviceId = null;
+}
+
+async function loadUsersForAssignment() {
+    const select = document.getElementById('assign-user-select');
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        
+        select.innerHTML = '<option value="">-- Choose User --</option>';
+        users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.id;
+            option.textContent = `${user.display_name || user.username} (${user.role})`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading users:', error);
+    }
+}
+
+async function loadAssignments(deviceId) {
+    const tbody = document.getElementById('assignments-table-body');
+    try {
+        const response = await fetch(`/api/assignments/device/${deviceId}`);
+        const assignments = await response.json();
+        
+        if (assignments.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center" style="padding: 1rem; color: var(--text-muted);">
+                        No specific users assigned.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        tbody.innerHTML = assignments.map(a => `
+            <tr>
+                <td><strong>${a.display_name || a.username}</strong></td>
+                <td>${a.email || '—'}</td>
+                <td style="text-align: right;">
+                    <button class="btn btn-sm btn-danger" onclick="unassignUserFromDevice(${a.id})">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading assignments:', error);
+    }
+}
+
+async function assignUserToDevice() {
+    const userId = document.getElementById('assign-user-select').value;
+    if (!userId || !currentAssignmentDeviceId) {
+        alert('Please select a user.');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/assignments/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: parseInt(userId),
+                device_id: currentAssignmentDeviceId
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            loadAssignments(currentAssignmentDeviceId);
+        } else {
+            alert('Error: ' + (result.error || 'Failed to assign user'));
+        }
+    } catch (error) {
+        console.error('Error assigning user:', error);
+        alert('Error assigning user.');
+    }
+}
+
+async function unassignUserFromDevice(userId) {
+    if (!confirm('Remove this user from device notifications?')) return;
+    
+    try {
+        const response = await fetch('/api/assignments/unassign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: userId,
+                device_id: currentAssignmentDeviceId
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            loadAssignments(currentAssignmentDeviceId);
+        } else {
+            alert('Error: ' + (result.error || 'Failed to remove user'));
+        }
+    } catch (error) {
+        console.error('Error removing user:', error);
+        alert('Error removing user.');
+    }
+}
+
+// Add to global click listener for outside-modal closing
+document.addEventListener('click', (event) => {
+    const assignmentModal = document.getElementById('assignment-modal');
+    if (event.target === assignmentModal) {
+        closeAssignmentModal();
+    }
+});
 
 /**
  * Get parent device name by ID from the allDevices array.

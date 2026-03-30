@@ -17,6 +17,7 @@ from .audit import audit_bp
 from .reports import reports_bp
 from .ldap import ldap_bp
 from .sso import sso_bp
+from .assignments import assignments_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -35,5 +36,6 @@ ALL_BLUEPRINTS = [
     reports_bp,
     ldap_bp,
     sso_bp,
+    assignments_bp,
 ]
 

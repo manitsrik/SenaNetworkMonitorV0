@@ -29,7 +29,7 @@
             </div>
             <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem;">
                 <i class="fa-solid fa-info-circle"></i>
-                Scans the subnet using ICMP ping, reverse DNS lookup, and common port detection.
+                Scans the subnet using ICMP ping (if allowed), reverse DNS lookup, and common port detection.
                 Already-monitored IPs are automatically skipped.
             </div>
 
@@ -262,7 +262,11 @@
             const data = await resultsResp.json();
             if (data.success) {
                 discoveredDevices = data.devices || [];
-                renderResults({ total_scanned: data.discovered, total_skipped: 0, discovered: data.discovered });
+                renderResults({
+                    total_scanned: data.total_scanned,
+                    total_skipped: data.total_skipped,
+                    discovered: data.discovered
+                });
             } else {
                 alert('Could not fetch results: ' + (data.error || 'Unknown error'));
             }

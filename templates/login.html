@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - Network Monitor</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=v1.3_ui_update">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -19,7 +19,7 @@
             <div class="theme-switch-wrapper">
                 <label class="theme-switch" for="checkbox">
                     <input type="checkbox" id="checkbox" onclick="toggleTheme()" />
-                    <div class="slider round">
+                    <div class="theme-slider round">
                         <i class="fa-solid fa-sun sun-icon"></i>
                         <i class="fa-solid fa-moon moon-icon"></i>
                     </div>

@@ -55,10 +55,14 @@ def add_device():
         tcp_port=data.get('tcp_port', 80),
         dns_query_domain=data.get('dns_query_domain', 'google.com'),
         location_type=data.get('location_type', 'on-premise'),
-        latitude=data.get('latitude'),
         longitude=data.get('longitude'),
         is_enabled=data.get('is_enabled', True),
-        parent_device_id=data.get('parent_device_id')
+        parent_device_id=data.get('parent_device_id'),
+        ssh_username=data.get('ssh_username'),
+        ssh_password=data.get('ssh_password'),
+        ssh_port=data.get('ssh_port', 22),
+        wmi_username=data.get('wmi_username'),
+        wmi_password=data.get('wmi_password')
     )
     
     if result['success']:
@@ -124,6 +128,11 @@ def update_device(device_id):
         latitude=data.get('latitude'),
         longitude=data.get('longitude'),
         is_enabled=data.get('is_enabled'),
+        ssh_username=data.get('ssh_username', '__NOT_SET__'),
+        ssh_password=data.get('ssh_password', '__NOT_SET__'),
+        ssh_port=data.get('ssh_port', '__NOT_SET__'),
+        wmi_username=data.get('wmi_username', '__NOT_SET__'),
+        wmi_password=data.get('wmi_password', '__NOT_SET__'),
         **parent_kw
     )
     log_audit('update', 'device', 'device', device_id, data.get('name'))
@@ -195,6 +204,27 @@ def get_snmp_interfaces(device_id):
         'device_id': device_id,
         'device_name': device['name'],
         'interfaces': interfaces
+    })
+
+@devices_bp.route('/api/devices/<int:device_id>/performance', methods=['GET'])
+def get_device_performance(device_id):
+    """Get performance metrics history for a device"""
+    hours = request.args.get('hours', 24, type=int)
+    db = _get_db()
+    
+    cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours)
+    ram_history = db.get_system_metrics_history(device_id, 'ram', hours)
+    disk_history = db.get_system_metrics_history(device_id, 'disk', hours)
+    network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours)
+    network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours)
+    
+    return jsonify({
+        'device_id': device_id,
+        'cpu': cpu_history,
+        'ram': ram_history,
+        'disk': disk_history,
+        'network_in': network_in_history,
+        'network_out': network_out_history
     })
 
 
@@ -299,9 +329,10 @@ def check_device_now(device_id):
 
 @devices_bp.route('/api/statistics/trend', methods=['GET'])
 def get_trend_statistics():
-    """Get response time trends by device type"""
+    """Get response time trends by device type or specific device"""
     minutes = request.args.get('minutes', 180, type=int)
-    trends = _get_db().get_device_type_trends(minutes)
+    device_id = request.args.get('device_id', type=int)
+    trends = _get_db().get_device_type_trends(minutes, device_id=device_id)
     return jsonify(trends)
 
 

@@ -138,8 +138,8 @@ window.DashboardRenderer = {
         try {
             // Apply filtering if configured, same as renderWidgetContent
             let widgetData = data;
-            if (widget.config && widget.config.deviceType) {
-                widgetData = this.filterData(data, widget.config.deviceType);
+            if (widget.config && (widget.config.deviceType || widget.config.deviceId)) {
+                widgetData = this.filterData(data, widget.config);
             }
 
             switch (widget.type) {
@@ -164,6 +164,12 @@ window.DashboardRenderer = {
                 case 'bandwidth':
                     this.updateBandwidth(container, widget, widgetData, index);
                     break;
+                case 'system_metrics':
+                    this.renderSystemMetrics(container, widget, widgetData, index);
+                    break;
+                case 'network_traffic':
+                    this.renderNetworkTraffic(container, widget, widgetData, index);
+                    break;
                 case 'trends':
                     // Silent update (already fetches internally)
                     this.renderResponseTrends(container, widget, widgetData, index);
@@ -185,8 +191,8 @@ window.DashboardRenderer = {
         try {
             // Apply filtering if configured
             let widgetData = data;
-            if (widget.config && widget.config.deviceType) {
-                widgetData = this.filterData(data, widget.config.deviceType);
+            if (widget.config && (widget.config.deviceType || widget.config.deviceId)) {
+                widgetData = this.filterData(data, widget.config);
             }
 
             switch (widget.type) {
@@ -227,6 +233,12 @@ window.DashboardRenderer = {
                 case 'bandwidth':
                     this.renderBandwidth(container, widget, widgetData, index);
                     break;
+                case 'system_metrics':
+                    this.renderSystemMetrics(container, widget, widgetData, index);
+                    break;
+                case 'network_traffic':
+                    this.renderNetworkTraffic(container, widget, widgetData, index);
+                    break;
                 default:
                     container.innerHTML = `<p class="text-muted">Unknown widget type: ${widget.type}</p>`;
             }
@@ -237,15 +249,25 @@ window.DashboardRenderer = {
     },
 
     /**
-     * Filter data by device type and recalculate statistics
+     * Filter data by device type or specific device ID and recalculate statistics
      */
-    filterData: function (originalData, deviceType) {
-        if (!deviceType) return originalData;
+    filterData: function (originalData, widgetConfig) {
+        if (!widgetConfig) return originalData;
+
+        const { deviceType, deviceId } = widgetConfig;
+        if (!deviceType && !deviceId) return originalData;
 
         // filter devices
-        const devices = (originalData.devices || []).filter(d =>
-            (d.device_type || 'other').toLowerCase() === deviceType.toLowerCase()
-        );
+        const devices = (originalData.devices || []).filter(d => {
+            if (deviceId) {
+                return String(d.id) === String(deviceId);
+            }
+            if (deviceType) {
+                return (d.device_type || 'other').toLowerCase() === deviceType.toLowerCase();
+            }
+            return true;
+        });
+
         const deviceIds = new Set(devices.map(d => d.id));
 
         // Filter connections
@@ -258,7 +280,7 @@ window.DashboardRenderer = {
             total_devices: devices.length,
             devices_up: devices.filter(d => d.status === 'up').length,
             devices_down: devices.filter(d => d.status === 'down').length,
-            devices_slow: devices.filter(d => d.status === 'slow' || (d.status === 'up' && parseFloat(d.response_time) > 500)).length,
+            devices_slow: devices.filter(d => d.status === 'slow').length,
             uptime_percentage: 0,
             average_response_time: 0
         };
@@ -302,7 +324,7 @@ window.DashboardRenderer = {
         container.appendChild(canvas);
 
         const ctx = canvas.getContext('2d');
-        const GAUGE_MAX = 500; // Aligned with SLOW_RESPONSE_THRESHOLD in config.py
+        const GAUGE_MAX = 2000; // Increased to accommodate higher website/server thresholds
         const value = data.stats ? (data.stats.average_response_time || 0) : 0;
 
         const gaugeNeedle = {
@@ -324,7 +346,7 @@ window.DashboardRenderer = {
 
                 // Ticks and Labels
                 const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-                const ticks = [0, 100, 250, 400, 500];
+                const ticks = [0, 200, 500, 1000, 2000];
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = isLight ? '#64748b' : '#94a3b8'; // Adjusted for better contrast
@@ -1205,7 +1227,7 @@ window.DashboardRenderer = {
         container.style.flexDirection = 'column';
 
         const devices = data.devices || [];
-        const alerts = devices.filter(d => d.status === 'down' || (d.status === 'up' && parseFloat(d.response_time) > 500));
+        const alerts = devices.filter(d => d.status === 'down' || d.status === 'slow');
 
         let html = `
             <div style="flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -1312,6 +1334,7 @@ window.DashboardRenderer = {
         this.instances[`widget_${index}`] = widget;
 
         const filterType = widget.config ? widget.config.deviceType : null;
+        const filterDeviceId = widget.config ? widget.config.deviceId : null;
         let contentArea = document.getElementById(`trend-content-${index}`);
 
         // Only render the structure if it's not already there
@@ -1346,7 +1369,10 @@ window.DashboardRenderer = {
             let requestMinutes = currentRange;
             if (currentRange <= 15) requestMinutes = 30;
             else if (currentRange <= 60) requestMinutes = 90;
-            const response = await fetch(`/api/statistics/trend?minutes=${requestMinutes}&_t=${Date.now()}`);
+            const url = filterDeviceId 
+                ? `/api/statistics/trend?minutes=${requestMinutes}&device_id=${filterDeviceId}&_t=${Date.now()}`
+                : `/api/statistics/trend?minutes=${requestMinutes}&_t=${Date.now()}`;
+            const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const trends = await response.json();
 
@@ -1380,46 +1406,27 @@ window.DashboardRenderer = {
 
             const datasets = {};
 
-            // Ensure empty datasets for all types if no filter
-            if (!filterType) {
-                Object.keys(this.typeMetadata).forEach(type => {
-                    const meta = this.typeMetadata[type];
-                    datasets[type] = {
-                        label: meta.name,
-                        data: [], // Use empty array to store {x,y} points
-                        borderColor: meta.color,
-                        backgroundColor: meta.color + '20',
-                        borderWidth: 2,
-                        tension: 0, // Jagged look
-                        fill: true,
-                        pointRadius: 1, // Ensure single points are visible
-                        spanGaps: true // Span gaps across the true timeline
-                    };
-                });
-            } else {
-                const meta = this.typeMetadata[filterType] || this.typeMetadata['other'];
-                datasets[filterType] = {
-                    label: meta.name,
-                    data: [],
-                    borderColor: meta.color,
-                    backgroundColor: meta.color + '20',
-                    borderWidth: 2,
-                    tension: 0,
-                    fill: true,
-                    pointRadius: 1,
-                    spanGaps: true
-                };
-            }
-
-            // Fill with actual data using {x, y} coordinate mapping
+            // Process data into datasets
             safeTrends.forEach(item => {
                 const type = item.device_type || 'other';
-                if (filterType && type !== filterType) return;
+                const dId = item.device_id;
+                const dName = item.device_name;
+                
+                // Filtering
+                if (filterDeviceId) {
+                    if (String(dId) !== String(filterDeviceId)) return;
+                } else if (filterType && type !== filterType) {
+                    return;
+                }
 
-                if (!datasets[type]) {
+                // Determine label and key
+                const datasetKey = filterDeviceId ? `dev_${dId}` : type;
+                const datasetLabel = filterDeviceId ? (dName || `Device ${dId}`) : (this.typeMetadata[type]?.name || type);
+
+                if (!datasets[datasetKey]) {
                     const meta = this.typeMetadata[type] || this.typeMetadata['other'];
-                    datasets[type] = {
-                        label: meta.name,
+                    datasets[datasetKey] = {
+                        label: datasetLabel,
                         data: Array(pointsToDisplay).fill(null),
                         borderColor: meta.color,
                         backgroundColor: meta.color + '20',
@@ -1453,7 +1460,7 @@ window.DashboardRenderer = {
                     if (closestIndex >= pointsToDisplay) closestIndex = pointsToDisplay - 1;
 
                     // Directly assign value to the mathematical array position instead of pushing categorical X strings
-                    datasets[type].data[closestIndex] = Math.round(item.avg_response_time);
+                    datasets[datasetKey].data[closestIndex] = Math.round(item.avg_response_time);
                 }
             });
 
@@ -1787,11 +1794,358 @@ window.DashboardRenderer = {
             </div>
         `;
     },
+    renderNetworkTraffic: async function (container, widget, data, index) {
+        const deviceId = widget.config ? widget.config.deviceId : null;
+        const ifIndex = widget.config ? widget.config.ifIndex : null;
+        const currentRange = this.instances[`nt_range_${index}`] || (widget.config ? widget.config.minutes : 60) || 60;
+        this.instances[`nt_range_${index}`] = currentRange;
+        this.instances[`widget_${index}`] = widget;
+
+        if (!deviceId) {
+            container.innerHTML = `<div class="flex-center" style="height:100%; flex-direction:column; gap:10px; color:var(--text-muted); font-size:0.9rem;"><i class="fas fa-exchange-alt" style="font-size:2rem;"></i><span>Please select a device in config</span></div>`;
+            return;
+        }
+
+        const device = data && data.devices ? data.devices.find(d => String(d.id) === String(deviceId)) : null;
+        if (!device && data) {
+            container.innerHTML = `<div class="flex-center" style="height:100%; color:var(--danger);">Device not found</div>`;
+            return;
+        }
+
+        // If we don't have device info yet (e.g. initial re-render without full data object)
+        // we'll try to proceed or wait for data.
+        const monitorType = device ? device.monitor_type : (widget.config ? widget.config.monitorType : 'ping');
+
+        let chartArea = document.getElementById(`nt-chart-${index}`);
+        if (!chartArea) {
+            container.style.height = '100%';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.overflow = 'hidden';
+            container.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 10px; flex-shrink: 0;">
+                    ${[15, 60, 180, 360, 1440].map(r => `
+                        <button class="btn btn-sm ${currentRange == r ? 'btn-primary' : 'btn-outline-secondary'}" 
+                                style="padding: 2px 8px; font-size: 0.75rem;"
+                                onclick="window.DashboardRenderer.setNetworkTrafficRange(${index}, ${r}, this)">
+                            ${r >= 1440 ? '24h' : r >= 360 ? '6h' : r >= 180 ? '3h' : r >= 60 ? '1h' : r + 'm'}
+                        </button>
+                    `).join('')}
+                </div>
+                <div id="nt-chart-${index}" style="flex: 1; position: relative; min-height: 0;">
+                    <canvas></canvas>
+                </div>
+            `;
+            chartArea = document.getElementById(`nt-chart-${index}`);
+        }
+
+        try {
+            let labels = [];
+            let inData = [];
+            let outData = [];
+
+            if (monitorType === 'snmp') {
+                if (ifIndex) {
+                    const response = await fetch(`/api/bandwidth/history?device_id=${deviceId}&if_index=${ifIndex}&minutes=${currentRange}&_t=${Date.now()}`);
+                    const history = await response.json();
+                    if (history.success && history.history) {
+                        labels = history.history.map(p => {
+                            const d = new Date((p.timestamp || p.sampled_at).replace(' ', 'T'));
+                            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        });
+                        inData = history.history.map(p => p.bps_in);
+                        outData = history.history.map(p => p.bps_out);
+                    }
+                } else {
+                    chartArea.innerHTML = `<div class="flex-center" style="height:100%; flex-direction:column; gap:8px; color:var(--text-muted); font-size:0.85rem;"><i class="fas fa-plug" style="font-size:1.5rem; opacity:0.5;"></i><span>Please select an interface in config</span></div>`;
+                    return;
+                }
+            } else {
+                 const hours = currentRange / 60;
+                 const response = await fetch(`/api/devices/${deviceId}/performance?hours=${hours}&_t=${Date.now()}`);
+                 const perfData = await response.json();
+                 const netIn = perfData.network_in || [];
+                 const netOut = perfData.network_out || [];
+                 labels = netIn.map(p => {
+                     const d = new Date((p.timestamp || p.checked_at).replace(' ', 'T'));
+                     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                 });
+                 inData = netIn.map(p => p.value);
+                 outData = netOut.map(p => p.value);
+            }
+
+            this.updateNetworkTrafficChart(`nt-chart-${index}`, labels, inData, outData, index);
+        } catch (e) {
+            console.error('Error loading NT data:', e);
+            if (chartArea) chartArea.innerHTML = `<div class="flex-center" style="height:100%; color:var(--danger); font-size:0.8rem;">Error loading data</div>`;
+        }
+    },
+
+    updateNetworkTrafficChart: function (containerId, labels, inData, outData, index) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        const canvas = container.querySelector('canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const existingChart = this.instances[`chart_nt_${index}`];
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const color = isDark ? '#ffffff' : '#4b5563';
+
+        if (existingChart) {
+            existingChart.data.labels = labels;
+            existingChart.data.datasets[0].data = inData;
+            existingChart.data.datasets[1].data = outData;
+            existingChart.options.scales.x.ticks.color = color;
+            existingChart.options.scales.y.ticks.color = color;
+            existingChart.update('none');
+        } else {
+            this.instances[`chart_nt_${index}`] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'IN',
+                            data: inData,
+                            borderColor: '#10b981',
+                            backgroundColor: '#10b98120',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'OUT',
+                            data: outData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: '#3b82f620',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            display: true, 
+                            position: 'top', 
+                            labels: { 
+                                boxWidth: 12, 
+                                font: { size: 10 },
+                                color: color
+                            } 
+                        },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        x: { 
+                            grid: { display: false },
+                            ticks: { font: { size: 9 }, color: color, maxTicksLimit: 6 }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(100,116,139,0.1)' },
+                            ticks: { 
+                                font: { size: 9 }, 
+                                color: color,
+                                callback: (val) => {
+                                    if (val >= 1000000) return (val/1000000).toFixed(1) + 'M';
+                                    if (val >= 1000) return (val/1000).toFixed(1) + 'K';
+                                    return val;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    },
+
+    setNetworkTrafficRange: function (index, range, btn) {
+        const parent = btn.parentElement;
+        parent.querySelectorAll('button').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-outline-secondary');
+        });
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-primary');
+
+        this.instances[`nt_range_${index}`] = range;
+        const widget = this.instances[`widget_${index}`];
+        const container = document.getElementById(`nt-chart-${index}`).parentElement; 
+
+        // Use a robust way to get current device data depending on if we are in builder or view
+        const data = (typeof cachedData !== 'undefined' && cachedData) ? cachedData : (typeof originalData !== 'undefined' ? originalData : { devices: [] });
+        this.renderNetworkTraffic(container, widget, data, index);
+    },
+
     clearInstances: function () {
         Object.values(this.instances).forEach(inst => {
             if (inst.destroy) inst.destroy();
         });
         this.instances = {};
+    },
+    renderSystemMetrics: async function (container, widget, data, index) {
+        const deviceId = widget.config ? widget.config.deviceId : null;
+        const currentRange = this.instances[`sys_range_${index}`] || (widget.config ? widget.config.minutes : 60) || 60;
+        this.instances[`sys_range_${index}`] = currentRange;
+        this.instances[`widget_${index}`] = widget;
+
+        if (!deviceId) {
+            container.innerHTML = `
+                <div class="flex-center" style="height: 100%; flex-direction: column; gap: 10px; color: var(--text-muted); font-size: 0.9rem;">
+                    <i class="fas fa-server" style="font-size: 2rem;"></i>
+                    <span>Please select a specific device in config</span>
+                </div>
+            `;
+            return;
+        }
+
+        let contentArea = document.getElementById(`sys-content-${index}`);
+        if (!contentArea) {
+            container.style.height = '100%';
+            container.style.display = 'flex';
+            container.style.flexDirection = 'column';
+            container.style.overflow = 'hidden';
+
+            container.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 10px; flex-shrink: 0;">
+                    ${[15, 60, 180, 360, 1440].map(r => `
+                        <button class="btn btn-sm ${currentRange == r ? 'btn-primary' : 'btn-outline-secondary'}" 
+                                style="padding: 2px 8px; font-size: 0.75rem;"
+                                onclick="window.DashboardRenderer.setSystemMetricsRange(${index}, ${r}, this)">
+                            ${r >= 1440 ? '24h' : r >= 360 ? '6h' : r >= 180 ? '3h' : r >= 60 ? '1h' : r + 'm'}
+                        </button>
+                    `).join('')}
+                </div>
+                <div id="sys-content-${index}" style="flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; min-height: 0;">
+                    <div class="sys-metric-box" style="position: relative; border: 1px solid var(--border-color); border-radius: 8px; padding: 5px; background: var(--bg-secondary); display: flex; flex-direction: column; box-shadow: var(--shadow-sm);">
+                        <div style="font-size: 0.65rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; text-align: center;">CPU (%)</div>
+                        <div id="sys-cpu-${index}" style="flex: 1; position: relative; min-height: 0;"></div>
+                    </div>
+                    <div class="sys-metric-box" style="position: relative; border: 1px solid var(--border-color); border-radius: 8px; padding: 5px; background: var(--bg-secondary); display: flex; flex-direction: column; box-shadow: var(--shadow-sm);">
+                        <div style="font-size: 0.65rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; text-align: center;">RAM (%)</div>
+                        <div id="sys-ram-${index}" style="flex: 1; position: relative; min-height: 0;"></div>
+                    </div>
+                    <div class="sys-metric-box" style="position: relative; border: 1px solid var(--border-color); border-radius: 8px; padding: 5px; background: var(--bg-secondary); display: flex; flex-direction: column; box-shadow: var(--shadow-sm);">
+                        <div style="font-size: 0.65rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; text-align: center;">Disk (%)</div>
+                        <div id="sys-disk-${index}" style="flex: 1; position: relative; min-height: 0;"></div>
+                    </div>
+                </div>
+            `;
+            contentArea = document.getElementById(`sys-content-${index}`);
+        }
+
+        try {
+            const hours = currentRange / 60;
+            const response = await fetch(`/api/devices/${deviceId}/performance?hours=${hours}&_t=${Date.now()}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const perfData = await response.json();
+
+            this.renderPerfChart(`sys-cpu-${index}`, 'CPU', perfData.cpu || [], '#10b981', `${index}_cpu`);
+            this.renderPerfChart(`sys-ram-${index}`, 'RAM', perfData.ram || [], '#6366f1', `${index}_ram`);
+            this.renderPerfChart(`sys-disk-${index}`, 'Disk', perfData.disk || [], '#f59e0b', `${index}_disk`);
+
+        } catch (e) {
+            console.error('Error loading metrics:', e);
+            if (contentArea) contentArea.innerHTML = `<div class="flex-center" style="grid-column: span 3; color: var(--danger); font-size: 0.8rem;">Error loading data</div>`;
+        }
+    },
+
+    renderPerfChart: function (containerId, label, points, color, instanceKey) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const labels = points.map(p => {
+            const dateStr = p.timestamp || p.checked_at || p.sampled_at;
+            if (!dateStr) return '';
+            const d = new Date(dateStr.replace(' ', 'T')); // Ensure ISO-ish for parsing
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        });
+        const values = points.map(p => p.value);
+
+        const existingChart = this.instances[`chart_${instanceKey}`];
+        
+        if (existingChart && container.querySelector('canvas')) {
+            existingChart.data.labels = labels;
+            existingChart.data.datasets[0].data = values;
+            existingChart.update('none');
+        } else {
+            container.innerHTML = '<canvas style="width: 100%; height: 100%;"></canvas>';
+            const ctx = container.querySelector('canvas').getContext('2d');
+            
+            if (existingChart) existingChart.destroy();
+
+            this.instances[`chart_${instanceKey}`] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: label,
+                        data: values,
+                        borderColor: color,
+                        backgroundColor: color + '15',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { mode: 'index', intersect: false } 
+                    },
+                    scales: {
+                        x: { 
+                            display: true,
+                            grid: { display: false },
+                            ticks: { 
+                                maxRotation: 0, 
+                                autoSkip: true, 
+                                maxTicksLimit: 4,
+                                font: { size: 10 },
+                                color: document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#4b5563'
+                            }
+                        },
+                        y: { 
+                            display: true,
+                            beginAtZero: true, 
+                            max: 100,
+                            grid: { color: 'rgba(100, 116, 139, 0.1)' },
+                            ticks: { 
+                                font: { size: 10 },
+                                color: document.documentElement.getAttribute('data-theme') === 'dark' ? '#ffffff' : '#4b5563',
+                                callback: function(value) { return value + '%'; },
+                                maxTicksLimit: 4
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    },
+
+    setSystemMetricsRange: function (index, range, btn) {
+        const parent = btn.parentElement;
+        parent.querySelectorAll('button').forEach(b => {
+            b.classList.remove('btn-primary');
+            b.classList.add('btn-outline-secondary');
+        });
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-primary');
+
+        this.instances[`sys_range_${index}`] = range;
+        const widget = this.instances[`widget_${index}`];
+        const container = document.getElementById(`sys-content-${index}`).parentElement; 
+        this.renderSystemMetrics(container, widget, null, index);
     }
 };
 
@@ -1810,6 +2164,7 @@ function getWidgetDefaultTitle(type) {
         case 'alerts': return 'Active Alerts';
         case 'activity': return 'Recent Activity';
         case 'bandwidth': return 'Top Bandwidth';
+        case 'network_traffic': return 'Network Traffic';
         default: return 'Widget';
     }
 }

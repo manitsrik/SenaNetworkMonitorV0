@@ -236,19 +236,21 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.4); /* Slightly lighter overlay */
         z-index: 1000;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(4px); /* Modern blur effect */
     }
 
     .modal-content {
         background: var(--bg-secondary);
         padding: 2rem;
-        border-radius: 1rem;
-        width: 400px;
-        max-width: 90%;
-        box-shadow: var(--shadow-lg);
+        border-radius: 12px;
+        width: 480px; /* Slightly wider */
+        max-width: 95%;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        border: 1px solid var(--border-color);
     }
 </style>
 {% endblock %}
@@ -259,6 +261,13 @@
     <div class="sidebar-builder">
         <h3 style="margin-bottom: 1.5rem;">Widgets</h3>
         <div class="widget-palette">
+            <div class="widget-item" onclick="addWidget('network_traffic')">
+                <i class="fas fa-exchange-alt"></i>
+                <div>
+                    <div style="font-weight: 500; color: var(--primary);">Network Traffic (NEW)</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">In/Out bps (SNMP/Agent)</div>
+                </div>
+            </div>
             <div class="widget-item" onclick="addWidget('gauge')">
                 <i class="fas fa-tachometer-alt"></i>
                 <div>
@@ -287,6 +296,14 @@
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Metric History</div>
                 </div>
             </div>
+            <div class="widget-item" onclick="addWidget('system_metrics')">
+                <i class="fas fa-server"></i>
+                <div>
+                    <div style="font-weight: 500;">System Performance</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">CPU, RAM, Disk (Agent)</div>
+                </div>
+            </div>
+
             <div class="widget-item" onclick="addWidget('stat_card')">
                 <i class="fas fa-square"></i>
                 <div>
@@ -343,6 +360,7 @@
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Top Traffic Interfaces</div>
                 </div>
             </div>
+
         </div>
 
         <!-- Variables Section -->

@@ -12,9 +12,23 @@ import time
 import requests
 from urllib.parse import urlparse
 import asyncio
-import ssl
 import socket
 import threading
+import sys
+import ssl
+
+# Remote monitoring imports
+try:
+    import paramiko
+    SSH_AVAILABLE = True
+except ImportError:
+    SSH_AVAILABLE = False
+
+try:
+    import winrm
+    WINRM_AVAILABLE = True
+except ImportError:
+    WINRM_AVAILABLE = False
 
 # SNMP imports
 try:
@@ -80,7 +94,7 @@ class NetworkMonitor:
                 # Calculate average response time in milliseconds
                 avg_time = response.rtt_avg_ms
                 # Check if response time is slow
-                status = 'slow' if avg_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
+                status = 'slow' if avg_time > Config.MONITOR_THRESHOLDS.get('ping', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
                 return {
                     'status': status,
                     'response_time': round(avg_time, 2)
@@ -121,7 +135,7 @@ class NetworkMonitor:
             
             if result == 0:
                 # Port is open
-                status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
+                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('tcp', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
                 return {
                     'status': status,
                     'response_time': round(response_time, 2)
@@ -167,7 +181,7 @@ class NetworkMonitor:
             resolved_ip = str(answers[0]) if answers else None
             
             # Determine status based on response time
-            status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
+            status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('dns', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
             print(f"DNS OK for {dns_server}: query={query_domain}, resolved={resolved_ip}, response={round(response_time, 2)}ms")
             
             return {
@@ -375,7 +389,7 @@ class NetworkMonitor:
             # Check if status code matches expected
             if response.status_code == expected_status_code:
                 # Check if response time is slow
-                status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
+                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('http', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
             else:
                 status = 'down'
             
@@ -682,7 +696,7 @@ class NetworkMonitor:
                 }
             
             # Determine status based on response time
-            status = 'slow' if response_time > Config.SLOW_RESPONSE_THRESHOLD else 'up'
+            status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('snmp', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
             
             print(f"SNMP OK for {ip_address} (v{version}): sysname={snmp_data['sysname']}, uptime={snmp_data['uptime']}, response={round(response_time, 2)}ms")
             
@@ -707,6 +721,149 @@ class NetworkMonitor:
                 'syslocation': None,
                 'syscontact': None
             }
+
+    def check_ssh(self, ip_address, username, password, port=22):
+        """
+        Check a Linux device via SSH and return status and system metrics
+        Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
+        """
+        if not SSH_AVAILABLE:
+            return {'status': 'down', 'response_time': None, 'error': 'Paramiko not installed'}
+        
+        start_time = time.time()
+        result = {'cpu': None, 'ram': None, 'disk': None, 'net_in': None, 'net_out': None}
+        
+        def _ssh_task():
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                client.connect(ip_address, port=int(port), username=username, password=password, timeout=10)
+                
+                # Get CPU Usage (1 min load average vs cores)
+                _, stdout, _ = client.exec_command("grep -c ^processor /proc/cpuinfo && uptime")
+                out = stdout.read().decode().strip().split('\n')
+                cores = int(out[0]) if out[0].isdigit() else 1
+                load = float(out[1].split('load average:')[1].split(',')[0].strip())
+                result['cpu'] = min(100.0, round((load / cores) * 100, 2))
+                
+                # Get RAM Usage
+                _, stdout, _ = client.exec_command("free -m | grep Mem")
+                out = stdout.read().decode().strip().split()
+                # Mem: total used free shared buff/cache available
+                total_ram = int(out[1])
+                used_ram = int(out[2])
+                result['ram'] = round((used_ram / total_ram) * 100, 2)
+                
+                # Get Disk Usage (Root partition)
+                _, stdout, _ = client.exec_command("df -h / | tail -1")
+                out = stdout.read().decode().strip().split()
+                # Filesystem Size Used Avail Use% Mounted
+                result['disk'] = float(out[4].replace('%', ''))
+                
+                # Get Network Traffic (Total excluding loopback)
+                _, stdout, _ = client.exec_command("cat /proc/net/dev | awk 'NR>2 && $1 != \"lo:\" {i+=$2; o+=$10} END {print i, o}'")
+                out = stdout.read().decode().strip().split()
+                if len(out) >= 2:
+                    result['net_in'] = int(out[0])
+                    result['net_out'] = int(out[1])
+                
+                client.close()
+                return True
+            except Exception as e:
+                print(f"[SSH] Error connecting to {ip_address}: {e}")
+                if client: client.close()
+                return False
+
+        try:
+            success = tpool.execute(_ssh_task)
+            response_time = (time.time() - start_time) * 1000
+            
+            if success:
+                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('ssh', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                return {
+                    'status': status,
+                    'response_time': round(response_time, 2),
+                    'cpu': result['cpu'],
+                    'ram': result['ram'],
+                    'disk': result['disk'],
+                    'net_in': result['net_in'],
+                    'net_out': result['net_out']
+                }
+            else:
+                return {'status': 'down', 'response_time': None}
+        except Exception as e:
+            print(f"[SSH] Task execution failed for {ip_address}: {e}")
+            return {'status': 'down', 'response_time': None}
+
+    def check_winrm(self, ip_address, username, password):
+        """
+        Check a Windows device via WinRM and return status and system metrics
+        Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
+        """
+        if not WINRM_AVAILABLE:
+            return {'status': 'down', 'response_time': None, 'error': 'pywinrm not installed'}
+            
+        start_time = time.time()
+        result = {'cpu': None, 'ram': None, 'disk': None, 'net_in': None, 'net_out': None}
+        
+        def _winrm_task():
+            try:
+                # Use NTLM or basic auth over HTTP/HTTPS
+                # For lab environments, we often use transport='ntlm' or 'basic'
+                session = winrm.Session(ip_address, auth=(username, password), transport='ntlm', server_cert_validation='ignore')
+                
+                # Get CPU Usage
+                ps_cpu = "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average"
+                r = session.run_ps(ps_cpu)
+                if r.status_code == 0:
+                    result['cpu'] = float(r.std_out.decode().strip())
+                
+                # Get RAM Usage
+                ps_ram = "$m = Get-WmiObject Win32_OperatingSystem; [math]::Round((($m.TotalVisibleMemorySize - $m.FreePhysicalMemory) / $m.TotalVisibleMemorySize) * 100, 2)"
+                r = session.run_ps(ps_ram)
+                if r.status_code == 0:
+                    result['ram'] = float(r.std_out.decode().strip())
+                    
+                # Get Disk Usage (C: Drive)
+                ps_disk = "$d = Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\"; [math]::Round((($d.Size - $d.FreeSpace) / $d.Size) * 100, 2)"
+                r = session.run_ps(ps_disk)
+                if r.status_code == 0:
+                    result['disk'] = float(r.std_out.decode().strip())
+                
+                # Get Network Traffic (Sum of all adapters) - Using more universal WMI class
+                ps_net = "$n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface; $in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; $out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; \"$in $out\""
+                r = session.run_ps(ps_net)
+                if r.status_code == 0:
+                    parts = r.std_out.decode().strip().split()
+                    if len(parts) >= 2:
+                        result['net_in'] = int(parts[0])
+                        result['net_out'] = int(parts[1])
+                
+                return True
+            except Exception as e:
+                print(f"[WinRM] Error connecting to {ip_address}: {e}")
+                return False
+
+        try:
+            success = tpool.execute(_winrm_task)
+            response_time = (time.time() - start_time) * 1000
+            
+            if success:
+                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('winrm', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                return {
+                    'status': status,
+                    'response_time': round(response_time, 2),
+                    'cpu': result['cpu'],
+                    'ram': result['ram'],
+                    'disk': result['disk'],
+                    'net_in': result['net_in'],
+                    'net_out': result['net_out']
+                }
+            else:
+                return {'status': 'down', 'response_time': None}
+        except Exception as e:
+            print(f"[WinRM] Task execution failed for {ip_address}: {e}")
+            return {'status': 'down', 'response_time': None}
     
     def check_device(self, device):
         """
@@ -745,12 +902,38 @@ class NetworkMonitor:
                 snmp_v3_priv_protocol=device.get('snmp_v3_priv_protocol', 'AES128'),
                 snmp_v3_priv_password=device.get('snmp_v3_priv_password')
             )
+        elif monitor_type == 'ssh':
+            result = self.check_ssh(
+                device['ip_address'], 
+                device.get('ssh_username'), 
+                device.get('ssh_password'),
+                device.get('ssh_port', 22)
+            )
+        elif monitor_type == 'winrm' or monitor_type == 'wmi':
+            result = self.check_winrm(
+                device['ip_address'], 
+                device.get('wmi_username'), 
+                device.get('wmi_password')
+            )
+        elif monitor_type == 'tcp':
+            tcp_port = device.get('tcp_port', 80)
+            result = self.check_tcp_port(device['ip_address'], tcp_port)
+        elif monitor_type == 'dns':
+            query_domain = device.get('dns_query_domain', 'google.com')
+            result = self.check_dns(device['ip_address'], query_domain)
+        else:
+            result = self.ping_device(device['ip_address'])
             
-            # Auto-query custom OIDs if device is reachable
-            if result.get('status') != 'down':
+        # Post-check logic (Specific handling for metrics and extra info)
+        if result.get('status') != 'down':
+            # 1. Custom OIDs (SNMP only)
+            if monitor_type == 'snmp':
                 try:
                     custom_oids = self.db.get_custom_oids(device['id'])
                     if custom_oids:
+                        community = device.get('snmp_community', Config.SNMP_DEFAULT_COMMUNITY)
+                        port = device.get('snmp_port', Config.SNMP_DEFAULT_PORT)
+                        version = device.get('snmp_version', Config.SNMP_DEFAULT_VERSION)
                         oid_results = self.query_custom_oids(
                             device['ip_address'], community, port, version,
                             snmp_v3_username=device.get('snmp_v3_username'),
@@ -764,14 +947,55 @@ class NetworkMonitor:
                             self.db.update_custom_oid_value(r['id'], r.get('value', ''))
                 except Exception as e:
                     print(f"[Custom OID] Error querying OIDs for {device['name']}: {e}")
-        elif monitor_type == 'tcp':
-            tcp_port = device.get('tcp_port', 80)
-            result = self.check_tcp_port(device['ip_address'], tcp_port)
-        elif monitor_type == 'dns':
-            query_domain = device.get('dns_query_domain', 'google.com')
-            result = self.check_dns(device['ip_address'], query_domain)
-        else:
-            result = self.ping_device(device['ip_address'])
+            
+            # 2. System Metrics (SSH/WinRM/WMI only)
+            if monitor_type in ['ssh', 'winrm', 'wmi']:
+                try:
+                    # Calculate Bandwidth BPS
+                    net_in_bps = None
+                    net_out_bps = None
+                    
+                    raw_in = result.get('net_in')
+                    raw_out = result.get('net_out')
+                    
+                    prev_in = device.get('last_network_in')
+                    prev_out = device.get('last_network_out')
+                    prev_time_str = device.get('last_metrics_time')
+                    
+                    if raw_in is not None and raw_out is not None and prev_in is not None and prev_out is not None and prev_time_str:
+                        try:
+                            # Parse last metrics time
+                            # Handle different timestamp formats (PostgreSQL vs SQLite)
+                            if ' ' in prev_time_str:
+                                prev_time = datetime.strptime(prev_time_str.split('.')[0], '%Y-%m-%d %H:%M:%S')
+                            else:
+                                prev_time = datetime.fromisoformat(prev_time_str.replace('Z', '+00:00'))
+                            
+                            elapsed = (datetime.now() - prev_time).total_seconds()
+                            
+                            if elapsed > 0:
+                                # Convert bytes delta to bits per second
+                                # Handle counter wrap-around (basic check)
+                                delta_in = raw_in - prev_in if raw_in >= prev_in else raw_in
+                                delta_out = raw_out - prev_out if raw_out >= prev_out else raw_out
+                                
+                                net_in_bps = (delta_in * 8) / elapsed
+                                net_out_bps = (delta_out * 8) / elapsed
+                        except Exception as e:
+                            print(f"[METRICS] Error calculating BPS for {device['name']}: {e}")
+
+                    self.db.update_system_metrics(
+                        device['id'],
+                        cpu=result.get('cpu'),
+                        ram=result.get('ram'),
+                        disk=result.get('disk'),
+                        network_in=net_in_bps,
+                        network_out=net_out_bps,
+                        raw_in=raw_in,
+                        raw_out=raw_out
+                    )
+                except Exception as e:
+                    print(f"[METRICS] Error updating metrics for {device['name']}: {e}")
         
         # ==== Consecutive Failure Threshold Logic ====
         raw_status = result['status']

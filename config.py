@@ -29,7 +29,7 @@ class Config:
     PG_POOL_MAX = int(os.environ.get('PG_POOL_MAX') or 30)  # Increased from 15 to handle concurrent monitoring and API headroom
     
     # Monitoring settings
-    PING_INTERVAL = 30  # seconds between ping checks
+    PING_INTERVAL = 60  # seconds between ping checks
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
     MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 12)  # parallel workers
@@ -44,8 +44,20 @@ class Config:
     HTTP_USER_AGENT = 'NetworkMonitor/1.0'
     VERIFY_SSL = True  # Verify SSL certificates
     
-    # Response time thresholds
-    SLOW_RESPONSE_THRESHOLD = 500  # milliseconds - response time above this is considered slow
+    # Response time thresholds (ms) per monitor type
+    MONITOR_THRESHOLDS = {
+        'ping': 200,      # Faster for local network
+        'website': 2000,  # Web apps typically have higher latency
+        'http': 2000,
+        'tcp': 500,       # Port checks should be fast
+        'dns': 500,       # DNS lookups should be fast
+        'snmp': 2000,     # SNMP queries are slightly heavier
+        'ssh': 5000,      # Agent checks are heavy
+        'winrm': 5000,    # WinRM/PowerShell is heaviest
+    }
+    
+    # Default fallback threshold
+    DEFAULT_SLOW_THRESHOLD = 500
     
     # SSL Certificate settings
     SSL_WARNING_DAYS = 30  # Days before expiry to show warning

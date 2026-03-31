@@ -100,7 +100,7 @@ function addWidget(type) {
         let defaultWidth = 4;
         if (type === 'stat_row') {
             defaultWidth = 12;
-        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie' || type === 'bandwidth') {
+        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie' || type === 'bandwidth' || type === 'system_metrics' || type === 'network_traffic') {
             defaultWidth = 6;
         }
 
@@ -324,6 +324,8 @@ function getWidgetDefaultTitleLocal(type) {
         case 'activity': return 'Recent Activity';
         case 'device_pie': return 'Device Status Summary';
         case 'bandwidth': return 'Top Bandwidth';
+        case 'system_metrics': return 'System Performance';
+        case 'network_traffic': return 'Network Traffic';
         default: return 'Widget';
     }
 }
@@ -352,10 +354,25 @@ function configureWidget(index) {
             <label style="display:block; margin-bottom: 0.5rem;">Widget Title</label>
             <input type="text" id="config-title" class="form-input" value="${widget.title || ''}" placeholder="Enter title...">
         </div>
+    `;
+
+    // 2. Filter Configuration
+    const currentMode = (widget.config && widget.config.deviceId) ? 'device' : (widget.config && widget.config.deviceType) ? 'type' : 'all';
+    
+    html += `
         <div class="form-group" style="margin-bottom: 1rem;">
-            <label style="display:block; margin-bottom: 0.5rem;">Filter by Device Type</label>
+            <label style="display:block; margin-bottom: 0.5rem;">Filter Mode</label>
+            <select id="config-filter-mode" class="form-input" onchange="toggleFilterMode(this.value)">
+                <option value="all" ${currentMode === 'all' ? 'selected' : ''}>No Filter (All Devices)</option>
+                <option value="type" ${currentMode === 'type' ? 'selected' : ''}>Filter by Device Type</option>
+                <option value="device" ${currentMode === 'device' ? 'selected' : ''}>Filter by Specific Device</option>
+            </select>
+        </div>
+
+        <div id="filter-type-field" style="display: ${currentMode === 'type' ? 'block' : 'none'}; margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem;">Select Device Type</label>
             <select id="config-device-type" class="form-input">
-                <option value="">All Devices (No Filter)</option>
+                <option value="">-- Select Type --</option>
     `;
 
     const Renderer = window.DashboardRenderer || DashboardRenderer;
@@ -364,6 +381,23 @@ function configureWidget(index) {
         const selected = (widget.config && widget.config.deviceType === type) ? 'selected' : '';
         html += `<option value="${type}" ${selected}>${meta.name || type}</option>`;
     });
+
+    html += `
+            </select>
+        </div>
+
+        <div id="filter-device-field" style="display: ${currentMode === 'device' ? 'block' : 'none'}; margin-bottom: 1rem;">
+            <label style="display:block; margin-bottom: 0.5rem;">Select Specific Device</label>
+            <select id="config-device-id" class="form-input">
+                <option value="">-- Select Device --</option>
+    `;
+
+    if (cachedData && cachedData.devices) {
+        cachedData.devices.forEach(d => {
+            const selected = (widget.config && String(widget.config.deviceId) === String(d.id)) ? 'selected' : '';
+            html += `<option value="${d.id}" ${selected}>${d.name} (${d.ip_address})</option>`;
+        });
+    }
 
     html += `</select></div>`;
 
@@ -413,6 +447,60 @@ function configureWidget(index) {
         }, 100);
     }
 
+    // Special config for System Metrics, Response Trends, or Network Traffic
+    if (widget.type === 'system_metrics' || widget.type === 'trends' || widget.type === 'network_traffic') {
+        const range = (widget.config && widget.config.minutes) || 60;
+        html += `
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom: 0.5rem;">Default Time Range</label>
+                <select id="config-minutes" class="form-input">
+                    <option value="15" ${range == 15 ? 'selected' : ''}>15 Minutes</option>
+                    <option value="60" ${range == 60 ? 'selected' : ''}>1 Hour</option>
+                    <option value="180" ${range == 180 ? 'selected' : ''}>3 Hours</option>
+                    <option value="360" ${range == 360 ? 'selected' : ''}>6 Hours</option>
+                    <option value="720" ${range == 720 ? 'selected' : ''}>12 Hours</option>
+                    <option value="1440" ${range == 1440 ? 'selected' : ''}>24 Hours</option>
+                </select>
+            </div>
+        `;
+
+        if (widget.type === 'network_traffic') {
+            const selectedIfIdx = (widget.config && widget.config.ifIndex) || '';
+            const selectedDevId = (widget.config && widget.config.deviceId) || '';
+
+            html += `
+                <div id="nt-interface-container" style="display: none; border: 1px dashed var(--border-color); padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label style="display:block; margin-bottom: 0.5rem;">Select SNMP Interface</label>
+                        <select id="config-nt-interface" class="form-input">
+                            <option value="">-- Select Interface --</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="nt-agent-info" style="display: none; border: 1px solid var(--primary); padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; background: rgba(16, 185, 129, 0.05);">
+                    <i class="fas fa-info-circle"></i> This device uses <strong>Agent (WinRM/SSH)</strong>. Total network traffic will be displayed.
+                </div>
+            `;
+
+            // Initial load if device already selected
+            setTimeout(() => {
+                const devSelector = document.getElementById('config-device-id');
+                if (devSelector) {
+                    devSelector.onchange = (e) => handleNetworkDeviceChange(e.target.value);
+                    if (selectedDevId) handleNetworkDeviceChange(selectedDevId, selectedIfIdx);
+                }
+            }, 100);
+        }
+
+        if (widget.type === 'system_metrics') {
+            html += `
+                <div class="alert alert-info" style="font-size: 0.8rem; padding: 10px; margin-bottom: 1rem; border: 1px solid var(--primary); border-radius: 4px; background: rgba(16, 185, 129, 0.1);">
+                    <i class="fas fa-info-circle"></i> Requires direct device agent (WinRM/SSH) or SNMP performance monitoring.
+                </div>
+            `;
+        }
+    }
+
     // Add layout controls (width and height)
     html += `
         <div style="display: flex; gap: 1rem; margin-top: 1rem;">
@@ -441,7 +529,6 @@ function saveWidgetConfig() {
 
     const widget = currentLayout[configuringIndex];
     const newTitle = document.getElementById('config-title').value;
-    const newType = document.getElementById('config-device-type').value;
     const newWidth = parseInt(document.getElementById('config-width').value);
     const newHeight = parseInt(document.getElementById('config-height').value);
 
@@ -454,7 +541,17 @@ function saveWidgetConfig() {
     delete widget.height;
     
     widget.config = widget.config || {};
-    widget.config.deviceType = newType || null;
+    
+    // Clear old filter settings first
+    delete widget.config.deviceType;
+    delete widget.config.deviceId;
+
+    const filterMode = document.getElementById('config-filter-mode').value;
+    if (filterMode === 'type') {
+        widget.config.deviceType = document.getElementById('config-device-type').value || null;
+    } else if (filterMode === 'device') {
+        widget.config.deviceId = document.getElementById('config-device-id').value || null;
+    }
 
     if (widget.type === 'bandwidth') {
         const mode = document.getElementById('config-bw-mode').value;
@@ -468,9 +565,29 @@ function saveWidgetConfig() {
         }
     }
 
+    if (widget.type === 'system_metrics' || widget.type === 'trends' || widget.type === 'network_traffic') {
+        const mins = document.getElementById('config-minutes');
+        if (mins) widget.config.minutes = parseInt(mins.value);
+
+        if (widget.type === 'network_traffic') {
+            const ifaceSelector = document.getElementById('config-nt-interface');
+            if (ifaceSelector && ifaceSelector.offsetParent !== null) {
+                widget.config.ifIndex = ifaceSelector.value;
+            } else {
+                delete widget.config.ifIndex; // Agent mode
+            }
+        }
+    }
+
     renderGrid();
     closeModal();
 }
+
+// Filter Mode Toggling
+window.toggleFilterMode = function(val) {
+    document.getElementById('filter-type-field').style.display = (val === 'type') ? 'block' : 'none';
+    document.getElementById('filter-device-field').style.display = (val === 'device') ? 'block' : 'none';
+};
 
 // Bandwidth Customization Helpers (Global scope)
 window.toggleBwConfig = function(mode) {
@@ -501,6 +618,41 @@ window.loadBwInterfaces = function(deviceId, selectedIfIndex = null) {
         .catch(() => {
             selector.innerHTML = '<option value="">Fetch failed</option>';
         });
+};
+
+window.handleNetworkDeviceChange = function(deviceId, selectedIfIndex = null) {
+    if (!deviceId || !cachedData) return;
+    const device = cachedData.devices.find(d => String(d.id) === String(deviceId));
+    const ifContainer = document.getElementById('nt-interface-container');
+    const agentInfo = document.getElementById('nt-agent-info');
+
+    if (!device) return;
+
+    if (device.monitor_type === 'snmp') {
+        if (ifContainer) ifContainer.style.display = 'block';
+        if (agentInfo) agentInfo.style.display = 'none';
+        
+        // Load interfaces
+        const selector = document.getElementById('config-nt-interface');
+        if (selector) {
+            selector.innerHTML = '<option value="">Loading...</option>';
+            fetch(`/api/bandwidth/interfaces?device_id=${deviceId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.interfaces) {
+                        let html = '<option value="">-- Select Interface --</option>';
+                        data.interfaces.forEach(iface => {
+                            const sel = (selectedIfIndex && String(selectedIfIndex) === String(iface.if_index)) ? 'selected' : '';
+                            html += `<option value="${iface.if_index}" ${sel}>${iface.if_name} (${(iface.if_speed/1000000).toFixed(0)} Mbps)</option>`;
+                        });
+                        selector.innerHTML = html;
+                    }
+                });
+        }
+    } else {
+        if (ifContainer) ifContainer.style.display = 'none';
+        if (agentInfo) agentInfo.style.display = 'block';
+    }
 };
 
 // Save As Template

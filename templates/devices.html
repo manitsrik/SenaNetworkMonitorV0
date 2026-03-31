@@ -170,6 +170,8 @@
                     <option value="tcp">TCP Port</option>
                     <option value="dns">DNS Query</option>
                     <option value="snmp">SNMP</option>
+                    <option value="ssh">SSH (Linux Metrics)</option>
+                    <option value="winrm">WinRM (Windows Metrics)</option>
                 </select>
             </div>
 
@@ -275,6 +277,36 @@
                     </div>
                     <small style="color: var(--text-muted); font-size: 0.8rem;">💡 authPriv = Auth + Encryption |
                         authNoPriv = Auth only | noAuthNoPriv = Username only</small>
+                </div>
+            </div>
+
+            <!-- SSH Settings (hidden by default) -->
+            <div id="ssh-settings" style="display: none;">
+                <h4 style="margin: 0.5rem 0; color: var(--primary); font-size: 0.95rem;">🐧 SSH Credentials</h4>
+                <div class="form-group">
+                    <label class="form-label" for="ssh-username">Username *</label>
+                    <input type="text" id="ssh-username" class="form-input" placeholder="e.g., core">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ssh-password">Password *</label>
+                    <input type="password" id="ssh-password" class="form-input" placeholder="e.g., password123">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="ssh-port">SSH Port</label>
+                    <input type="number" id="ssh-port" class="form-input" value="22" placeholder="22">
+                </div>
+            </div>
+
+            <!-- WinRM Settings (hidden by default) -->
+            <div id="winrm-settings" style="display: none;">
+                <h4 style="margin: 0.5rem 0; color: var(--primary); font-size: 0.95rem;">🪟 WinRM Credentials</h4>
+                <div class="form-group">
+                    <label class="form-label" for="winrm-username">Username *</label>
+                    <input type="text" id="winrm-username" class="form-input" placeholder="e.g., Administrator">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="winrm-password">Password *</label>
+                    <input type="password" id="winrm-password" class="form-input" placeholder="e.g., password123">
                 </div>
             </div>
 
@@ -631,6 +663,61 @@
                     Cancel
                 </button>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Performance Metrics Modal -->
+<div id="performance-modal" class="modal">
+    <div class="modal-content" style="max-width: 1000px;">
+        <div class="modal-header">
+            <h3>📊 Performance Metrics - <span id="perf-device-name"></span></h3>
+            <button class="modal-close" onclick="closePerformanceModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <!-- Period Selection -->
+            <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem;">
+                <button class="btn btn-xs btn-outline-secondary perf-period-btn" onclick="setPerfPeriod(1, this)">1h</button>
+                <button class="btn btn-xs btn-primary perf-period-btn" onclick="setPerfPeriod(6, this)">6h</button>
+                <button class="btn btn-xs btn-outline-secondary perf-period-btn" onclick="setPerfPeriod(12, this)">12h</button>
+                <button class="btn btn-xs btn-outline-secondary perf-period-btn" onclick="setPerfPeriod(24, this)">24h</button>
+                <button class="btn btn-xs btn-outline-secondary perf-period-btn" onclick="setPerfPeriod(168, this)">7d</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; margin-bottom: 1.5rem;">
+                <!-- CPU Chart -->
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="margin-bottom: 0.75rem; text-align: center; font-size: 1rem; color: var(--text);">CPU Usage (%)</h4>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="cpu-chart"></canvas>
+                    </div>
+                </div>
+                <!-- RAM Chart -->
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="margin-bottom: 0.75rem; text-align: center; font-size: 1rem; color: var(--text);">RAM Usage (%)</h4>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="ram-chart"></canvas>
+                    </div>
+                </div>
+                <!-- Disk Chart -->
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="margin-bottom: 0.75rem; text-align: center; font-size: 1rem; color: var(--text);">Disk Usage (%)</h4>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="disk-chart"></canvas>
+                    </div>
+                </div>
+                <!-- Network Traffic Chart -->
+                <div class="card" style="padding: 1.25rem;">
+                    <h4 style="margin-bottom: 0.75rem; text-align: center; font-size: 1rem; color: var(--text);">Network Traffic</h4>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="network-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" onclick="closePerformanceModal()" style="width: 100%;">
+                Close
+            </button>
         </div>
     </div>
 </div>

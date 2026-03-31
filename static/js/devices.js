@@ -85,6 +85,8 @@ function updateDevicesTable(devices) {
     tbody.innerHTML = devices.map(device => {
         const locTypeIcon = locationTypeIcons[device.location_type] || '🏠';
         const locTypeLabel = locationTypeLabels[device.location_type] || 'On-Premise';
+        const isAgentMonitored = ['ssh', 'winrm', 'wmi'].includes(device.monitor_type);
+        
         return `
         <tr class="fade-in">
             <td>
@@ -113,9 +115,14 @@ function updateDevicesTable(devices) {
                     <button class="btn btn-sm" style="background: var(--success); color: white; padding: 0.25rem 0.5rem;" onclick="showDeviceGraph(${device.id})" title="Response Time Graph">
                         📈
                     </button>
+                    ${isAgentMonitored ? `
+                    <button class="btn btn-sm" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem;" onclick="showPerformanceMetrics(${device.id})" title="Performance Metrics">
+                        📊
+                    </button>
+                    ` : ''}
                     ${device.monitor_type === 'snmp' ? `
                     <button class="btn btn-sm" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem;" onclick="showSnmpDetails(${device.id})" title="SNMP Details">
-                        📊
+                        🖥️
                     </button>
                     ` : ''}
                     ${device.monitor_type === 'http' && device.ip_address.startsWith('https') ? `
@@ -397,12 +404,16 @@ function updateIPFieldLabel() {
     const tcpSettings = document.getElementById('tcp-settings');
     const dnsSettings = document.getElementById('dns-settings');
     const httpSettings = document.getElementById('http-settings');
+    const sshSettings = document.getElementById('ssh-settings');
+    const winrmSettings = document.getElementById('winrm-settings');
 
     // Hide all optional settings first
     snmpSettings.style.display = 'none';
     tcpSettings.style.display = 'none';
     dnsSettings.style.display = 'none';
     httpSettings.style.display = 'none';
+    sshSettings.style.display = 'none';
+    winrmSettings.style.display = 'none';
 
     if (monitorType === 'http') {
         ipLabel.textContent = 'URL *';
@@ -429,6 +440,18 @@ function updateIPFieldLabel() {
         ipInput.removeAttribute('pattern');
         ipHint.textContent = 'Enter DNS server IP address to test';
         dnsSettings.style.display = 'block';
+    } else if (monitorType === 'ssh') {
+        ipLabel.textContent = 'IP Address *';
+        ipInput.placeholder = 'e.g., 192.168.1.1';
+        ipInput.removeAttribute('pattern');
+        ipHint.textContent = 'Enter IP address for SSH monitoring';
+        sshSettings.style.display = 'block';
+    } else if (monitorType === 'winrm') {
+        ipLabel.textContent = 'IP Address *';
+        ipInput.placeholder = 'e.g., 192.168.1.1';
+        ipInput.removeAttribute('pattern');
+        ipHint.textContent = 'Enter IP address for WinRM monitoring';
+        winrmSettings.style.display = 'block';
     } else {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
@@ -503,6 +526,15 @@ async function editDevice(deviceId) {
             document.getElementById('device-latitude').value = device.latitude || '';
             document.getElementById('device-longitude').value = device.longitude || '';
             document.getElementById('device-enabled').checked = !!device.is_enabled;
+
+            // Load SSH settings
+            document.getElementById('ssh-username').value = device.ssh_username || '';
+            document.getElementById('ssh-password').value = device.ssh_password || '';
+            document.getElementById('ssh-port').value = device.ssh_port || 22;
+
+            // Load WinRM (WMI) settings
+            document.getElementById('winrm-username').value = device.wmi_username || '';
+            document.getElementById('winrm-password').value = device.wmi_password || '';
 
             // Load parent device
             populateParentDeviceDropdown(deviceId);
@@ -603,6 +635,19 @@ async function saveDevice(event) {
         // Add expected status code if HTTP monitor type is selected
         if (monitorType === 'http') {
             deviceData.expected_status_code = parseInt(getElementValue('expected-status-code', '200')) || 200;
+        }
+
+        // Add SSH credentials if SSH monitor type is selected
+        if (monitorType === 'ssh') {
+            deviceData.ssh_username = getElementValue('ssh-username', '');
+            deviceData.ssh_password = getElementValue('ssh-password', '');
+            deviceData.ssh_port = parseInt(getElementValue('ssh-port', '22')) || 22;
+        }
+
+        // Add WinRM (WMI) credentials if WinRM monitor type is selected
+        if (monitorType === 'winrm') {
+            deviceData.wmi_username = getElementValue('winrm-username', '');
+            deviceData.wmi_password = getElementValue('winrm-password', '');
         }
 
         console.log('Device Data to send:', deviceData);
@@ -1995,3 +2040,264 @@ function getParentName(parentId) {
     if (!parent) return `ID:${parentId}`;
     return parent.name;
 }
+
+// ============================================================================
+// Performance Metrics Modal and Charts
+// ============================================================================
+
+let currentPerfDeviceId = null;
+let currentPerfHours = 6;
+let cpuChart = null;
+let ramChart = null;
+let diskChart = null;
+let networkChart = null;
+
+/**
+ * Show performance metrics for a device (CPU, RAM, Disk)
+ */
+async function showPerformanceMetrics(deviceId) {
+    const device = allDevices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    currentPerfDeviceId = deviceId;
+    document.getElementById('perf-device-name').textContent = device.name;
+    document.getElementById('performance-modal').classList.add('active');
+
+    // Reset charts
+    if (cpuChart) { cpuChart.destroy(); cpuChart = null; }
+    if (ramChart) { ramChart.destroy(); ramChart = null; }
+    if (diskChart) { diskChart.destroy(); diskChart = null; }
+    if (networkChart) { networkChart.destroy(); networkChart = null; }
+
+    await loadPerformanceData();
+}
+
+function closePerformanceModal() {
+    document.getElementById('performance-modal').classList.remove('active');
+    currentPerfDeviceId = null;
+}
+
+async function setPerfPeriod(hours, btn) {
+    currentPerfHours = hours;
+    
+    // Update button styles
+    const modal = document.getElementById('performance-modal');
+    modal.querySelectorAll('.perf-period-btn').forEach(b => {
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    btn.classList.add('btn-primary');
+    
+    await loadPerformanceData();
+}
+
+async function loadPerformanceData() {
+    if (!currentPerfDeviceId) return;
+
+    try {
+        const response = await fetch(`/api/devices/${currentPerfDeviceId}/performance?hours=${currentPerfHours}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Performance data error:', data.error);
+            return;
+        }
+
+        initPerformanceCharts(data);
+    } catch (error) {
+        console.error('Error loading performance data:', error);
+    }
+}
+
+// Initialize or update Chart.js instances with a premium gradient style
+function initPerformanceCharts(data) {
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const textColor = theme === 'light' ? '#64748b' : 'rgba(255, 255, 255, 0.6)';
+    const gridColor = theme === 'light' ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.03)';
+    
+    // Premium Teal/Emerald Theme
+    const BRAND_COLOR = '#10b981'; 
+    
+    const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {
+            padding: { top: 10, bottom: 0, left: 0, right: 10 }
+        },
+        scales: {
+            x: {
+                type: 'time',
+                time: { 
+                    unit: currentPerfHours <= 1 ? 'minute' : (currentPerfHours <= 24 ? 'hour' : 'day'),
+                    tooltipFormat: 'PPpp'
+                },
+                grid: {
+                    color: gridColor,
+                    drawBorder: false
+                },
+                ticks: {
+                    color: textColor,
+                    font: { size: 10 }
+                }
+            },
+            y: {
+                min: 0,
+                max: 100,
+                grid: {
+                    color: gridColor,
+                    drawBorder: false
+                },
+                ticks: {
+                    stepSize: 25,
+                    color: textColor,
+                    font: { size: 10 },
+                    callback: function(value) { return value + '%'; }
+                }
+            }
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: { 
+                backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                titleColor: '#f8fafc',
+                bodyColor: '#f8fafc',
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 1,
+                padding: 10, cornerRadius: 8,
+                mode: 'index', 
+                intersect: false,
+                callbacks: {
+                    label: function(context) {
+                        return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                    }
+                }
+            }
+        },
+        interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+        }
+    };
+
+    const config = [
+        { id: 'cpu', label: 'CPU Usage', data: data.cpu, chartVar: 'cpu' },
+        { id: 'ram', label: 'RAM Usage', data: data.ram, chartVar: 'ram' },
+        { id: 'disk', label: 'Disk Usage', data: data.disk, chartVar: 'disk' }
+    ];
+
+    config.forEach(set => {
+        const canvas = document.getElementById(`${set.id}-chart`);
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const chartData = set.data.map(p => ({ x: new Date(p.timestamp), y: p.value }));
+        
+        // Create Premium Gradient
+        const gradient = ctx.createLinearGradient(0, 0, 0, 250);
+        gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); 
+        gradient.addColorStop(1, 'rgba(16, 185, 129, 0.05)'); 
+
+        let existingChart = null;
+        if (set.id === 'cpu') existingChart = cpuChart;
+        else if (set.id === 'ram') existingChart = ramChart;
+        else if (set.id === 'disk') existingChart = diskChart;
+
+        if (existingChart) {
+            existingChart.data.datasets[0].data = chartData;
+            existingChart.data.datasets[0].backgroundColor = gradient;
+            existingChart.options.scales.x.time.unit = currentPerfHours <= 1 ? 'minute' : (currentPerfHours <= 24 ? 'hour' : 'day');
+            existingChart.update();
+        } else {
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: set.label,
+                        data: chartData,
+                        borderColor: BRAND_COLOR,
+                        backgroundColor: gradient,
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0, 
+                        pointRadius: 0, 
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#ffffff',
+                        pointHoverBorderColor: BRAND_COLOR,
+                        pointHoverBorderWidth: 3
+                    }]
+                },
+                options: commonOptions
+            });
+            
+            if (set.id === 'cpu') cpuChart = chart;
+            else if (set.id === 'ram') ramChart = chart;
+            else if (set.id === 'disk') diskChart = chart;
+        }
+    });
+
+    // Special handling for Network Chart (Two datasets)
+    const netCanvas = document.getElementById('network-chart');
+    if (netCanvas) {
+        const ctx = netCanvas.getContext('2d');
+        const inData = data.network_in.map(p => ({ x: new Date(p.timestamp), y: p.value }));
+        const outData = data.network_out.map(p => ({ x: new Date(p.timestamp), y: p.value }));
+        
+        const formatBps = (val) => {
+            if (val >= 1000000000) return (val / 1000000000).toFixed(2) + ' Gbps';
+            if (val >= 1000000) return (val / 1000000).toFixed(2) + ' Mbps';
+            if (val >= 1000) return (val / 1000).toFixed(1) + ' Kbps';
+            return val.toFixed(0) + ' bps';
+        };
+
+        const netOptions = JSON.parse(JSON.stringify(commonOptions));
+        delete netOptions.scales.y.max;
+        delete netOptions.scales.y.stepSize;
+        netOptions.scales.y.ticks.callback = formatBps;
+        netOptions.plugins.tooltip.callbacks.label = function(context) {
+            return `${context.dataset.label}: ${formatBps(context.parsed.y)}`;
+        };
+
+        if (networkChart) {
+            networkChart.data.datasets[0].data = inData;
+            networkChart.data.datasets[1].data = outData;
+            networkChart.options.scales.x.time.unit = currentPerfHours <= 1 ? 'minute' : (currentPerfHours <= 24 ? 'hour' : 'day');
+            networkChart.update();
+        } else {
+            networkChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Incoming',
+                            data: inData,
+                            borderColor: '#3b82f6', // Blue
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        },
+                        {
+                            label: 'Outgoing',
+                            data: outData,
+                            borderColor: '#ec4899', // Pink
+                            backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 0
+                        }
+                    ]
+                },
+                options: netOptions
+            });
+        }
+    }
+}
+
+// Ensure modals close when clicking outside
+document.addEventListener('click', (event) => {
+    const perfModal = document.getElementById('performance-modal');
+    if (event.target === perfModal) closePerformanceModal();
+});

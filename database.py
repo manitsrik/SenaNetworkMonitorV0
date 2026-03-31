@@ -187,6 +187,14 @@ class Database:
                 latitude REAL,
                 longitude REAL,
                 is_enabled {bool_type} DEFAULT {bool_default_true},
+                ssh_username TEXT,
+                ssh_password TEXT,
+                ssh_port INTEGER DEFAULT 22,
+                wmi_username TEXT,
+                wmi_password TEXT,
+                cpu_usage REAL,
+                ram_usage REAL,
+                disk_usage REAL,
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -273,6 +281,35 @@ class Database:
             if self.db_type == 'postgresql':
                 conn.rollback()
             # Column already exists — ignore
+        
+        # Migration: Add SSH/WMI and Metrics columns
+        metrics_columns = [
+            ('ssh_username', 'TEXT'),
+            ('ssh_password', 'TEXT'),
+            ('ssh_port', 'INTEGER DEFAULT 22'),
+            ('wmi_username', 'TEXT'),
+            ('wmi_password', 'TEXT'),
+            ('cpu_usage', 'REAL'),
+            ('ram_usage', 'REAL'),
+            ('disk_usage', 'REAL'),
+            ('network_in_bps', 'REAL'),
+            ('network_out_bps', 'REAL'),
+            ('last_network_in', 'BIGINT'),
+            ('last_network_out', 'BIGINT'),
+            ('last_metrics_time', 'TIMESTAMP'),
+        ]
+        for col_name, col_type in metrics_columns:
+            try:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+                    conn.commit()
+                else:
+                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
+            except Exception:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                # Column already exists — ignore
         
         # Default Alert Escalation Settings Let's ensure these exist 
         default_escalation_settings = {
@@ -601,6 +638,18 @@ class Database:
             )
         ''')
         
+        # System Metrics History table -- Agent (SSH/WinRM) performance samples
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS system_metrics_history (
+                id          {pk},
+                device_id   INTEGER NOT NULL,
+                metric_type TEXT NOT NULL,
+                value       REAL,
+                timestamp   TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
+        
         # Audit Logs table
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS audit_logs (
@@ -710,6 +759,10 @@ class Database:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_device_sampled ON bandwidth_history(device_id, sampled_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_bw_sampled_at ON bandwidth_history(sampled_at)')
         
+        # system_metrics_history indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_device_sampled ON system_metrics_history(device_id, timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_timestamp ON system_metrics_history(timestamp)')
+        
         # audit_logs indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(username, created_at)')
@@ -725,7 +778,9 @@ class Database:
                    snmp_v3_auth_password=None, snmp_v3_priv_protocol='AES128',
                    snmp_v3_priv_password=None,
                    tcp_port=80, dns_query_domain='google.com', location_type='on-premise',
-                   latitude=None, longitude=None, is_enabled=True, parent_device_id=None):
+                   latitude=None, longitude=None, is_enabled=True, parent_device_id=None,
+                   ssh_username=None, ssh_password=None, ssh_port=22,
+                   wmi_username=None, wmi_password=None):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -745,8 +800,10 @@ class Database:
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
-                                       latitude, longitude, is_enabled, parent_device_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       latitude, longitude, is_enabled, parent_device_id,
+                                       ssh_username, ssh_password, ssh_port,
+                                       wmi_username, wmi_password)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
@@ -756,7 +813,9 @@ class Database:
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE,
-                      latitude, longitude, is_enabled, parent_device_id))
+                      latitude, longitude, is_enabled, parent_device_id,
+                      ssh_username, ssh_password, ssh_port,
+                      wmi_username, wmi_password))
                 device_id = cursor.fetchone()['id']
             else:
                 status_init = 'disabled' if not is_enabled else 'unknown'
@@ -768,8 +827,10 @@ class Database:
                                        snmp_v3_auth_password, snmp_v3_priv_protocol,
                                        snmp_v3_priv_password,
                                        tcp_port, dns_query_domain, location_type,
-                                       latitude, longitude, is_enabled, parent_device_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       latitude, longitude, is_enabled, parent_device_id,
+                                       ssh_username, ssh_password, ssh_port,
+                                       wmi_username, wmi_password)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -778,7 +839,9 @@ class Database:
                       snmp_v3_priv_password,
                       tcp_port, dns_query_domain,
                       location_type or Config.DEFAULT_LOCATION_TYPE,
-                      latitude, longitude, 1 if is_enabled else 0, parent_device_id))
+                      latitude, longitude, 1 if is_enabled else 0, parent_device_id,
+                      ssh_username, ssh_password, ssh_port,
+                      wmi_username, wmi_password))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -820,7 +883,10 @@ class Database:
                      snmp_v3_priv_password=None,
                      tcp_port=None, dns_query_domain=None, location_type=None,
                      latitude='__NOT_SET__', longitude='__NOT_SET__', is_enabled=None,
-                     parent_device_id='__NOT_SET__'):
+                     parent_device_id='__NOT_SET__',
+                     ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
+                     ssh_port='__NOT_SET__',
+                     wmi_username='__NOT_SET__', wmi_password='__NOT_SET__'):
         """Update device information"""
         # Strip whitespace from IP address and name
         if ip_address:
@@ -893,6 +959,23 @@ class Database:
                 updates.append(f'longitude = {ph}')
                 params.append(longitude)
             
+            # SSH and WMI fields
+            if ssh_username != '__NOT_SET__':
+                updates.append(f'ssh_username = {ph}')
+                params.append(ssh_username)
+            if ssh_password != '__NOT_SET__':
+                updates.append(f'ssh_password = {ph}')
+                params.append(ssh_password)
+            if ssh_port != '__NOT_SET__':
+                updates.append(f'ssh_port = {ph}')
+                params.append(ssh_port)
+            if wmi_username != '__NOT_SET__':
+                updates.append(f'wmi_username = {ph}')
+                params.append(wmi_username)
+            if wmi_password != '__NOT_SET__':
+                updates.append(f'wmi_password = {ph}')
+                params.append(wmi_password)
+            
             if is_enabled is not None:
                 updates.append(f'is_enabled = {ph}')
                 if self.db_type == 'postgresql':
@@ -920,6 +1003,100 @@ class Database:
         except Exception as e:
             if conn: conn.rollback()
             return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+            
+    def update_system_metrics(self, device_id, cpu=None, ram=None, disk=None, 
+                             network_in=None, network_out=None, raw_in=None, raw_out=None):
+        """Update current system metrics for a device and add to historical data"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            # Update current metrics in devices table
+            updates = []
+            params = []
+            if cpu is not None:
+                updates.append(f"cpu_usage = {ph}")
+                params.append(cpu)
+            if ram is not None:
+                updates.append(f"ram_usage = {ph}")
+                params.append(ram)
+            if disk is not None:
+                updates.append(f"disk_usage = {ph}")
+                params.append(disk)
+            if network_in is not None:
+                updates.append(f"network_in_bps = {ph}")
+                params.append(network_in)
+            if network_out is not None:
+                updates.append(f"network_out_bps = {ph}")
+                params.append(network_out)
+            if raw_in is not None:
+                updates.append(f"last_network_in = {ph}")
+                params.append(raw_in)
+            if raw_out is not None:
+                updates.append(f"last_network_out = {ph}")
+                params.append(raw_out)
+            
+            if updates:
+                # Always update last_metrics_time when any metric is updated
+                updates.append(f"last_metrics_time = CURRENT_TIMESTAMP")
+                
+                params.append(device_id)
+                query = f"UPDATE devices SET {', '.join(updates)} WHERE id = {ph}"
+                cursor.execute(query, params)
+                
+                # Add to history
+                if cpu is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'cpu', cpu))
+                if ram is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'ram', ram))
+                if disk is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'disk', disk))
+                if network_in is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'network_in', network_in))
+                if network_out is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'network_out', network_out))
+                
+                conn.commit()
+            return True
+        except Exception as e:
+            if conn: conn.rollback()
+            print(f"[DB ERROR] update_system_metrics: {e}")
+            return False
+        finally:
+            self.release_connection(conn)
+
+    def get_system_metrics_history(self, device_id, metric_type, hours=24):
+        """Get system metrics history for a device"""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            
+            if self.db_type == 'postgresql':
+                query = f"""
+                    SELECT value, timestamp 
+                    FROM system_metrics_history 
+                    WHERE device_id = {ph} AND metric_type = {ph} 
+                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    ORDER BY timestamp ASC
+                """
+            else:
+                query = f"""
+                    SELECT value, timestamp 
+                    FROM system_metrics_history 
+                    WHERE device_id = {ph} AND metric_type = {ph} 
+                    AND timestamp >= datetime('now', '-{hours} hours')
+                    ORDER BY timestamp ASC
+                """
+            
+            cursor.execute(query, (device_id, metric_type))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_system_metrics_history: {e}")
+            return []
         finally:
             self.release_connection(conn)
             
@@ -1485,8 +1662,8 @@ class Database:
         self.release_connection(conn)
         return stats
     
-    def get_device_type_trends(self, minutes=180):
-        """Get average response time trends by device type"""
+    def get_device_type_trends(self, minutes=180, device_id=None):
+        """Get average response time trends by device type or specific device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
         ph = self._ph()
@@ -1509,19 +1686,28 @@ class Database:
                 time_group = "strftime('%Y-%m-%d %H:%M', h.checked_at)"
                 time_select = "strftime('%Y-%m-%d %H:%M', h.checked_at)"
 
+        where_clause = f"WHERE h.checked_at >= {ph} AND h.response_time IS NOT NULL AND h.status IN ('up', 'slow')"
+        params = [start_time]
+        
+        if device_id:
+            where_clause += f" AND h.device_id = {ph}"
+            params.append(device_id)
+
         query = f'''
             SELECT 
                 d.device_type,
+                d.name as device_name,
+                d.id as device_id,
                 {time_select} as timestamp,
                 AVG(h.response_time) as avg_response_time
             FROM status_history h
             JOIN devices d ON h.device_id = d.id
-            WHERE h.checked_at >= {ph} AND h.response_time IS NOT NULL AND h.status IN ('up', 'slow')
-            GROUP BY d.device_type, {time_group}
+            {where_clause}
+            GROUP BY d.device_type, d.name, d.id, {time_group}
             ORDER BY timestamp ASC
         '''
         
-        cursor.execute(query, (start_time,))
+        cursor.execute(query, tuple(params))
         results = self._rows_to_dicts(cursor.fetchall())
         self.release_connection(conn)
         return results

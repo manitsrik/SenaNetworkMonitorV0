@@ -289,6 +289,7 @@ class Database:
             ('ssh_port', 'INTEGER DEFAULT 22'),
             ('wmi_username', 'TEXT'),
             ('wmi_password', 'TEXT'),
+            ('expected_ports', 'TEXT'),
             ('cpu_usage', 'REAL'),
             ('ram_usage', 'REAL'),
             ('disk_usage', 'REAL'),
@@ -436,6 +437,24 @@ class Database:
                 conn.rollback()
             # Column likely exists
 
+        # Migration: Add MFA columns to users table
+        mfa_columns = [
+            ('mfa_secret', 'TEXT'),
+            ('mfa_enabled', f'{bool_type} DEFAULT {bool_default_false}'),
+        ]
+        for col_name, col_type in mfa_columns:
+            try:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                    cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}')
+                    conn.commit()
+                else:
+                    cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}')
+            except Exception:
+                if self.db_type == 'postgresql':
+                    conn.rollback()
+                # Column already exists — ignore
+
         # Dashboards table
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS dashboards (
@@ -492,11 +511,25 @@ class Database:
                 background_zoom INTEGER DEFAULT 100,
                 node_positions TEXT,
                 background_opacity INTEGER DEFAULT 100,
+                theme_mode TEXT DEFAULT 'standard',
                 created_at TIMESTAMP DEFAULT {timestamp_default},
                 updated_at TIMESTAMP DEFAULT {timestamp_default},
                 FOREIGN KEY (created_by) REFERENCES users(id)
             )
         ''')
+
+        # Migration: Add theme_mode
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute("ALTER TABLE sub_topologies ADD COLUMN IF NOT EXISTS theme_mode TEXT DEFAULT 'standard'")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE sub_topologies ADD COLUMN theme_mode TEXT DEFAULT 'standard'")
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
 
         # LDAP settings table
         cursor.execute(f'''
@@ -780,7 +813,7 @@ class Database:
                    tcp_port=80, dns_query_domain='google.com', location_type='on-premise',
                    latitude=None, longitude=None, is_enabled=True, parent_device_id=None,
                    ssh_username=None, ssh_password=None, ssh_port=22,
-                   wmi_username=None, wmi_password=None):
+                   wmi_username=None, wmi_password=None, expected_ports=None):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -802,8 +835,8 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       wmi_username, wmi_password, expected_ports)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
@@ -815,7 +848,7 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, is_enabled, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password))
+                      wmi_username, wmi_password, expected_ports))
                 device_id = cursor.fetchone()['id']
             else:
                 status_init = 'disabled' if not is_enabled else 'unknown'
@@ -829,8 +862,8 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       wmi_username, wmi_password, expected_ports)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -841,7 +874,7 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, 1 if is_enabled else 0, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password))
+                      wmi_username, wmi_password, expected_ports))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -886,7 +919,7 @@ class Database:
                      parent_device_id='__NOT_SET__',
                      ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
                      ssh_port='__NOT_SET__',
-                     wmi_username='__NOT_SET__', wmi_password='__NOT_SET__'):
+                     wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__'):
         """Update device information"""
         # Strip whitespace from IP address and name
         if ip_address:
@@ -975,6 +1008,9 @@ class Database:
             if wmi_password != '__NOT_SET__':
                 updates.append(f'wmi_password = {ph}')
                 params.append(wmi_password)
+            if expected_ports != '__NOT_SET__':
+                updates.append(f'expected_ports = {ph}')
+                params.append(expected_ports)
             
             if is_enabled is not None:
                 updates.append(f'is_enabled = {ph}')
@@ -1424,7 +1460,7 @@ class Database:
             else:
                 cursor.execute(f'''
                     INSERT INTO topology (device_id, connected_to, view_type)
-                    VALUES ({self._ph(3)})
+                    VALuES ({self._ph(3)})
                 ''', (device_id, connected_to, view_type))
                 connection_id = cursor.lastrowid
             conn.commit()
@@ -2578,13 +2614,109 @@ class Database:
         conn.commit()
         self.release_connection(conn)
     
+    # =========================================================================
+    # MFA (Two-Factor Authentication) Methods
+    # =========================================================================
+    
+    def enable_mfa(self, user_id, secret):
+        """Enable MFA for a user by saving the TOTP secret"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute(f'UPDATE users SET mfa_secret = {ph}, mfa_enabled = TRUE WHERE id = {ph}', (secret, user_id))
+            else:
+                cursor.execute(f'UPDATE users SET mfa_secret = {ph}, mfa_enabled = 1 WHERE id = {ph}', (secret, user_id))
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+    
+    def disable_mfa(self, user_id):
+        """Disable MFA for a user"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        try:
+            if self.db_type == 'postgresql':
+                cursor.execute(f'UPDATE users SET mfa_secret = NULL, mfa_enabled = FALSE WHERE id = {ph}', (user_id,))
+            else:
+                cursor.execute(f'UPDATE users SET mfa_secret = NULL, mfa_enabled = 0 WHERE id = {ph}', (user_id,))
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+    
+    def get_mfa_secret(self, user_id):
+        """Get the MFA secret for a user"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cursor.execute(f'SELECT mfa_secret, mfa_enabled FROM users WHERE id = {ph}', (user_id,))
+        row = cursor.fetchone()
+        self.release_connection(conn)
+        if row:
+            r = self._row_to_dict(row)
+            return r.get('mfa_secret'), bool(r.get('mfa_enabled'))
+        return None, False
+
+    def enable_mfa(self, user_id, secret):
+        """Enable MFA for a user and save the secret"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        try:
+            if self.db_type == 'postgresql':
+                mfa_enabled = True
+            else:
+                mfa_enabled = 1
+            
+            cursor.execute(f'UPDATE users SET mfa_secret = {ph}, mfa_enabled = {ph} WHERE id = {ph}',
+                          (secret, mfa_enabled, user_id))
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+
+    def disable_mfa(self, user_id):
+        """Disable MFA for a user"""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        try:
+            if self.db_type == 'postgresql':
+                mfa_enabled = False
+            else:
+                mfa_enabled = 0
+            
+            cursor.execute(f'UPDATE users SET mfa_secret = NULL, mfa_enabled = {ph} WHERE id = {ph}',
+                          (mfa_enabled, user_id))
+            conn.commit()
+            self.release_connection(conn)
+            return {'success': True}
+        except Exception as e:
+            conn.rollback()
+            self.release_connection(conn)
+            return {'success': False, 'error': str(e)}
+
+    
     def get_all_users(self):
         """Get all users (excluding password hashes)"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
         cursor.execute('''
             SELECT id, username, role, display_name, email, telegram_chat_id, is_active, auth_type,
-                   last_login, created_at, updated_at 
+                   mfa_enabled, last_login, created_at, updated_at 
             FROM users ORDER BY created_at DESC
         ''')
         users = self._rows_to_dicts(cursor.fetchall())
@@ -2951,23 +3083,23 @@ class Database:
     # Sub-Topology Methods
     # =========================================================================
 
-    def create_sub_topology(self, name, description=None, created_by=None, background_image=None, background_zoom=100, node_positions=None, background_opacity=100):
+    def create_sub_topology(self, name, description=None, created_by=None, background_image=None, background_zoom=100, node_positions=None, background_opacity=100, theme_mode='standard'):
         """Create a new sub-topology"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
         
         if self.db_type == 'postgresql':
             cursor.execute('''
-                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity))
+            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode))
             sub_topo_id = cursor.fetchone()['id']
         else:
             cursor.execute('''
-                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity))
+                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode))
             sub_topo_id = cursor.lastrowid
         conn.commit()
         self.release_connection(conn)
@@ -3013,7 +3145,7 @@ class Database:
         self.release_connection(conn)
         return result
 
-    def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, background_opacity=None):
+    def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, background_opacity=None, theme_mode=None):
         """Update a sub-topology"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -3039,6 +3171,9 @@ class Database:
         if background_opacity is not None:
             updates.append(f'background_opacity = {ph}')
             params.append(background_opacity)
+        if theme_mode is not None:
+            updates.append(f'theme_mode = {ph}')
+            params.append(theme_mode)
         updates.append(f'updated_at = {ph}')
         params.append(datetime.now().isoformat())
         

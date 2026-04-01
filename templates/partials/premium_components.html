@@ -1,0 +1,418 @@
+<style>
+    /* =========================================
+       NODE TYPE A: 3D ISOMETRIC FLOATING (Tiers 1-3)
+       ========================================= */
+    .floating-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        cursor: pointer;
+        width: 140px;
+        height: 140px;
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    
+    .floating-node:hover {
+        transform: translateY(-10px) scale(1.05);
+    }
+
+    /* The 3D Base Platform */
+    .floating-platform {
+        width: 120px;
+        height: 120px;
+        background: rgba(30, 40, 60, 0.3);
+        border: 1px solid rgba(255,255,255,0.05);
+        border-radius: 20px;
+        position: absolute;
+        bottom: -20px;
+        left: 10px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.6), inset 0 2px 5px rgba(255,255,255,0.1);
+        /* Isometric Tilt */
+        transform: rotateX(65deg) rotateZ(-45deg);
+        z-index: 1;
+        transition: box-shadow 0.4s ease;
+    }
+
+    /* Colored glows underneath the platform */
+    .glow-firewall .floating-platform { box-shadow: 0 15px 50px rgba(16, 185, 129, 0.7), inset 0 1px 1px rgba(16, 185, 129, 0.5); border-color: rgba(16, 185, 129, 0.4); }
+    .glow-switch .floating-platform { box-shadow: 0 15px 50px rgba(245, 158, 11, 0.7), inset 0 1px 1px rgba(245, 158, 11, 0.5); border-color: rgba(245, 158, 11, 0.4); }
+    .glow-internet .floating-platform { box-shadow: 0 15px 50px rgba(59, 130, 246, 0.7), inset 0 1px 1px rgba(59, 130, 246, 0.5); border-color: rgba(59, 130, 246, 0.4); }
+    .glow-wireless .floating-platform { box-shadow: 0 15px 50px rgba(6, 182, 212, 0.7), inset 0 1px 1px rgba(6, 182, 212, 0.5); border-color: rgba(6, 182, 212, 0.4); }
+    .glow-router .floating-platform { box-shadow: 0 15px 50px rgba(139, 92, 246, 0.7), inset 0 1px 1px rgba(139, 92, 246, 0.5); border-color: rgba(139, 92, 246, 0.4); }
+    .glow-server .floating-platform { box-shadow: 0 15px 50px rgba(236, 72, 153, 0.7), inset 0 1px 1px rgba(236, 72, 153, 0.5); border-color: rgba(236, 72, 153, 0.4); }
+
+    .floating-icon {
+        font-size: 3.8rem;
+        z-index: 2;
+        /* Counter-transform slightly to stand up straight on the isometric plane */
+        transform: translateY(-25px);
+        text-shadow: 0 10px 25px rgba(0,0,0,0.6);
+        pointer-events: none;
+    }
+
+    /* Icon solid neon colors */
+    .glow-firewall .floating-icon { color: #34d399; filter: drop-shadow(0 0 15px #10b981); }
+    .glow-switch .floating-icon { color: #fbbf24; filter: drop-shadow(0 0 15px #f59e0b); }
+    .glow-internet .floating-icon { color: #60a5fa; filter: drop-shadow(0 0 15px #3b82f6); }
+    .glow-wireless .floating-icon { color: #22d3ee; filter: drop-shadow(0 0 15px #06b6d4); }
+    .glow-router .floating-icon { color: #a78bfa; filter: drop-shadow(0 0 15px #8b5cf6); }
+    .glow-server .floating-icon { color: #f472b6; filter: drop-shadow(0 0 15px #ec4899); }
+
+    .floating-label {
+        position: absolute;
+        bottom: -40px;
+        background: rgba(15, 20, 30, 0.8);
+        border-radius: 12px;
+        padding: 4px 12px;
+        color: #f8fafc;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 600;
+        white-space: nowrap;
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        z-index: 3;
+    }
+
+    .floating-status {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+    }
+
+    .floating-status::before {
+        content: '';
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background: currentColor;
+        border-radius: 50%;
+        box-shadow: 0 0 12px currentColor, 0 0 4px rgba(255,255,255,0.5);
+    }
+
+    .floating-status::after {
+        content: '';
+        position: absolute;
+        width: 220%;
+        height: 220%;
+        border: 1.5px solid currentColor;
+        border-radius: 50%;
+        opacity: 0;
+        animation: statusPulse 2.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @keyframes statusPulse {
+        0% { transform: scale(0.5); opacity: 0.8; }
+        70% { transform: scale(1.5); opacity: 0; }
+        100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    /* =========================================
+       NODE TYPE B: WIDE SERVER CARDS (Tier 4)
+       ========================================= */
+    .wide-server-card {
+        background: rgba(18, 24, 38, 0.6);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 12px;
+        padding: 18px 20px 24px 20px; /* extra padding bottom for the bar */
+        width: 320px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+        cursor: pointer;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        position: relative;
+        overflow: hidden; /* To clip sweep effect */
+    }
+
+    .wide-server-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+
+    .wide-card-header {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .wide-card-icon {
+        background: rgba(6, 182, 212, 0.1);
+        color: #22d3ee;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        border: 1px solid rgba(6, 182, 212, 0.3);
+        box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+    }
+
+    .wide-card-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .wide-card-title {
+        color: #f8fafc;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+    }
+
+    .wide-card-ip {
+        color: #64748b;
+        font-size: 0.75rem;
+        font-family: monospace;
+    }
+
+    /* Absolute Bottom Progress Bar (like the reference image) */
+    .wide-bottom-metric {
+        position: absolute;
+        bottom: 8px;
+        left: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .wide-metric-value {
+        color: #e2e8f0;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+
+    .wide-bar-bg {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    
+    .wide-bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1), background 0.5s;
+    }
+
+    /* Ambient Sweep Glow Effect on Server Cards */
+    .wide-server-card::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.03) 50%, rgba(255,255,255,0) 100%);
+        transform: rotate(30deg);
+        animation: glassSweep 6s infinite linear;
+        pointer-events: none;
+    }
+
+    @keyframes glassSweep {
+        0% { transform: translateX(-50%) rotate(30deg); }
+        100% { transform: translateX(50%) rotate(30deg); }
+    }
+
+    /* Status Colors */
+    .status-up { background-color: #10b981; color: #10b981; }
+    .status-down { background-color: #ef4444; color: #ef4444; }
+    .status-slow { background-color: #f59e0b; color: #f59e0b; }
+    .status-unknown { background-color: #6b7280; color: #6b7280; }
+
+    /* Wide Bar Colors */
+    .bar-healthy { background: linear-gradient(90deg, #059669, #34d399); box-shadow: 0 0 10px rgba(16, 185, 129, 0.6); }
+    .bar-warning { background: linear-gradient(90deg, #d97706, #fbbf24); box-shadow: 0 0 10px rgba(245, 158, 11, 0.6); }
+    .bar-critical { background: linear-gradient(90deg, #dc2626, #f87171); box-shadow: 0 0 10px rgba(239, 68, 68, 0.6); }
+    
+    /* Used for overlaying on Sub-Topologies */
+    .dom-overlay-node {
+        position: absolute;
+        pointer-events: auto; /* allow clicks on DOM nodes */
+        transform-origin: center center;
+        /* We center them based on their width/height via translating in JS */
+        transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* Premium Selection Logic */
+    .dom-overlay-node.selected {
+        z-index: 100 !important;
+    }
+
+    .dom-overlay-node.selected .floating-node,
+    .dom-overlay-node.selected .wide-server-card,
+    .dom-overlay-node.selected .rackmount-node {
+        transform: scale(1.08) translateY(-5px);
+    }
+
+    .dom-overlay-node.selected .wide-server-card,
+    .dom-overlay-node.selected .rackmount-node {
+        box-shadow: 0 0 0 2px #06b6d4, 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 25px rgba(6, 182, 212, 0.4);
+        border-color: rgba(6, 182, 212, 0.6);
+        animation: selectionPulse 2s infinite ease-in-out;
+    }
+
+    .dom-overlay-node.selected .floating-platform {
+        box-shadow: 0 15px 60px rgba(6, 182, 212, 0.9), inset 0 1px 1px rgba(6, 182, 212, 0.5) !important;
+        border-color: rgba(6, 182, 212, 0.8) !important;
+    }
+
+    @keyframes selectionPulse {
+        0% { box-shadow: 0 0 0 1px #06b6d4, 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 15px rgba(6, 182, 212, 0.3); }
+        50% { box-shadow: 0 0 0 3px #06b6d4, 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 35px rgba(6, 182, 212, 0.6); }
+        100% { box-shadow: 0 0 0 1px #06b6d4, 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 15px rgba(6, 182, 212, 0.3); }
+    }
+
+    /* Safety rule: strictly hide vis.js internal labels when overlaying */
+    .vis-network:has(#dom-overlay-container) canvas + div {
+        display: none !important;
+    }
+
+    /* =========================================
+       NODE TYPE C: RACKMOUNT HARDWARE (Switch/Router)
+       ========================================= */
+    .rackmount-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        /* Tight glass frame */
+        background: rgba(18, 24, 38, 0.45);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 2px 4px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        width: 180px;
+        height: auto;
+        overflow: visible;
+    }
+    
+    .rackmount-node:hover {
+        transform: translateY(-4px) scale(1.04);
+        background: rgba(18, 24, 38, 0.6);
+        border-color: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.6);
+    }
+
+    .hardware-base-glow {
+        display: none;
+    }
+
+    .hardware-image {
+        width: 100%;
+        height: 48px;
+        object-fit: cover;
+        object-position: center;
+        z-index: 2;
+        display: block;
+    }
+
+    /* Label sits BELOW the glass frame */
+    .rackmount-node .floating-label {
+        position: absolute;
+        bottom: -24px;
+        left: 50%;
+        transform: translateX(-50%);
+        margin-top: 0;
+        font-size: 0.8rem;
+        padding: 0;
+        white-space: nowrap;
+        z-index: 3;
+        background: none;
+        border: none;
+        box-shadow: none;
+        color: var(--text-primary, #e2e8f0);
+        font-weight: 600;
+    }
+
+    .rackmount-node .floating-status {
+        top: 8px;
+        right: 8px;
+    }
+
+    .floating-node .floating-status {
+        top: -5px;
+        right: 15px;
+    }
+</style>
+
+<!-- ==============================================
+     TEMPLATE A: FLOATING 3D ISOMETRIC NODE 
+     ============================================== -->
+<template id="floating-node-template">
+    <div class="floating-node {glow-class}" id="device-{id}" data-id="{id}">
+        <!-- Platform that looks 3D -->
+        <div class="floating-platform"></div>
+        <!-- Actual Icon Standing Up -->
+        <i class="fa-solid {icon} floating-icon"></i>
+        <!-- Label beneath -->
+        <div class="floating-label">{name}</div>
+        <!-- Connection Status -->
+        <div class="floating-status status-{status}"></div>
+    </div>
+</template>
+
+<!-- ==============================================
+     TEMPLATE B: HORIZONTAL WIDE SERVER CARD 
+     ============================================== -->
+<template id="wide-server-template">
+    <div class="wide-server-card" id="device-{id}" data-id="{id}">
+        <!-- Status Dot in corner -->
+        <div class="floating-status status-{status}" style="top: 12px; right: 12px;"></div>
+        
+        <div class="wide-card-header">
+            <div class="wide-card-icon">
+                <i class="fa-solid {icon}"></i>
+            </div>
+            <div class="wide-card-info">
+                <div class="wide-card-title" title="{name}">{name}</div>
+                <div class="wide-card-ip">{ip}</div>
+            </div>
+        </div>
+
+        <!-- The exact progress bar layout from the reference image -->
+        <div class="wide-bottom-metric">
+            <div class="wide-metric-value">{cpu}% CPU</div>
+            <div class="wide-bar-bg">
+                <div class="wide-bar-fill bar-{cpu-color}" style="width: {cpu}%"></div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<!-- TEMPLATE C: RACKMOUNT HARDWARE (Used for Switches/Routers) -->
+<template id="rackmount-hardware-template">
+    <div class="rackmount-node {glow-class}" id="device-{id}" data-id="{id}">
+        <div class="hardware-base-glow"></div>
+        <img src="{image_url}" class="hardware-image" draggable="false">
+        <div class="floating-label">{name}</div>
+        <div class="floating-status status-{status}"></div>
+        <div class="glow-point" style="top: 20%; right: 20%;"></div>
+    </div>
+</template>

@@ -16,6 +16,7 @@ let backgroundZoom = 100; // percentage
 let backgroundOpacity = 100; // percentage
 let backgroundBrightness = 100; // percentage
 let savedNodePositions = {}; // {deviceId: {x, y}}
+let themeMode = 'standard'; // 'standard' or 'premium'
 const previewBgImage = new Image();
 
 // ========================================
@@ -299,6 +300,62 @@ function initPreviewNetwork() {
     previewNetwork.on('dragStart', () => {
         // We can leave physics disabled to let user drag manually freely
     });
+
+    // Sync DOM overlay on every render cycle
+    previewNetwork.on('render', syncOverlayNodes);
+    previewNetwork.on('afterDrawing', syncOverlayNodes);
+}
+
+function onThemeModeChange(mode) {
+    themeMode = mode;
+    updatePreview();
+}
+
+function syncOverlayNodes() {
+    if (!previewNetwork) return;
+    const container = document.getElementById('dom-overlay-container');
+    if (!container) return;
+
+    if (themeMode !== 'premium') {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+
+    const nodes = previewNodes.get();
+    const networkEl = document.getElementById('preview-network');
+    const overlayEl = container;
+    
+    // Calculate offset between network container and overlay parent
+    const netRect = networkEl.getBoundingClientRect();
+    const overlayRect = overlayEl.getBoundingClientRect();
+    const offsetX = netRect.left - overlayRect.left;
+    const offsetY = netRect.top - overlayRect.top;
+    
+    nodes.forEach(node => {
+        const el = document.getElementById(`premium-node-${node.id}`);
+        if (!el) return;
+
+        // Get canvas position
+        const pos = previewNetwork.getPositions([node.id])[node.id];
+        if (!pos) return;
+
+        // Convert canvas pos to DOM pos
+        const domPos = previewNetwork.canvasToDOM(pos);
+
+        // Center the element on the glass frame
+        const width = el.offsetWidth;
+        const height = el.offsetHeight;
+        
+        // Apply offset correction
+        el.style.left = `${domPos.x + offsetX - (width / 2)}px`;
+        el.style.top = `${domPos.y + offsetY - (height / 2)}px`;
+
+        // Scale with zoom
+        const scale = previewNetwork.getScale();
+        el.style.transform = `scale(${Math.max(0.3, Math.min(1.5, scale))})`;
+    });
 }
 
 function updatePreview() {
@@ -309,7 +366,6 @@ function updatePreview() {
 
     if (selectedDevices.length === 0) return;
 
-    // Circle calculation
     const count = selectedDevices.length;
     const radius = Math.max(150, count * 30);
     const angleStep = (2 * Math.PI) / count;
@@ -317,32 +373,78 @@ function updatePreview() {
     selectedDevices.forEach((device, index) => {
         const color = getStatusColor(device.status);
         const icon = getDeviceIcon(device.device_type);
-        const svgIcon = getSvgIcon(icon, color, 40);
-
+        
         // Use saved position if available, otherwise circle layout
         const savedPos = savedNodePositions[device.id];
         const angle = index * angleStep;
         const nodeX = savedPos ? savedPos.x : radius * Math.cos(angle);
         const nodeY = savedPos ? savedPos.y : radius * Math.sin(angle);
 
-        previewNodes.add({
-            id: device.id,
-            label: `${icon} ${device.name}`,
-            x: nodeX,
-            y: nodeY,
-            fixed: savedPos ? { x: false, y: false } : undefined,
-            shape: 'image',
-            image: svgIcon,
-            size: 40,
-            color: {
-                background: color,
-                border: color,
-                highlight: { background: color, border: '#fff' }
-            },
-            font: { color: getTextColor(), size: 12 },
-            title: `${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nStatus: ${device.status}`
-        });
+        if (themeMode === 'premium') {
+            // In premium mode, the actual vis.js node is just a transparent hit area
+            previewNodes.add({
+                id: device.id,
+                label: '', // Hide canvas label
+                x: nodeX,
+                y: nodeY,
+                fixed: savedPos ? { x: false, y: false } : undefined,
+                shape: 'dot',
+                size: 40,
+                color: {
+                    background: 'rgba(0,0,0,0)',
+                    border: 'rgba(0,0,0,0)',
+                    highlight: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' }
+                },
+                title: `${device.name} (${device.ip_address})`
+            });
+
+            // Create/Update Premium DOM Node
+            renderPremiumDOMNode(device);
+        } else {
+            // Standard Mode
+            const svgIcon = getSvgIcon(icon, color, 40);
+            previewNodes.add({
+                id: device.id,
+                label: `${icon} ${device.name}`,
+                x: nodeX,
+                y: nodeY,
+                fixed: savedPos ? { x: false, y: false } : undefined,
+                shape: 'image',
+                image: svgIcon,
+                size: 40,
+                color: {
+                    background: color,
+                    border: color,
+                    highlight: { background: color, border: '#fff' }
+                },
+                font: { color: getTextColor(), size: 12 },
+                title: `${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nStatus: ${device.status}`
+            });
+            
+            // Remove premium node if exists
+            const el = document.getElementById(`premium-node-${device.id}`);
+            if (el) el.remove();
+        }
     });
+
+    // If premium, we might want to hide edges or style them differently
+    if (themeMode === 'premium') {
+        previewNetwork.setOptions({
+            edges: {
+                color: { color: 'rgba(56, 189, 248, 0.4)', highlight: '#38bdf8' },
+                width: 2,
+                smooth: { type: 'curvedCW', roundness: 0.2 }
+            }
+        });
+    } else {
+        previewNetwork.setOptions({
+            edges: {
+                color: { color: '#64748b', highlight: '#3b82f6' },
+                width: 1,
+                smooth: { enabled: true }
+            }
+        });
+    }
 
     customConnections.forEach((conn, idx) => {
         if (selectedDeviceIds.has(conn.device_id) && selectedDeviceIds.has(conn.connected_to)) {
@@ -532,7 +634,8 @@ async function saveSubTopology() {
         background_zoom: backgroundZoom,
         background_opacity: backgroundOpacity,
         background_brightness: backgroundBrightness,
-        node_positions: nodePositionsJson
+        node_positions: nodePositionsJson,
+        theme_mode: themeMode
     };
 
     try {
@@ -721,4 +824,70 @@ function getSvgIcon(emoji, color, size = 100) {
         <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="12" font-family="Segoe UI Emoji, Apple Color Emoji, sans-serif">${emoji}</text>
     </svg>`;
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+// ========================================
+// Premium Rendering Engine
+// ========================================
+function renderPremiumDOMNode(device) {
+    const container = document.getElementById('dom-overlay-container');
+    let el = document.getElementById(`premium-node-${device.id}`);
+    
+    if (!el) {
+        el = document.createElement('div');
+        el.id = `premium-node-${device.id}`;
+        el.className = 'dom-overlay-node';
+        el.style.pointerEvents = 'none'; // Let vis.js handle drag in builder
+        container.appendChild(el);
+    }
+
+    const type = (device.device_type || 'server').toLowerCase();
+    const isServer = type === 'server' || type === 'vmware';
+    const isSwitch = type === 'switch';
+    
+    // Choose Template
+    let templateId = 'floating-node-template';
+    if (isServer) templateId = 'wide-server-template';
+    if (isSwitch) templateId = 'rackmount-hardware-template';
+
+    const templateNode = document.getElementById(templateId);
+    if (!templateNode) return;
+    const template = templateNode.innerHTML;
+
+    // Mapping Icons
+    const iconMap = {
+        'firewall': 'fa-shield-halved',
+        'switch': 'fa-network-wired',
+        'router': 'fa-globe',
+        'internet': 'fa-cloud',
+        'wireless': 'fa-wifi',
+        'server': 'fa-server',
+        'vmware': 'fa-database'
+    };
+    const icon = iconMap[type] || 'fa-microchip';
+    const glowClass = `glow-${type}`;
+
+    // Fill Template
+    let html = template
+        .replace(/{id}/g, device.id)
+        .replace(/{name}/g, device.name)
+        .replace(/{ip}/g, device.ip_address || 'N/A')
+        .replace(/{icon}/g, icon)
+        .replace(/{status}/g, device.status || 'unknown')
+        .replace(/{glow-class}/g, glowClass);
+
+    // Switch/Hardware Image path
+    if (isSwitch) {
+        // Use the generated switch icon
+        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png');
+    }
+
+    // Dynamic metrics for visual flair
+    if (isServer) {
+        const cpu = Math.floor(Math.random() * 60) + 10;
+        const color = cpu > 80 ? 'critical' : (cpu > 50 ? 'warning' : 'healthy');
+        html = html.replace(/{cpu}/g, cpu).replace(/{cpu-color}/g, color);
+    }
+
+    el.innerHTML = html;
 }

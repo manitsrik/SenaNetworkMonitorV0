@@ -62,7 +62,8 @@ def add_device():
         ssh_password=data.get('ssh_password'),
         ssh_port=data.get('ssh_port', 22),
         wmi_username=data.get('wmi_username'),
-        wmi_password=data.get('wmi_password')
+        wmi_password=data.get('wmi_password'),
+        expected_ports=data.get('expected_ports')
     )
     
     if result['success']:
@@ -133,6 +134,7 @@ def update_device(device_id):
         ssh_port=data.get('ssh_port', '__NOT_SET__'),
         wmi_username=data.get('wmi_username', '__NOT_SET__'),
         wmi_password=data.get('wmi_password', '__NOT_SET__'),
+        expected_ports=data.get('expected_ports', '__NOT_SET__'),
         **parent_kw
     )
     log_audit('update', 'device', 'device', device_id, data.get('name'))
@@ -226,6 +228,39 @@ def get_device_performance(device_id):
         'network_in': network_in_history,
         'network_out': network_out_history
     })
+
+@devices_bp.route('/api/devices/<int:device_id>/ports', methods=['GET'])
+def get_device_ports(device_id):
+    """Fetch active TCP/UDP ports for a device (SSH/WinRM only)"""
+    device = _get_db().get_device(device_id)
+    if not device:
+        return jsonify({'error': 'Device not found', 'success': False}), 404
+        
+    monitor_type = device.get('monitor_type')
+    monitor = _get_monitor()
+    
+    if monitor_type == 'ssh':
+        result = monitor.get_ssh_ports(
+            device.get('ip_address'),
+            device.get('ssh_username'),
+            device.get('ssh_password'),
+            device.get('ssh_port', 22)
+        )
+        return jsonify(result)
+        
+    elif monitor_type == 'winrm':
+        result = monitor.get_winrm_ports(
+            device.get('ip_address'),
+            device.get('wmi_username'),
+            device.get('wmi_password')
+        )
+        return jsonify(result)
+        
+    else:
+        return jsonify({
+            'success': False, 
+            'error': f'Active ports viewer is not supported for monitor type: {monitor_type}'
+        })
 
 
 # ============================================================================

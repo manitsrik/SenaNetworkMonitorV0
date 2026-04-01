@@ -205,6 +205,26 @@
         </div>
     </div>
 
+    <!-- Personal Security Section (For current user) -->
+    <div class="card mb-2" id="personal-security-card">
+        <div class="card-header">
+            <h3 class="card-title"><i class="fa-solid fa-shield-halved"></i> My Security (MFA)</h3>
+        </div>
+        <div class="card-body">
+            <div class="flex-between">
+                <div>
+                    <p style="margin-bottom: 0.5rem;"><strong>Two-Factor Authentication (TOTP)</strong></p>
+                    <p class="text-muted" style="font-size: 0.85rem;" id="mfa-status-text">
+                        Loading MFA status...
+                    </p>
+                </div>
+                <div id="mfa-action-container">
+                    <!-- Buttons will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Users Table -->
     <div class="card">
         <div class="card-header">
@@ -221,6 +241,7 @@
                         <th>Email</th>
                         <th style="text-align: center;">Auth</th>
                         <th style="text-align: center;">Role</th>
+                        <th style="text-align: center;">MFA</th>
                         <th style="text-align: center;">Status</th>
                         <th>Last Login</th>
                         <th>Created</th>
@@ -229,7 +250,7 @@
                 </thead>
                 <tbody id="users-tbody">
                     <tr>
-                        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
                             Loading users...
                         </td>
                     </tr>
@@ -361,6 +382,67 @@
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- MFA Setup Modal -->
+<div id="mfa-modal" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+        <div class="modal-header">
+            <h3 id="mfa-modal-title"><i class="fa-solid fa-shield-halved"></i> Setup MFA</h3>
+            <button class="modal-close" onclick="closeMFAModal()">&times;</button>
+        </div>
+        <div class="mfa-setup-container">
+            <div id="mfa-setup-step1">
+                <p style="margin-bottom: 1.5rem;">Scan this QR code with your authenticator app (Google Authenticator, Microsoft Authenticator, etc.)</p>
+                <div class="qr-code-wrapper">
+                    <img id="mfa-qr-img" class="qr-code-img" src="" alt="QR Code">
+                </div>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Or enter this key manually:</p>
+                <div id="mfa-secret-key" class="mfa-secret-key">XXXX XXXX XXXX XXXX</div>
+                <button class="btn btn-primary w-full" onclick="showMFAStep2()" style="width: 100%;">
+                    I've scanned the code <i class="fa-solid fa-arrow-right"></i>
+                </button>
+            </div>
+
+            <div id="mfa-setup-step2" style="display: none;">
+                <p style="margin-bottom: 1.5rem;">Enter the 6-digit verification code from your app to confirm setup.</p>
+                <input type="text" id="mfa-verify-code" class="form-input mfa-verify-input" maxlength="6" placeholder="000000" inputmode="numeric">
+                <div class="flex gap-1" style="width: 100%; margin-top: 1rem;">
+                    <button class="btn btn-primary" onclick="verifyMFACode()" style="flex: 2;">
+                        Confirm & Enable
+                    </button>
+                    <button class="btn btn-secondary" onclick="showMFAStep1()" style="flex: 1;">
+                        Back
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MFA Disable Confirmation Modal -->
+<div id="mfa-disable-modal" class="modal">
+    <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-shield-slash"></i> Disable MFA</h3>
+            <button class="modal-close" onclick="closeMFADisableModal()">&times;</button>
+        </div>
+        <div style="padding: 1.5rem;">
+            <p style="margin-bottom: 1.5rem;">Please confirm your account password to disable Two-Factor Authentication.</p>
+            <div class="form-group">
+                <label class="form-label">Account Password</label>
+                <input type="password" id="mfa-disable-password" class="form-input" placeholder="Enter password">
+            </div>
+            <div class="flex gap-1" style="margin-top: 1.5rem;">
+                <button class="btn btn-danger" onclick="confirmDisableMFA()" style="flex: 1;">
+                    Disable MFA
+                </button>
+                <button class="btn btn-secondary" onclick="closeMFADisableModal()" style="flex: 1;">
+                    Cancel
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -649,12 +731,54 @@
         color: var(--danger);
         border-color: var(--danger);
     }
+
+    /* MFA Specific Styles */
+    .mfa-setup-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 1.5rem;
+    }
+    .qr-code-wrapper {
+        background: white;
+        padding: 1rem;
+        border-radius: 12px;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    .qr-code-img {
+        width: 180px;
+        height: 180px;
+        display: block;
+    }
+    .mfa-secret-key {
+        font-family: monospace;
+        background: var(--bg-tertiary);
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+        border: 1px solid var(--border-color);
+        letter-spacing: 1px;
+    }
+    .mfa-verify-input {
+        width: 100%;
+        max-width: 200px;
+        text-align: center;
+        font-size: 1.5rem;
+        letter-spacing: 0.5rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
 </style>
 {% endblock %}
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', loadUsers);
+    document.addEventListener('DOMContentLoaded', () => {
+        loadUsers();
+        checkCurrentMFASetup();
+    });
 
     let usersData = [];
 
@@ -679,7 +803,7 @@
         } catch (error) {
             console.error('Error loading users:', error);
             document.getElementById('users-tbody').innerHTML = `
-                <tr><td colspan="7" style="text-align: center; color: var(--danger); padding: 2rem;">
+                <tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 2rem;">
                     Error loading users
                 </td></tr>`;
         }
@@ -689,7 +813,7 @@
         const tbody = document.getElementById('users-tbody');
 
         if (!usersData || usersData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">
                 No users found</td></tr>`;
             return;
         }
@@ -706,6 +830,10 @@
             const initials = (user.display_name || user.username).substring(0, 2).toUpperCase();
             const colors = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
             const bgColor = colors[user.id % colors.length];
+
+            const mfaBadge = user.mfa_enabled 
+                ? '<span class="status-badge" style="background: rgba(34, 197, 94, 0.1); color: #22c55e;"><i class="fa-solid fa-lock"></i> Enabled</span>'
+                : '<span class="status-badge" style="background: rgba(107, 114, 128, 0.1); color: var(--text-secondary);"><i class="fa-solid fa-lock-open"></i> Disabled</span>';
 
             return `<tr>
                 <td>
@@ -726,6 +854,7 @@
                 <td style="text-align: center;">
                     <span class="role-badge ${roleClass}"><i class="fa-solid ${roleIcon}"></i> ${roleLabel}</span>
                 </td>
+                <td style="text-align: center;">${mfaBadge}</td>
                 <td style="text-align: center;">${statusBadge}</td>
                 <td style="font-size: 0.82rem;">${lastLogin}</td>
                 <td style="font-size: 0.82rem;">${created}</td>
@@ -733,6 +862,10 @@
                     <button class="action-btn" onclick="editUser(${user.id})" title="Edit">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
+                    ${user.mfa_enabled ? `
+                    <button class="action-btn" onclick="resetMFA(${user.id}, '${user.username}')" title="Reset MFA" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.3);">
+                        <i class="fa-solid fa-shield-slash"></i>
+                    </button>` : ''}
                     <button class="action-btn danger" onclick="deleteUser(${user.id}, '${user.username}')" title="Delete">
                         <i class="fa-solid fa-trash"></i>
                     </button>
@@ -746,16 +879,17 @@
     }
 
     function toggleAuthType(type) {
-        const pwGroup = document.getElementById('user-password').closest('.form-group');
+        const passwordInput = document.getElementById('user-password');
+        const pwGroup = passwordInput.closest('.form-group');
         if (type === 'ldap') {
             pwGroup.style.opacity = '0.5';
-            document.getElementById('user-password').disabled = true;
-            document.getElementById('user-password').placeholder = 'Auth via LDAP';
+            passwordInput.disabled = true;
+            passwordInput.placeholder = 'Auth via LDAP';
             document.getElementById('password-hint').textContent = '(Managed by LDAP)';
         } else {
             pwGroup.style.opacity = '1';
-            document.getElementById('user-password').disabled = false;
-            document.getElementById('user-password').placeholder = '********';
+            passwordInput.disabled = false;
+            passwordInput.placeholder = '********';
             const isEdit = !!document.getElementById('edit-user-id').value;
             document.getElementById('password-hint').textContent = isEdit ? '(leave empty to keep)' : '(required, min 4 chars)';
         }
@@ -829,7 +963,6 @@
 
         const userId = document.getElementById('edit-user-id').value;
         const isEdit = !!userId;
-
         const selectedRole = document.querySelector('input[name="role"]:checked');
 
         const data = {
@@ -888,19 +1021,172 @@
         }
     }
 
+    // ========================================================================
+    // MFA Management Logic
+    // ========================================================================
+
+    async function checkCurrentMFASetup() {
+        try {
+            const response = await fetch('/api/users/me/mfa/status');
+            const data = await response.json();
+            updateMFAUI(data.mfa_enabled);
+        } catch (error) {
+            console.error('Error checking MFA status:', error);
+        }
+    }
+
+    function updateMFAUI(enabled) {
+        const textEl = document.getElementById('mfa-status-text');
+        const container = document.getElementById('mfa-action-container');
+        
+        if (enabled) {
+            textEl.innerHTML = '<span style="color: #22c55e;"><i class="fa-solid fa-circle-check"></i> Enabled</span>. Your account is protected with Two-Factor Authentication.';
+            container.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="showDisableMFAModal()"><i class="fa-solid fa-shield-slash"></i> Disable MFA</button>`;
+        } else {
+            textEl.innerHTML = '<span style="color: var(--text-secondary);"><i class="fa-solid fa-circle-xmark"></i> Disabled</span>. Add an extra layer of security to your account.';
+            container.innerHTML = `<button class="btn btn-primary btn-sm" onclick="startMFASetup()"><i class="fa-solid fa-shield-halved"></i> Setup MFA</button>`;
+        }
+    }
+
+    async function startMFASetup() {
+        try {
+            const response = await fetch('/api/users/me/mfa/setup', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('mfa-secret-key').textContent = data.secret.match(/.{1,4}/g).join(' ');
+                document.getElementById('mfa-qr-img').src = '/api/users/me/mfa/qrcode?t=' + Date.now();
+                showMFAStep1();
+                document.getElementById('mfa-modal').classList.add('active');
+            } else {
+                showAlert(data.error || 'Failed to start MFA setup', 'danger');
+            }
+        } catch (error) {
+            showAlert('Server error during MFA setup', 'danger');
+        }
+    }
+
+    function showMFAStep1() {
+        document.getElementById('mfa-setup-step1').style.display = 'block';
+        document.getElementById('mfa-setup-step2').style.display = 'none';
+    }
+
+    function showMFAStep2() {
+        document.getElementById('mfa-setup-step1').style.display = 'none';
+        document.getElementById('mfa-setup-step2').style.display = 'block';
+        document.getElementById('mfa-verify-code').focus();
+    }
+
+    async function verifyMFACode() {
+        const code = document.getElementById('mfa-verify-code').value;
+        if (!code || code.length !== 6) {
+            showAlert('Please enter a 6-digit code', 'danger');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/users/me/mfa/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                closeMFAModal();
+                checkCurrentMFASetup();
+                loadUsers(); // Refresh table to show badge
+                showAlert('Two-Factor Authentication enabled successfully!', 'success');
+            } else {
+                showAlert(data.error || 'Invalid verification code', 'danger');
+            }
+        } catch (error) {
+            showAlert('Server error during verification', 'danger');
+        }
+    }
+
+    function closeMFAModal() {
+        document.getElementById('mfa-modal').classList.remove('active');
+        document.getElementById('mfa-verify-code').value = '';
+    }
+
+    function showDisableMFAModal() {
+        document.getElementById('mfa-disable-password').value = '';
+        document.getElementById('mfa-disable-modal').classList.add('active');
+    }
+
+    function closeMFADisableModal() {
+        document.getElementById('mfa-disable-modal').classList.remove('active');
+    }
+
+    async function confirmDisableMFA() {
+        const password = document.getElementById('mfa-disable-password').value;
+        if (!password) {
+            showAlert('Password is required', 'danger');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/users/me/mfa/disable', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                closeMFADisableModal();
+                checkCurrentMFASetup();
+                loadUsers();
+                showAlert('Two-Factor Authentication disabled', 'info');
+            } else {
+                showAlert(data.error || 'Failed to disable MFA', 'danger');
+            }
+        } catch (error) {
+            showAlert('Server error', 'danger');
+        }
+    }
+
+    async function resetMFA(userId, username) {
+        if (!confirm(`Reset MFA for user "${username}"?\n\nThey will need to setup MFA again on their next login if required.`)) return;
+
+        try {
+            const response = await fetch(`/api/users/${userId}/mfa/reset`, { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                loadUsers();
+                // Check if current user was the one reset
+                if (userId == {{ session.get('user_id') or 0 }}) checkCurrentMFASetup();
+                showAlert(`MFA reset for ${username}`, 'success');
+            } else {
+                showAlert(data.error || 'Failed to reset MFA', 'danger');
+            }
+        } catch (error) {
+            showAlert('Server error', 'danger');
+        }
+    }
+
     function showAlert(message, type) {
         const alertDiv = document.getElementById('alert-message');
         alertDiv.className = `alert alert-${type}`;
         alertDiv.textContent = message;
         alertDiv.style.display = 'block';
-        if (type === 'success') {
-            setTimeout(() => { alertDiv.style.display = 'none'; }, 3000);
+        if (type === 'success' || type === 'info') {
+            setTimeout(() => { 
+                if (alertDiv.textContent === message) alertDiv.style.display = 'none'; 
+            }, 3000);
         }
     }
 
     document.addEventListener('click', (event) => {
-        const modal = document.getElementById('user-modal');
-        if (event.target === modal) closeUserModal();
+        const userModal = document.getElementById('user-modal');
+        const mfaModal = document.getElementById('mfa-modal');
+        const mfaDisableModal = document.getElementById('mfa-disable-modal');
+        
+        if (event.target === userModal) closeUserModal();
+        if (event.target === mfaModal) closeMFAModal();
+        if (event.target === mfaDisableModal) closeMFADisableModal();
     });
 </script>
 {% endblock %}

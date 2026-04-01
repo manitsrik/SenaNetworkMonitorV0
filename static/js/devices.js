@@ -119,6 +119,11 @@ function updateDevicesTable(devices) {
                     <button class="btn btn-sm" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem;" onclick="showPerformanceMetrics(${device.id})" title="Performance Metrics">
                         📊
                     </button>
+                    ${['ssh', 'winrm'].includes(device.monitor_type) ? `
+                    <button class="btn btn-sm" style="background: var(--info, #0ea5e9); color: white; padding: 0.25rem 0.5rem;" onclick="showActivePorts(${device.id})" title="Active Ports">
+                        🔌
+                    </button>
+                    ` : ''}
                     ` : ''}
                     ${device.monitor_type === 'snmp' ? `
                     <button class="btn btn-sm" style="background: var(--primary); color: white; padding: 0.25rem 0.5rem;" onclick="showSnmpDetails(${device.id})" title="SNMP Details">
@@ -375,6 +380,8 @@ function showAddDeviceModal() {
     document.getElementById('dns-query-domain').value = 'google.com';
     // Reset expected status code to default
     document.getElementById('expected-status-code').value = '200';
+    // Reset expected ports
+    document.getElementById('expected-ports').value = '';
     // Reset location type to default
     document.getElementById('device-location-type').value = 'on-premise';
     // Reset coordinate fields
@@ -406,6 +413,7 @@ function updateIPFieldLabel() {
     const httpSettings = document.getElementById('http-settings');
     const sshSettings = document.getElementById('ssh-settings');
     const winrmSettings = document.getElementById('winrm-settings');
+    const expectedPortsSettings = document.getElementById('expected-ports-settings');
 
     // Hide all optional settings first
     snmpSettings.style.display = 'none';
@@ -414,6 +422,7 @@ function updateIPFieldLabel() {
     httpSettings.style.display = 'none';
     sshSettings.style.display = 'none';
     winrmSettings.style.display = 'none';
+    if (expectedPortsSettings) expectedPortsSettings.style.display = 'none';
 
     if (monitorType === 'http') {
         ipLabel.textContent = 'URL *';
@@ -446,12 +455,14 @@ function updateIPFieldLabel() {
         ipInput.removeAttribute('pattern');
         ipHint.textContent = 'Enter IP address for SSH monitoring';
         sshSettings.style.display = 'block';
+        if (expectedPortsSettings) expectedPortsSettings.style.display = 'block';
     } else if (monitorType === 'winrm') {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
         ipInput.removeAttribute('pattern');
         ipHint.textContent = 'Enter IP address for WinRM monitoring';
         winrmSettings.style.display = 'block';
+        if (expectedPortsSettings) expectedPortsSettings.style.display = 'block';
     } else {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
@@ -535,6 +546,11 @@ async function editDevice(deviceId) {
             // Load WinRM (WMI) settings
             document.getElementById('winrm-username').value = device.wmi_username || '';
             document.getElementById('winrm-password').value = device.wmi_password || '';
+
+            // Load Expected Ports
+            if (document.getElementById('expected-ports')) {
+                document.getElementById('expected-ports').value = device.expected_ports || '';
+            }
 
             // Load parent device
             populateParentDeviceDropdown(deviceId);
@@ -642,12 +658,14 @@ async function saveDevice(event) {
             deviceData.ssh_username = getElementValue('ssh-username', '');
             deviceData.ssh_password = getElementValue('ssh-password', '');
             deviceData.ssh_port = parseInt(getElementValue('ssh-port', '22')) || 22;
+            deviceData.expected_ports = getElementValue('expected-ports', '');
         }
 
         // Add WinRM (WMI) credentials if WinRM monitor type is selected
         if (monitorType === 'winrm') {
             deviceData.wmi_username = getElementValue('winrm-username', '');
             deviceData.wmi_password = getElementValue('winrm-password', '');
+            deviceData.expected_ports = getElementValue('expected-ports', '');
         }
 
         console.log('Device Data to send:', deviceData);
@@ -826,7 +844,141 @@ document.addEventListener('click', (event) => {
     if (event.target === snmpModal) {
         closeSnmpModal();
     }
+    const portsModal = document.getElementById('ports-modal');
+    if (event.target === portsModal) {
+        closePortsModal();
+    }
 });
+
+// Current device ID for Ports modal
+let currentPortsDeviceId = null;
+let currentPortsData = [];
+
+// Show Active Ports
+async function showActivePorts(deviceId) {
+    const device = allDevices.find(d => d.id === deviceId);
+    if (!device) return;
+
+    currentPortsDeviceId = deviceId;
+    document.getElementById('ports-device-name').textContent = device.name;
+    document.getElementById('ports-search').value = '';
+    
+    // Show loading
+    const tbody = document.getElementById('ports-table-body');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="5" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                ⏳ Fetching live ports... This may take a few seconds.
+            </td>
+        </tr>
+    `;
+    
+    document.getElementById('ports-modal').classList.add('active');
+    await loadPortsData();
+}
+
+// Close Ports modal
+function closePortsModal() {
+    document.getElementById('ports-modal').classList.remove('active');
+    currentPortsDeviceId = null;
+    currentPortsData = [];
+}
+
+// Fetch and load Ports Data
+async function loadPortsData() {
+    if (!currentPortsDeviceId) return;
+    try {
+        const response = await fetch(`/api/devices/${currentPortsDeviceId}/ports`);
+        const data = await response.json();
+        const tbody = document.getElementById('ports-table-body');
+        
+        if (data.success && data.ports) {
+            currentPortsData = data.ports || [];
+            if (currentPortsData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                            No active listening ports found.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                renderPortsTable(currentPortsData);
+            }
+        } else {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center" style="padding: 2rem; color: var(--danger);">
+                        Error: ${data.error || 'Failed to fetch ports'}
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (error) {
+        console.error('Error fetching active ports:', error);
+        document.getElementById('ports-table-body').innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center" style="padding: 2rem; color: var(--danger);">
+                    Network error occurred while fetching ports.
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function refreshPortsData() {
+    if (currentPortsDeviceId) {
+        document.getElementById('ports-table-body').innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                    ⏳ Refreshing ports...
+                </td>
+            </tr>
+        `;
+        loadPortsData();
+    }
+}
+
+// Render Ports Table
+function renderPortsTable(ports) {
+    const tbody = document.getElementById('ports-table-body');
+    tbody.innerHTML = ports.map(p => `
+        <tr style="border-bottom: 1px solid var(--border-color);">
+            <td style="padding: 0.5rem;"><code style="color: ${p.protocol.toLowerCase() === 'tcp' ? 'var(--primary)' : 'var(--warning)'}; font-weight: bold;">${p.protocol}</code></td>
+            <td style="padding: 0.5rem; word-break: break-all;">${p.address}</td>
+            <td style="padding: 0.5rem; font-weight: 600;">${p.port}</td>
+            <td style="padding: 0.5rem; color: ${p.process && p.process !== 'Unknown' ? 'var(--text)' : 'var(--text-muted)'};">${p.process}</td>
+            <td style="padding: 0.5rem;"><span class="status-badge" style="background: rgba(16, 185, 129, 0.1); color: rgb(16, 185, 129);">${p.state || 'LISTEN'}</span></td>
+        </tr>
+    `).join('');
+}
+
+// Filter Ports Table
+function filterPortsTable() {
+    const searchTerm = document.getElementById('ports-search').value.toLowerCase();
+    const tbody = document.getElementById('ports-table-body');
+    
+    if (currentPortsData.length === 0) return;
+    
+    const filtered = currentPortsData.filter(p => {
+        return (p.port || '').toString().includes(searchTerm) ||
+               (p.process || '').toLowerCase().includes(searchTerm) ||
+               (p.protocol || '').toLowerCase().includes(searchTerm) ||
+               (p.address || '').toLowerCase().includes(searchTerm);
+    });
+    
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                    No ports matching your search.
+                </td>
+            </tr>
+        `;
+    } else {
+        renderPortsTable(filtered);
+    }
+}
 
 // Current device ID for SNMP modal
 let currentSnmpDeviceId = null;
@@ -1305,7 +1457,8 @@ async function setGraphPeriod(minutes, btn) {
         if (responseTimeChart) {
             const chartData = graphHistoryData.map(d => ({
                 x: d.time,
-                y: d.value
+                y: d.value === null ? 0 : d.value,
+                originalValue: d.value
             }));
             responseTimeChart.data.datasets[0].data = chartData;
 
@@ -1354,18 +1507,21 @@ function createResponseTimeChart() {
                 label: 'Response Time (ms)',
                 data: chartData,
                 borderColor: 'rgba(16, 185, 129, 1)', // Emerald Green
-                backgroundColor: 'rgba(16, 185, 129, 0.4)', // Semi-transparent emerald green
+                backgroundColor: 'rgba(16, 185, 129, 0.2)', // Semi-transparent emerald green (uniform)
                 borderWidth: 2,
                 fill: true,
                 tension: 0, // sharp edges (jagged style)
                 spanGaps: true, // Connect lines across
                 
-                pointRadius: 0, // hide points for a cleaner look
-                pointHoverRadius: 6,
-                pointBackgroundColor: 'rgba(239, 68, 68, 1)', // Red on hover
-                pointBorderColor: 'white',
+                pointRadius: (ctx) => ctx.raw && ctx.raw.originalValue === null ? 3 : 0,
+                pointBackgroundColor: (ctx) => ctx.raw && ctx.raw.originalValue === null ? '#ef4444' : 'rgba(16, 185, 129, 1)',
+                pointBorderColor: (ctx) => ctx.raw && ctx.raw.originalValue === null ? '#ef4444' : 'white',
                 pointBorderWidth: 2,
-                pointHoverRadius: 7
+                pointHoverRadius: 7,
+                segment: {
+                    borderColor: (ctx) => ctx.p0.raw && ctx.p0.raw.originalValue === null && ctx.p1.raw && ctx.p1.raw.originalValue === null ? '#ef4444' : undefined,
+                    borderDash: (ctx) => ctx.p0.raw && ctx.p0.raw.originalValue === null && ctx.p1.raw && ctx.p1.raw.originalValue === null ? [4, 4] : undefined
+                }
             }]
         },
         options: {
@@ -2178,7 +2334,30 @@ function initPerformanceCharts(data) {
             mode: 'nearest',
             axis: 'x',
             intersect: false
+        },
+        spanGaps: false
+    };
+
+    // Helper to insert null points for gaps > 3 minutes (180000ms) to break lines
+    const insertGaps = (arr) => {
+        const res = [];
+        for (let i = 0; i < arr.length; i++) {
+            const ts = arr[i].timestamp || arr[i].sampled_at;
+            const d = new Date(ts.includes(' ') ? ts.replace(' ', 'T') : ts);
+            if (i > 0) {
+                const prevTs = arr[i-1].timestamp || arr[i-1].sampled_at;
+                const prevD = new Date(prevTs.includes(' ') ? prevTs.replace(' ', 'T') : prevTs);
+                if (d - prevD > 180000) {
+                    res.push({ x: new Date(prevD.getTime() + 1000), y: null });
+                    // Insert points at y=0 to display red downtime indicators
+                    res.push({ x: new Date(prevD.getTime() + 60000), y: 0, isDown: true });
+                    res.push({ x: new Date(d.getTime() - 60000), y: 0, isDown: true });
+                    res.push({ x: new Date(d.getTime() - 1000), y: null });
+                }
+            }
+            res.push({ x: d, y: arr[i].value });
         }
+        return res;
     };
 
     const config = [
@@ -2191,12 +2370,10 @@ function initPerformanceCharts(data) {
         const canvas = document.getElementById(`${set.id}-chart`);
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
-        const chartData = set.data.map(p => ({ x: new Date(p.timestamp), y: p.value }));
+        const chartData = insertGaps(set.data);
         
-        // Create Premium Gradient
-        const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-        gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); 
-        gradient.addColorStop(1, 'rgba(16, 185, 129, 0.05)'); 
+        // Uniform solid fill color
+        const fillColor = 'rgba(16, 185, 129, 0.2)'; 
 
         let existingChart = null;
         if (set.id === 'cpu') existingChart = cpuChart;
@@ -2205,7 +2382,7 @@ function initPerformanceCharts(data) {
 
         if (existingChart) {
             existingChart.data.datasets[0].data = chartData;
-            existingChart.data.datasets[0].backgroundColor = gradient;
+            existingChart.data.datasets[0].backgroundColor = fillColor;
             existingChart.options.scales.x.time.unit = currentPerfHours <= 1 ? 'minute' : (currentPerfHours <= 24 ? 'hour' : 'day');
             existingChart.update();
         } else {
@@ -2216,15 +2393,21 @@ function initPerformanceCharts(data) {
                         label: set.label,
                         data: chartData,
                         borderColor: BRAND_COLOR,
-                        backgroundColor: gradient,
+                        backgroundColor: fillColor,
                         borderWidth: 3,
                         fill: true,
                         tension: 0, 
-                        pointRadius: 0, 
+                        pointRadius: (ctx) => ctx.raw && ctx.raw.isDown ? 3 : 0, 
+                        pointBackgroundColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : '#ffffff',
+                        pointBorderColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : BRAND_COLOR,
                         pointHoverRadius: 6,
                         pointHoverBackgroundColor: '#ffffff',
                         pointHoverBorderColor: BRAND_COLOR,
-                        pointHoverBorderWidth: 3
+                        pointHoverBorderWidth: 3,
+                        segment: {
+                            borderColor: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? '#ef4444' : undefined,
+                            borderDash: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? [4, 4] : undefined
+                        }
                     }]
                 },
                 options: commonOptions
@@ -2240,8 +2423,8 @@ function initPerformanceCharts(data) {
     const netCanvas = document.getElementById('network-chart');
     if (netCanvas) {
         const ctx = netCanvas.getContext('2d');
-        const inData = data.network_in.map(p => ({ x: new Date(p.timestamp), y: p.value }));
-        const outData = data.network_out.map(p => ({ x: new Date(p.timestamp), y: p.value }));
+        const inData = insertGaps(data.network_in);
+        const outData = insertGaps(data.network_out);
         
         const formatBps = (val) => {
             if (val >= 1000000000) return (val / 1000000000).toFixed(2) + ' Gbps';
@@ -2276,7 +2459,13 @@ function initPerformanceCharts(data) {
                             borderWidth: 2,
                             fill: true,
                             tension: 0.1,
-                            pointRadius: 0
+                            pointRadius: (ctx) => ctx.raw && ctx.raw.isDown ? 3 : 0,
+                            pointBackgroundColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : '#3b82f6',
+                            pointBorderColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : '#3b82f6',
+                            segment: {
+                                borderColor: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? '#ef4444' : undefined,
+                                borderDash: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? [4, 4] : undefined
+                            }
                         },
                         {
                             label: 'Outgoing',
@@ -2286,7 +2475,13 @@ function initPerformanceCharts(data) {
                             borderWidth: 2,
                             fill: true,
                             tension: 0.1,
-                            pointRadius: 0
+                            pointRadius: (ctx) => ctx.raw && ctx.raw.isDown ? 3 : 0,
+                            pointBackgroundColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : '#ec4899',
+                            pointBorderColor: (ctx) => ctx.raw && ctx.raw.isDown ? '#ef4444' : '#ec4899',
+                            segment: {
+                                borderColor: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? '#ef4444' : undefined,
+                                borderDash: (ctx) => ctx.p0.raw && ctx.p0.raw.isDown && ctx.p1.raw && ctx.p1.raw.isDown ? [4, 4] : undefined
+                            }
                         }
                     ]
                 },

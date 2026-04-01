@@ -1,9 +1,9 @@
 # NW MonitorV0 — Enterprise Monitoring Gap Analysis - v2.0
 > Date: 2026-03-25
-> Progress: 26/30 (87%) Tasks Completed
+> Progress: 27/30 (90%) Tasks Completed
 ## เปรียบเทียบกับ SolarWinds / PRTG / ManageEngine / Zabbix / Grafana
 
-> **Document Version**: 1.9 | **อัปเดตล่าสุด**: 25 มีนาคม 2569 | **ผู้จัดทำ**: Development Team
+> **Document Version**: 2.0 | **อัปเดตล่าสุด**: 1 เมษายน 2569 | **ผู้จัดทำ**: Development Team
 
 ---
 
@@ -45,7 +45,7 @@
 | **TCP Port** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **DNS** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
 | **SSL Certificate** | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✔ มีแล้ว |
-| **WMI/SSH Agent** | ✅ | ✅ | ✅ (agent) | ✅ | — | ❌ | 🔴 High |
+| **WMI/SSH Agent** | ✅ | ✅ | ✅ (agent) | ✅ | — | ✅ | ✔ มีแล้ว |
 | **Bandwidth/NetFlow** | ✅ | ✅ | ✅ | ✅ | via plugin | ✅ (SNMP) | ✔ มีแล้ว |
 | **Syslog Receiver** | ✅ | ✅ | ✅ | ✅ | via Loki | ❌ | 🟡 Medium |
 | **Custom Dashboards** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✔ มีแล้ว |
@@ -100,7 +100,7 @@
 | **2.1 SNMP v3 Support** | รองรับ authentication (SHA/MD5) + encryption (AES/DES) | Medium | ✅ เสร็จ | — |
 | **2.2 SNMP Traps Receiver** | Listen SNMP traps จากอุปกรณ์ (port 162) | Medium | ✅ เสร็จ | — |
 | **2.3 Bandwidth/NetFlow/sFlow** | เก็บข้อมูล traffic flow แบบ real-time (SNMP interface counters) | Hard | ✅ เสร็จ | — |
-| **2.4 SSH/WMI Agent-based Monitoring** | เก็บ CPU, RAM, Disk, Process จาก server | Hard | ⬜ | — |
+| **2.4 SSH/WMI Agent-based Monitoring** | เก็บ CPU, RAM, Disk, Network จาก server ผ่าน SSH (Linux) / WinRM (Windows) | Hard | ✅ เสร็จ | — |
 | **2.5 Syslog Receiver** | รับ syslog จากอุปกรณ์ เก็บและแสดงผล | Medium | ✅ เสร็จ | — |
 | **2.6 Custom SNMP OID Monitoring** | ให้ user กำหนด OID เองสำหรับ monitor ค่าเฉพาะ | Easy | ✅ เสร็จ | — |
 
@@ -136,7 +136,7 @@
 |-----|-----------|---------|---------|
 | **5.1 LDAP/Active Directory Auth** | ใช้ user/group จาก AD สำหรับ authentication | Medium | ✅ เสร็จ |
 | **5.2 SSO (SAML/OAuth2)** | SSO support for Google/Microsoft/GitHub via OAuth2/OIDC | Hard | ✅ เสร็จ |
-| **5.3 MFA (2FA)** | Support for TOTP (Google Authenticator) | Hard | ⬜ |
+| **5.3 MFA (2FA)** | Support for TOTP (Google Authenticator) | Hard | ✅ เสร็จ |
 | **5.4 API Documentation (Swagger)** | เปิด public REST API พร้อม docs | Easy | ✅ เสร็จ |
 | **5.5 Plugin System** | ให้ user เขียน custom monitor/alerter ได้เอง | Hard | ⬜ |
 
@@ -170,7 +170,6 @@
 
 ### ❌ จุดอ่อนหลัก
 - **Single Process** — ไม่มี HA, ถ้า server ล่มจะตรวจไม่ได้เลย
-- **ไม่มี Agent-based monitoring** — ดู CPU/RAM/Disk ไม่ได้
 - **ไม่มี Container/Cloud Monitoring** — ไม่รองรับ Docker/K8s/Cloud
 
 ---
@@ -224,12 +223,12 @@ quadrantChart
 | Phase | ทั้งหมด | เสร็จ | บางส่วน | % | สถานะ |
 |-------|:---:|:---:|:---:|:---:|--------|
 | **Phase 1** — Foundation & Scalability | 5 | 5 | 0 | 100% | ✅ เสร็จ |
-| **Phase 2** — Monitoring Depth | 6 | 5 | 0 | 83% | 🟡 กำลังดำเนินการ |
+| **Phase 2** — Monitoring Depth | 6 | 6 | 0 | 100% | ✅ เสร็จ |
 | **Phase 3** — Alerting & Intelligence | 5 | 3 | 0 | 60% | 🟡 กำลังดำเนินการ |
 | **Phase 4** — Visualization & Reporting | 5 | 5 | 0 | 100% | ✅ เสร็จ |
-| **Phase 5** — Enterprise Security & Integration | 5 | 3 | 0 | 60% | 🟡 กำลังดำเนินการ |
+| **Phase 5** — Enterprise Security & Integration | 5 | 4 | 0 | 80% | 🟡 กำลังดำเนินการ |
 | **Phase 6** — Accessibility & UX | 4 | 4 | 0 | 100% | ✅ เสร็จ |
-| **รวม** | **30** | **26** | **0** | **87%** | — |
+| **รวม** | **30** | **27** | **0** | **90%** | — |
 
 ```mermaid
 gantt
@@ -271,6 +270,7 @@ gantt
 
 | วันที่ | Version | รายละเอียดการเปลี่ยนแปลง |
 |--------|---------|-------------------------|
+| 1 เม.ย. 2569 | 2.0 | อัปเดต Task 2.4 SSH/WMI Agent-based Monitoring เป็นเสร็จสมบูรณ์ — SSH (paramiko) เก็บ CPU/RAM/Disk/Network จาก Linux, WinRM (pywinrm+PowerShell) เก็บ CPU/RAM/Disk/Network จาก Windows, Performance API, Port scanning, Expected ports verification. Phase 2 เสร็จ 6/6 (100%), รวมความคืบหน้า 26/30 (87%) |
 | 25 มี.ค. 2569 | 1.9 | อัปเดต Task 5.1 LDAP/AD Auth เป็นเสร็จสมบูรณ์ — มี API routes (settings/save/test), LDAP settings UI ใน Settings page, รองรับ auth_type ldap ใน User Management, Test Connection. รวมความคืบหน้า 25/30 (83%) |
 | 25 มี.ค. 2569 | 1.8 | อัปเดต Task 3.2 Alert Dependencies เป็นเสร็จสมบูรณ์ — เพิ่ม parent-child relationship ใน DB/UI, ระบบระงับ Alert อัตโนมัติเมื่ออุปกรณ์ต้นทางล่ม และระบบแจ้งเตือนจำนวนอุปกรณ์ที่ได้รับผลกระทบ. รวมความคืบหน้า 24/30 (80%) |
 | 25 มี.ค. 2569 | 1.7 | อัปเดต Task 4.5 Dashboard Variables/Templates เป็นเสร็จสมบูรณ์ — มี dashboard_templates table, CRUD API routes, UI builder/view/template gallery. Phase 4 เสร็จ 5/5 (100%), รวมทั้งหมด 23/30 (77%) |

@@ -123,7 +123,8 @@ def create_sub_topology():
         background_image=data.get('background_image'),
         background_zoom=data.get('background_zoom', 100),
         node_positions=data.get('node_positions'),
-        background_opacity=data.get('background_opacity', 100)
+        background_opacity=data.get('background_opacity', 100),
+        theme_mode=data.get('theme_mode', 'standard')
     )
     
     if result['success']:
@@ -167,7 +168,8 @@ def update_sub_topology_route(sub_topo_id):
         background_image=data.get('background_image'),
         background_zoom=data.get('background_zoom'),
         node_positions=data.get('node_positions'),
-        background_opacity=data.get('background_opacity')
+        background_opacity=data.get('background_opacity'),
+        theme_mode=data.get('theme_mode')
     )
     log_audit('update', 'topology', 'sub_topology', sub_topo_id, data.get('name'))
     return jsonify(result)

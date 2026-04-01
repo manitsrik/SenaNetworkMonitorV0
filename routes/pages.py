@@ -37,6 +37,13 @@ def topology():
     return render_template('topology.html')
 
 
+@pages_bp.route('/premium-topology')
+@login_required
+def premium_topology():
+    """Premium 3D Isometric View Topology"""
+    return render_template('premium_topology.html')
+
+
 @pages_bp.route('/devices')
 @login_required
 def devices():
@@ -58,7 +65,15 @@ def settings():
     return render_template('settings.html')
 
 
+@pages_bp.route('/profile')
+@login_required
+def profile():
+    """User profile and security settings page"""
+    return render_template('profile.html')
+
+
 @pages_bp.route('/users')
+
 @admin_required
 def users():
     """User management page (admin only)"""

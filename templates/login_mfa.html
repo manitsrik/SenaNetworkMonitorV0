@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Factor Authentication - Network Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=v1.3_mfa">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .mfa-digits {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin: 1.5rem 0;
+        }
+        .mfa-digit {
+            width: 48px;
+            height: 56px;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            font-family: 'Inter', monospace;
+            border: 2px solid var(--border-color, #374151);
+            border-radius: 10px;
+            background: var(--bg-secondary, #1f2937);
+            color: var(--text-primary, #f9fafb);
+            outline: none;
+            transition: all 0.2s ease;
+            caret-color: var(--primary, #6366f1);
+        }
+        .mfa-digit:focus {
+            border-color: var(--primary, #6366f1);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+        }
+        .mfa-digit.filled {
+            border-color: var(--primary, #6366f1);
+            background: rgba(99, 102, 241, 0.08);
+        }
+        .mfa-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1rem;
+            background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15));
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.75rem;
+            color: var(--primary, #6366f1);
+        }
+        .mfa-info {
+            text-align: center;
+            color: var(--text-secondary, #9ca3af);
+            font-size: 0.875rem;
+            line-height: 1.5;
+            margin-bottom: 0.5rem;
+        }
+        .mfa-error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            text-align: center;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            animation: shake 0.4s ease;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+        .cancel-link {
+            display: block;
+            text-align: center;
+            margin-top: 1rem;
+            color: var(--text-secondary, #9ca3af);
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .cancel-link:hover {
+            color: var(--text-primary, #f9fafb);
+        }
+        .timer-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin-top: 0.75rem;
+        }
+        .timer-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--success, #22c55e);
+            animation: pulse-dot 1s infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+
+<body class="login-page-body">
+    <div class="login-container">
+        <!-- Theme Toggle -->
+        <div class="theme-toggle-absolute">
+            <div class="theme-switch-wrapper">
+                <label class="theme-switch" for="checkbox">
+                    <input type="checkbox" id="checkbox" onclick="toggleTheme()" />
+                    <div class="theme-slider round">
+                        <i class="fa-solid fa-sun sun-icon"></i>
+                        <i class="fa-solid fa-moon moon-icon"></i>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="login-card">
+            <div class="login-header" style="padding-bottom: 0.5rem;">
+                <div class="mfa-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <h1 class="login-title" style="font-size: 1.3rem;">Two-Factor Authentication</h1>
+                <p class="mfa-info">
+                    Enter the 6-digit verification code from<br>your authenticator app
+                </p>
+            </div>
+
+            {% if error %}
+            <div class="mfa-error">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ error }}
+            </div>
+            {% endif %}
+
+            <form id="mfa-form" method="POST" action="/login/mfa">
+                <div class="mfa-digits">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="0" autofocus autocomplete="one-time-code">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="1">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="2">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="3">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="4">
+                    <input type="text" class="mfa-digit" maxlength="1" inputmode="numeric" pattern="[0-9]" data-idx="5">
+                </div>
+
+                <!-- Hidden field to combine digits -->
+                <input type="hidden" name="totp_code" id="totp_code">
+
+                <button type="submit" class="login-btn" id="verify-btn" disabled>
+                    <i class="fa-solid fa-check-circle"></i> Verify
+                </button>
+            </form>
+
+            <div style="text-align: center;">
+                <span class="timer-badge">
+                    <span class="timer-dot"></span>
+                    Code refreshes every 30 seconds
+                </span>
+            </div>
+
+            <a href="/logout" class="cancel-link">
+                <i class="fa-solid fa-arrow-left"></i> Back to login
+            </a>
+
+            <div class="login-footer" style="margin-top: 1.25rem;">
+                <p>&copy; 2026 Network Monitor System</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script>
+        const digits = document.querySelectorAll('.mfa-digit');
+        const hiddenInput = document.getElementById('totp_code');
+        const verifyBtn = document.getElementById('verify-btn');
+        const form = document.getElementById('mfa-form');
+
+        function updateHiddenInput() {
+            let code = '';
+            digits.forEach(d => { code += d.value; });
+            hiddenInput.value = code;
+            verifyBtn.disabled = code.length !== 6;
+            
+            // Toggle filled class
+            digits.forEach(d => {
+                d.classList.toggle('filled', d.value.length > 0);
+            });
+        }
+
+        digits.forEach((digit, idx) => {
+            digit.addEventListener('input', (e) => {
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                e.target.value = val.slice(-1); // Keep only last digit
+                updateHiddenInput();
+                // Auto-advance to next input
+                if (val && idx < 5) {
+                    digits[idx + 1].focus();
+                }
+            });
+
+            digit.addEventListener('keydown', (e) => {
+                // Backspace: clear and go back
+                if (e.key === 'Backspace') {
+                    if (!e.target.value && idx > 0) {
+                        digits[idx - 1].focus();
+                        digits[idx - 1].value = '';
+                        updateHiddenInput();
+                    }
+                }
+                // Arrow keys
+                if (e.key === 'ArrowLeft' && idx > 0) digits[idx - 1].focus();
+                if (e.key === 'ArrowRight' && idx < 5) digits[idx + 1].focus();
+            });
+
+            // Handle paste
+            digit.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const pasted = e.clipboardData.getData('text').replace(/[^0-9]/g, '').slice(0, 6);
+                for (let i = 0; i < pasted.length && (idx + i) < 6; i++) {
+                    digits[idx + i].value = pasted[i];
+                }
+                updateHiddenInput();
+                // Focus the next empty or last filled
+                const focusIdx = Math.min(idx + pasted.length, 5);
+                digits[focusIdx].focus();
+            });
+
+            digit.addEventListener('focus', () => {
+                digit.select();
+            });
+        });
+
+        // Form submit
+        form.addEventListener('submit', (e) => {
+            updateHiddenInput();
+            if (hiddenInput.value.length !== 6) {
+                e.preventDefault();
+            }
+        });
+    </script>
+</body>
+
+</html>

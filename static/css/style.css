@@ -243,22 +243,98 @@ body {
 }
 
 .sidebar-footer {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 0.625rem;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    z-index: 1001;
+}
+
+.user-profile-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+    text-decoration: none;
+    color: inherit;
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--radius-lg);
+    transition: all var(--transition-base);
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    z-index: 1002;
+    background: transparent;
+}
+
+.user-profile-link:hover {
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1.5px);
+}
+
+.user-profile-link:active {
+    transform: scale(0.97);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.user-avatar {
+    width: 34px;
+    height: 34px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-role {
+    font-size: 0.7rem;
+    color: var(--sidebar-text);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
 }
 
 .logout-btn {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 1.1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 1rem;
+    border-radius: var(--radius-md);
     transition: all var(--transition-base);
+    flex-shrink: 0;
 }
 
 .logout-btn:hover {
-    color: #ff4d4f; /* Bright red on hover */
-    transform: scale(1.1);
+    color: #ff4d4f;
+    background-color: rgba(255, 77, 79, 0.1);
+    transform: translateX(2px);
 }
 
 /* Main Wrapper */
@@ -431,7 +507,7 @@ body {
     .app-wrapper.sidebar-collapsed .sidebar .menu-label,
     .app-wrapper.sidebar-collapsed .sidebar .nav-item span,
     .app-wrapper.sidebar-collapsed .sidebar .sidebar-brand span,
-    .app-wrapper.sidebar-collapsed .sidebar .user-info span {
+    .app-wrapper.sidebar-collapsed .sidebar .user-details {
         display: none;
     }
 

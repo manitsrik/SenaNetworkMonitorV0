@@ -1849,12 +1849,22 @@ window.DashboardRenderer = {
                     const response = await fetch(`/api/bandwidth/history?device_id=${deviceId}&if_index=${ifIndex}&minutes=${currentRange}&_t=${Date.now()}`);
                     const history = await response.json();
                     if (history.success && history.history) {
-                        labels = history.history.map(p => {
+                        for (let i = 0; i < history.history.length; i++) {
+                            const p = history.history[i];
                             const d = new Date((p.timestamp || p.sampled_at).replace(' ', 'T'));
-                            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        });
-                        inData = history.history.map(p => p.bps_in);
-                        outData = history.history.map(p => p.bps_out);
+                            if (i > 0) {
+                                const prevD = new Date((history.history[i-1].timestamp || history.history[i-1].sampled_at).replace(' ', 'T'));
+                                if (d - prevD > 180000) {
+                                    labels.push(''); inData.push(null); outData.push(null);
+                                    labels.push(' '); inData.push(0); outData.push(0);
+                                    labels.push(' '); inData.push(0); outData.push(0);
+                                    labels.push(''); inData.push(null); outData.push(null);
+                                }
+                            }
+                            labels.push(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                            inData.push(p.bps_in);
+                            outData.push(p.bps_out);
+                        }
                     }
                 } else {
                     chartArea.innerHTML = `<div class="flex-center" style="height:100%; flex-direction:column; gap:8px; color:var(--text-muted); font-size:0.85rem;"><i class="fas fa-plug" style="font-size:1.5rem; opacity:0.5;"></i><span>Please select an interface in config</span></div>`;
@@ -1866,12 +1876,22 @@ window.DashboardRenderer = {
                  const perfData = await response.json();
                  const netIn = perfData.network_in || [];
                  const netOut = perfData.network_out || [];
-                 labels = netIn.map(p => {
+                 for (let i = 0; i < netIn.length; i++) {
+                     const p = netIn[i];
                      const d = new Date((p.timestamp || p.checked_at).replace(' ', 'T'));
-                     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                 });
-                 inData = netIn.map(p => p.value);
-                 outData = netOut.map(p => p.value);
+                     if (i > 0) {
+                         const prevD = new Date((netIn[i-1].timestamp || netIn[i-1].checked_at).replace(' ', 'T'));
+                         if (d - prevD > 180000) {
+                             labels.push(''); inData.push(null); outData.push(null);
+                             labels.push(' '); inData.push(0); outData.push(0);
+                             labels.push(' '); inData.push(0); outData.push(0);
+                             labels.push(''); inData.push(null); outData.push(null);
+                         }
+                     }
+                     labels.push(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+                     inData.push(p.value);
+                     outData.push(netOut[i] ? netOut[i].value : null);
+                 }
             }
 
             this.updateNetworkTrafficChart(`nt-chart-${index}`, labels, inData, outData, index);
@@ -1913,7 +1933,13 @@ window.DashboardRenderer = {
                             borderWidth: 2,
                             fill: true,
                             tension: 0.1,
-                            pointRadius: 0
+                            pointRadius: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? 3 : 0,
+                            pointBackgroundColor: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? '#ef4444' : '#10b981',
+                            pointBorderColor: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? '#ef4444' : '#10b981',
+                            segment: {
+                                borderColor: (ctx) => ctx.chart.data.labels[ctx.p0DataIndex] === ' ' && ctx.chart.data.labels[ctx.p1DataIndex] === ' ' ? '#ef4444' : undefined,
+                                borderDash: (ctx) => ctx.chart.data.labels[ctx.p0DataIndex] === ' ' && ctx.chart.data.labels[ctx.p1DataIndex] === ' ' ? [4, 4] : undefined
+                            }
                         },
                         {
                             label: 'OUT',
@@ -1923,13 +1949,20 @@ window.DashboardRenderer = {
                             borderWidth: 2,
                             fill: true,
                             tension: 0.1,
-                            pointRadius: 0
+                            pointRadius: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? 3 : 0,
+                            pointBackgroundColor: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? '#ef4444' : '#3b82f6',
+                            pointBorderColor: (ctx) => ctx.chart.data.labels[ctx.dataIndex] === ' ' ? '#ef4444' : '#3b82f6',
+                            segment: {
+                                borderColor: (ctx) => ctx.chart.data.labels[ctx.p0DataIndex] === ' ' && ctx.chart.data.labels[ctx.p1DataIndex] === ' ' ? '#ef4444' : undefined,
+                                borderDash: (ctx) => ctx.chart.data.labels[ctx.p0DataIndex] === ' ' && ctx.chart.data.labels[ctx.p1DataIndex] === ' ' ? [4, 4] : undefined
+                            }
                         }
                     ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    spanGaps: false,
                     plugins: {
                         legend: { 
                             display: true, 

@@ -1,0 +1,86 @@
+{% extends "layout.html" %}
+
+{% block title %}Network Monitor - Premium Topology Map{% endblock %}
+
+{% block page_title %}Network Topology (Premium View){% endblock %}
+
+{% set active_page = 'premium_topology' %}
+
+{% block head %}
+<!-- LeaderLine for connecting SVGs -->
+<script src="https://cdn.jsdelivr.net/npm/leader-line-new@1.1.9/leader-line.min.js"></script>
+
+<style>
+    /* Dark Cyberpunk Theme Overrides */
+    .content-area {
+        background: radial-gradient(circle at center, #1b2030 0%, #080b0f 100%);
+        padding: 0 !important;
+        overflow-x: auto;
+        overflow-y: auto;
+        min-height: calc(100vh - 64px); 
+        position: relative;
+    }
+    
+    .topology-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 120px; /* Big space for glowing lines */
+        padding: 80px 40px 140px 40px;
+        min-width: max-content;
+    }
+
+    .tier {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 80px;
+        width: 100%;
+        position: relative;
+        z-index: 2;
+    }
+    
+    /* LeaderLine fixes */
+    .leader-line-animated-path {
+        stroke-dasharray: 6 6;
+        animation: leaderLineDash 0.8s linear infinite;
+    }
+    @keyframes leaderLineDash {
+        to { stroke-dashoffset: -12; }
+    }
+
+    #topology-loading {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(13, 17, 23, 0.9);
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #38bdf8;
+    }
+</style>
+{% include 'partials/premium_components.html' %}
+{% endblock %}
+
+{% block content %}
+<div id="topology-loading">
+    <i class="fa-solid fa-satellite-dish fa-spin fa-3x mb-3"></i>
+    <h4>Initializing Holographic Map...</h4>
+</div>
+
+<div class="topology-container" id="map-canvas">
+    <!-- Internet Tier -->
+    <div class="tier" id="tier-internet"></div>
+    <!-- Firewall Tier -->
+    <div class="tier" id="tier-firewall"></div>
+    <!-- Switch/Core Tier -->
+    <div class="tier" id="tier-core"></div>
+    <!-- Server Tier (Wide Cards) -->
+    <div class="tier" id="tier-servers" style="flex-wrap: wrap; max-width: 1400px;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/premium_topology.js') }}?v=1.3"></script>
+{% endblock %}

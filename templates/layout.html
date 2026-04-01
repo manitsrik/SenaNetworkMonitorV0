@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Network Monitor{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=v1.3_ui_update">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=v1.4_cache_purge">
+    <!-- UI Update: Force Reload -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -75,7 +76,7 @@
                 </div>
                 <!-- Topology Group -->
                 <div class="nav-group">
-                    <div class="nav-link-toggle {% if active_page == 'topology' or active_page == 'sub_topology' %}active expanded{% endif %}"
+                    <div class="nav-link-toggle {% if active_page == 'topology' or active_page == 'premium_topology' or active_page == 'sub_topology' %}active expanded{% endif %}"
                         onclick="toggleSubmenu('topology-submenu', this)">
                         <div class="nav-link-content">
                             <i class="fa-solid fa-sitemap"></i>
@@ -83,10 +84,13 @@
                         </div>
                         <i class="fa-solid fa-chevron-right nav-chevron"></i>
                     </div>
-                    <div class="submenu {% if active_page == 'topology' or active_page == 'sub_topology' %}show{% endif %}"
+                    <div class="submenu {% if active_page == 'topology' or active_page == 'premium_topology' or active_page == 'sub_topology' %}show{% endif %}"
                         id="topology-submenu">
+                        <a href="/premium-topology" class="submenu-item {% if active_page == 'premium_topology' %}active{% endif %}" style="color: #0ea5e9; font-weight: 600;">
+                            <span>✨ {{ _('Premium Map') }}</span>
+                        </a>
                         <a href="/topology" class="submenu-item {% if active_page == 'topology' %}active{% endif %}">
-                            <span>{{ _('Main Topology') }}</span>
+                            <span>{{ _('Standard Map') }}</span>
                         </a>
                         <a href="/sub-topology/new" class="submenu-item"
                             style="color: var(--primary); font-size: 0.8rem;">
@@ -162,11 +166,16 @@
                 {% endif %}
             </div>
 
-            <div class="sidebar-footer">
-                <div class="user-info">
-                    <i class="fa-solid fa-circle-user"></i>
-                    <span>{{ session.get('display_name') or session.get('username', 'User') }}</span>
-                </div>
+            <div class="sidebar-footer" id="sidebar-footer-container">
+                <a href="/profile" class="user-profile-link" title="My Profile" id="profile-link-v3-final">
+                    <div class="user-avatar">
+                        <i class="fa-solid fa-circle-user"></i>
+                    </div>
+                    <div class="user-details">
+                        <span class="user-name">{{ session.get('display_name') or session.get('username', 'User') }}</span>
+                        <span class="user-role">{{ (session.get('role') or 'User') | capitalize }}</span>
+                    </div>
+                </a>
                 <a href="/logout" class="logout-btn" title="Logout">
                     <i class="fa-solid fa-right-from-bracket"></i>
                 </a>
@@ -342,6 +351,8 @@
     </script>
     </script>
     <script>
+        /* Temporarily disabling Service Worker to purge cache */
+        /*
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
@@ -351,6 +362,15 @@
                 .catch(err => {
                     console.log('ServiceWorker registration failed: ', err);
                 });
+            });
+        }
+        */
+        // Unregister any existing service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
             });
         }
     </script>

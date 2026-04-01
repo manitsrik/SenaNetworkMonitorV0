@@ -95,39 +95,80 @@ function renderSubTopology() {
     devices.forEach(device => {
         const color = getStatusColor(device.status);
         const icon = getDeviceIcon(device.device_type);
-        const svgIcon = getSvgIcon(icon, color, 100);
-
+        
         // Use saved position if available
         const savedPos = subTopoData._parsedPositions ? subTopoData._parsedPositions[device.id] : null;
 
-        const nodeData = {
-            id: device.id,
-            label: device.name,
-            title: `${icon} ${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nLocation: ${device.location || 'N/A'}\nStatus: ${device.status}\n${device.response_time != null ? `Response: ${device.response_time}ms` : ''}`,
-            shape: 'image',
-            image: svgIcon,
-            size: 40,
-            status: device.status,
-            color: {
-                background: color,
-                border: color,
-                highlight: { background: color, border: '#ffffff' }
-            },
-            font: {
-                multi: true,
-                size: 14,
-                color: getTextColor(),
-                bold: { size: 15 }
+        if (subTopoData.theme_mode === 'premium') {
+            const nodeData = {
+                id: device.id,
+                label: '', // Hide canvas label
+                x: savedPos ? savedPos.x : 0,
+                y: savedPos ? savedPos.y : 0,
+                shape: 'dot',
+                size: 1,
+                color: {
+                    background: 'rgba(0,0,0,0)',
+                    border: 'rgba(0,0,0,0)',
+                    highlight: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' }
+                },
+                title: `${device.name} (${device.ip_address})`
+            };
+            subTopoNodes.add(nodeData);
+            renderPremiumDOMNode(device);
+        } else {
+            const svgIcon = getSvgIcon(icon, color, 100);
+            const nodeData = {
+                id: device.id,
+                label: device.name,
+                title: `${icon} ${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nLocation: ${device.location || 'N/A'}\nStatus: ${device.status}\n${device.response_time != null ? `Response: ${device.response_time}ms` : ''}`,
+                shape: 'image',
+                image: svgIcon,
+                size: 40,
+                status: device.status,
+                color: {
+                    background: color,
+                    border: color,
+                    highlight: { background: color, border: '#ffffff' }
+                },
+                font: {
+                    multi: true,
+                    size: 14,
+                    color: getTextColor(),
+                    bold: { size: 15 }
+                }
+            };
+            if (savedPos) {
+                nodeData.x = savedPos.x;
+                nodeData.y = savedPos.y;
             }
-        };
-
-        if (savedPos) {
-            nodeData.x = savedPos.x;
-            nodeData.y = savedPos.y;
+            subTopoNodes.add(nodeData);
+            
+            // Remove premium node if exists
+            const el = document.getElementById(`premium-node-${device.id}`);
+            if (el) el.remove();
         }
-
-        subTopoNodes.add(nodeData);
     });
+
+    // Style edges for premium
+    if (subTopoData.theme_mode === 'premium') {
+        subTopoNetwork.setOptions({
+            edges: {
+                color: { color: 'rgba(56, 189, 248, 0.5)', highlight: '#38bdf8' },
+                width: 3,
+                smooth: { type: 'curvedCW', roundness: 0.2 },
+                shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 5, x: 2, y: 2 }
+            }
+        });
+    } else {
+        subTopoNetwork.setOptions({
+            edges: {
+                color: { color: '#999' },
+                width: 2,
+                smooth: { type: 'continuous' }
+            }
+        });
+    }
 
     connections.forEach((conn, idx) => {
         // Determine edge color based on node statuses
@@ -242,11 +283,34 @@ function initSubTopoNetwork() {
 
     subTopoNetwork = new vis.Network(container, { nodes: subTopoNodes, edges: subTopoEdges }, options);
 
+    // Sync DOM overlay on every render cycle
+    subTopoNetwork.on('render', syncOverlayNodes);
+    subTopoNetwork.on('afterDrawing', syncOverlayNodes);
+
+    // Selection Sync for Premium Mode
+    subTopoNetwork.on('selectNode', (params) => {
+        if (subTopoData && subTopoData.theme_mode === 'premium') {
+            syncPremiumSelection();
+        }
+    });
+    subTopoNetwork.on('deselectNode', () => {
+        if (subTopoData && subTopoData.theme_mode === 'premium') {
+            syncPremiumSelection();
+        }
+    });
+
+    // Also sync on click to catch edge cases
+    subTopoNetwork.on('click', () => {
+        if (subTopoData && subTopoData.theme_mode === 'premium') {
+            syncPremiumSelection();
+        }
+    });
+
     // Render background on canvas before drawing nodes/edges
     subTopoNetwork.on('beforeDrawing', (ctx) => {
         // Draw background color (matching the theme)
         const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-        ctx.fillStyle = theme === 'dark' ? '#1a1a2e' : '#f8fafc';
+        ctx.fillStyle = theme === 'dark' ? '#111827' : '#f8fafc';
         const canvas = ctx.canvas;
         // Use a large enough area to cover the view even when panned
         ctx.fillRect(-10000, -10000, 20000, 20000);
@@ -311,6 +375,74 @@ function fitSubTopoCentered() {
         position: { x: 0, y: 0 },
         scale: zoom,
         animation: { duration: 500, easingFunction: 'easeInOutQuad' }
+    });
+}
+
+function syncOverlayNodes() {
+    if (!subTopoNetwork || !subTopoData) return;
+    const container = document.getElementById('dom-overlay-container');
+    if (!container) return;
+
+    if (subTopoData.theme_mode !== 'premium') {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+
+    const nodes = subTopoNodes.get();
+    const networkEl = document.getElementById('sub-topo-network');
+    const overlayEl = container;
+    
+    // Calculate offset between network container and overlay parent
+    const netRect = networkEl.getBoundingClientRect();
+    const overlayRect = overlayEl.getBoundingClientRect();
+    const offsetX = netRect.left - overlayRect.left;
+    const offsetY = netRect.top - overlayRect.top;
+    
+    nodes.forEach(node => {
+        const el = document.getElementById(`premium-node-${node.id}`);
+        if (!el) return;
+
+        // Get canvas position
+        const pos = subTopoNetwork.getPositions([node.id])[node.id];
+        if (!pos) return;
+
+        // Convert canvas pos to DOM pos (relative to network container)
+        const domPos = subTopoNetwork.canvasToDOM(pos);
+
+        // Center the element on the glass frame
+        const width = el.offsetWidth;
+        const height = el.offsetHeight;
+        
+        // Apply offset correction so overlay aligns with canvas
+        el.style.left = `${domPos.x + offsetX - (width / 2)}px`;
+        el.style.top = `${domPos.y + offsetY - (height / 2)}px`;
+
+        // Scale with zoom
+        const scale = subTopoNetwork.getScale();
+        el.style.transform = `scale(${Math.max(0.3, Math.min(1.5, scale))})`;
+    });
+
+    // Also ensure selection is synced during generic sync
+    syncPremiumSelection();
+}
+
+/**
+ * Syncs the vis.js selection state to our DOM overlay elements
+ */
+function syncPremiumSelection() {
+    if (!subTopoNetwork || !subTopoData || subTopoData.theme_mode !== 'premium') return;
+    
+    const selectedIds = subTopoNetwork.getSelectedNodes();
+    
+    document.querySelectorAll('.dom-overlay-node').forEach(el => {
+        const nodeId = el.getAttribute('data-node-id');
+        if (selectedIds.includes(parseInt(nodeId))) {
+            el.classList.add('selected');
+        } else {
+            el.classList.remove('selected');
+        }
     });
 }
 
@@ -381,13 +513,29 @@ function setupSocketListeners() {
         const svgIcon = getSvgIcon(icon, color, 100);
 
         try {
-            subTopoNodes.update({
+            const updateObj = {
                 id: data.id,
-                image: svgIcon,
                 status: data.status,
-                color: { background: color, border: color, highlight: { background: color, border: '#fff' } },
                 title: `${icon} ${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nStatus: ${data.status}\n${data.response_time != null ? `Response: ${data.response_time}ms` : ''}`
-            });
+            };
+
+            if (subTopoData.theme_mode === 'premium') {
+                // In premium mode, keep canvas node transparent and label empty
+                updateObj.image = null;
+                updateObj.color = { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' };
+                updateObj.label = '';
+            } else {
+                updateObj.image = svgIcon;
+                updateObj.color = { background: color, border: color, highlight: { background: color, border: '#fff' } };
+                updateObj.label = device.name;
+            }
+
+            subTopoNodes.update(updateObj);
+
+            // Update Premium DOM Node if exists
+            if (subTopoData.theme_mode === 'premium') {
+                renderPremiumDOMNode(device);
+            }
         } catch (e) { }
 
         // Update edge colors
@@ -497,3 +645,78 @@ function getSvgIcon(emoji, color, size = 100) {
     </svg>`;
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
+
+// ========================================
+// Premium Rendering Engine
+// ========================================
+function renderPremiumDOMNode(device) {
+    const container = document.getElementById('dom-overlay-container');
+    let el = document.getElementById(`premium-node-${device.id}`);
+    
+    if (!el) {
+        el = document.createElement('div');
+        el.id = `premium-node-${device.id}`;
+        el.className = 'dom-overlay-node';
+        container.appendChild(el);
+        
+        // Add click event to mimic vis.js behavior
+        el.onclick = (e) => {
+             e.stopPropagation();
+             subTopoNetwork.selectNodes([device.id]);
+             syncPremiumSelection();
+        };
+        el.setAttribute('data-node-id', device.id);
+    }
+
+    const type = (device.device_type || 'server').toLowerCase();
+    const isServer = type === 'server' || type === 'vmware';
+    const isSwitch = type === 'switch';
+    
+    // Choose Template
+    let templateId = 'floating-node-template';
+    if (isServer) templateId = 'wide-server-template';
+    if (isSwitch) templateId = 'rackmount-hardware-template';
+
+    const templateNode = document.getElementById(templateId);
+    if (!templateNode) return;
+    const template = templateNode.innerHTML;
+
+    // Mapping Icons
+    const iconMap = {
+        'firewall': 'fa-shield-halved',
+        'switch': 'fa-network-wired',
+        'router': 'fa-globe',
+        'internet': 'fa-cloud',
+        'wireless': 'fa-wifi',
+        'server': 'fa-server',
+        'vmware': 'fa-database'
+    };
+    const icon = iconMap[type] || 'fa-microchip';
+    const glowClass = `glow-${type}`;
+
+    // Fill Template
+    let html = template
+        .replace(/{id}/g, device.id)
+        .replace(/{name}/g, device.name)
+        .replace(/{ip}/g, device.ip_address || 'N/A')
+        .replace(/{icon}/g, icon)
+        .replace(/{status}/g, device.status || 'unknown')
+        .replace(/{glow-class}/g, glowClass);
+
+    // Switch/Hardware Image path
+    if (isSwitch) {
+        // Use the generated switch icon
+        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png');
+    }
+
+    // Dynamic metrics for visual flair
+    if (isServer) {
+        // Use real response time or mock for CPU visual
+        const cpu = device.response_time != null ? Math.min(99, Math.max(5, device.response_time % 100)) : Math.floor(Math.random() * 20) + 5;
+        const color = cpu > 80 ? 'critical' : (cpu > 50 ? 'warning' : 'healthy');
+        html = html.replace(/{cpu}/g, cpu).replace(/{cpu-color}/g, color);
+    }
+
+    el.innerHTML = html;
+}
+

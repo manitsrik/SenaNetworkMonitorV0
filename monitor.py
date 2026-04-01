@@ -795,6 +795,134 @@ class NetworkMonitor:
             print(f"[SSH] Task execution failed for {ip_address}: {e}")
             return {'status': 'down', 'response_time': None}
 
+    def get_ssh_ports(self, ip_address, username, password, port=22):
+        """Fetch listening TCP/UDP ports via SSH (ss command)"""
+        if not SSH_AVAILABLE:
+            return {'success': False, 'error': 'Paramiko not installed'}
+        
+        ports = []
+        def _ssh_task():
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            try:
+                client.connect(ip_address, port=int(port), username=username, password=password, timeout=10)
+                
+                # Try ss first, fallback to netstat if ss is not available
+                cmd = "ss -tulpn | grep -E 'LISTEN|UNCONN'"
+                _, stdout, stderr = client.exec_command(cmd)
+                lines = stdout.read().decode().strip().split('\n')
+                
+                if not lines or 'command not found' in lines[0] or stderr.read().decode().strip():
+                    _, stdout, _ = client.exec_command("netstat -tulpn | grep -E 'LISTEN|^udp'")
+                    lines = stdout.read().decode().strip().split('\n')
+                
+                for line in lines:
+                    if not line.strip() or 'Netid' in line or 'Proto' in line: continue
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        # Depending on ss vs netstat:
+                        proto = parts[0].upper()
+                        if 'ss ' in cmd and len(parts) >= 5: # ss
+                            state = parts[1]
+                            local_addr_port = parts[4]
+                            proc_part = line
+                        else: # netstat
+                            state = parts[5] if proto.startswith('TCP') else 'UNCONN'
+                            local_addr_port = parts[3]
+                            proc_part = line
+                            
+                        # Extract IP and Port
+                        local_ip = local_addr_port.rsplit(':', 1)[0]
+                        local_port = local_addr_port.rsplit(':', 1)[1] if ':' in local_addr_port else ''
+                        
+                        proc = ""
+                        if 'users:(("' in proc_part:
+                            proc = proc_part.split('users:(("')[1].split('"', 1)[0]
+                        elif '/' in parts[-1] and not parts[-1].startswith('-'):
+                            proc = parts[-1].split('/', 1)[1]
+                            
+                        # Remove trailing : or default to 0.0.0.0
+                        local_ip = local_ip.strip('[]')
+                        
+                        ports.append({
+                            'protocol': proto,
+                            'port': local_port,
+                            'process': proc or 'Unknown',
+                            'address': local_ip,
+                            'state': state
+                        })
+                
+                client.close()
+                return True
+            except Exception as e:
+                print(f"[SSH Ports] Error connecting to {ip_address}: {e}")
+                return False
+
+        success = tpool.execute(_ssh_task)
+        if success:
+            return {'success': True, 'ports': ports}
+        return {'success': False, 'error': 'Connection failed or timeout'}
+
+    def get_winrm_ports(self, ip_address, username, password):
+        """Fetch listening TCP/UDP ports via PowerShell WinRM"""
+        if not WINRM_AVAILABLE:
+            return {'success': False, 'error': 'pywinrm not installed'}
+            
+        ports = []
+        def _winrm_task():
+            try:
+                session = winrm.Session(ip_address, auth=(username, password), transport='ntlm', server_cert_validation='ignore')
+                
+                ps_script = '''
+                $tcp = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Select-Object @{N='Protocol';E={'TCP'}}, LocalAddress, LocalPort, OwningProcess, State
+                $udp = Get-NetUDPEndpoint -ErrorAction SilentlyContinue | Select-Object @{N='Protocol';E={'UDP'}}, LocalAddress, LocalPort, OwningProcess, @{N='State';E={'UNCONN'}}
+                $all = @()
+                if ($tcp) { $all += $tcp }
+                if ($udp) { $all += $udp }
+                
+                $result = @()
+                foreach ($p in $all) {
+                    $procName = 'Unknown'
+                    if ($p.OwningProcess) {
+                        $proc = Get-Process -Id $p.OwningProcess -ErrorAction SilentlyContinue
+                        if ($proc) { $procName = $proc.Name }
+                    }
+                    $result += @{
+                        protocol = $p.Protocol
+                        port = $p.LocalPort
+                        address = $p.LocalAddress
+                        state = $p.State
+                        process = $procName
+                    }
+                }
+                $result | ConvertTo-Json -Compress
+                '''
+                
+                r = session.run_ps(ps_script)
+                import json
+                if r.status_code == 0:
+                    output = r.std_out.decode().strip()
+                    if output:
+                        data = json.loads(output)
+                        if isinstance(data, dict): data = [data] # if only 1 object returned
+                        for p in data:
+                            ports.append({
+                                'protocol': str(p.get('protocol', '')),
+                                'port': str(p.get('port', '')),
+                                'address': str(p.get('address', '')),
+                                'state': str(p.get('state', '')),
+                                'process': str(p.get('process', ''))
+                            })
+                return True
+            except Exception as e:
+                print(f"[WinRM Ports] Error connecting to {ip_address}: {e}")
+                return False
+
+        success = tpool.execute(_winrm_task)
+        if success:
+            return {'success': True, 'ports': ports}
+        return {'success': False, 'error': 'Connection failed or timeout'}
+
     def check_winrm(self, ip_address, username, password):
         """
         Check a Windows device via WinRM and return status and system metrics
@@ -864,6 +992,25 @@ class NetworkMonitor:
         except Exception as e:
             print(f"[WinRM] Task execution failed for {ip_address}: {e}")
             return {'status': 'down', 'response_time': None}
+            
+    def _verify_expected_ports(self, device, result, ports_res):
+        """Verify that expected ports are active and listening"""
+        if ports_res.get('success'):
+            active_ports = set(str(p['port']) for p in ports_res.get('ports', []))
+            expected_ports_str = str(device.get('expected_ports', ''))
+            expected_list = [p.strip() for p in expected_ports_str.split(',') if p.strip()]
+            
+            missing_ports = [p for p in expected_list if p not in active_ports]
+            if missing_ports:
+                result['status'] = 'down'
+                err_msg = f"Missing expected ports: {', '.join(missing_ports)}"
+                result['error'] = err_msg
+                print(f"[PORTS] {device['name']} missing expected ports: {missing_ports}")
+        else:
+            result['status'] = 'down'
+            err_msg = ports_res.get('error', 'Failed to fetch ports metadata')
+            result['error'] = f"Port check failed: {err_msg}"
+            print(f"[PORTS] {device['name']} port check failed: {err_msg}")
     
     def check_device(self, device):
         """
@@ -909,12 +1056,29 @@ class NetworkMonitor:
                 device.get('ssh_password'),
                 device.get('ssh_port', 22)
             )
+            # Verify Expected Ports
+            if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
+                ports_res = self.get_ssh_ports(
+                    device['ip_address'], 
+                    device.get('ssh_username'), 
+                    device.get('ssh_password'),
+                    device.get('ssh_port', 22)
+                )
+                self._verify_expected_ports(device, result, ports_res)
         elif monitor_type == 'winrm' or monitor_type == 'wmi':
             result = self.check_winrm(
                 device['ip_address'], 
                 device.get('wmi_username'), 
                 device.get('wmi_password')
             )
+            # Verify Expected Ports
+            if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
+                ports_res = self.get_winrm_ports(
+                    device['ip_address'], 
+                    device.get('wmi_username'), 
+                    device.get('wmi_password')
+                )
+                self._verify_expected_ports(device, result, ports_res)
         elif monitor_type == 'tcp':
             tcp_port = device.get('tcp_port', 80)
             result = self.check_tcp_port(device['ip_address'], tcp_port)
@@ -1049,9 +1213,11 @@ class NetworkMonitor:
         if self.alerter:
             # Alert on device DOWN (status changed to down) - only after threshold reached
             if final_status == 'down' and previous_status != 'down':
+                error_msg = result.get('error')
+                base_msg = f"{error_msg}. Previous status: {previous_status}" if error_msg else f"Device is DOWN. Previous status: {previous_status}"
                 self.alerter.trigger_alert(
                     device, 'down', 
-                    f"Device is DOWN. Previous status: {previous_status}"
+                    base_msg
                 )
             
             # Alert on device RECOVERY 

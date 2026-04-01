@@ -310,6 +310,16 @@
                 </div>
             </div>
 
+            <!-- Expected Ports Setup (hidden by default) -->
+            <div id="expected-ports-settings" style="display: none; border-top: 1px dashed var(--border-color); margin-top: 1rem; padding-top: 1rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: var(--info, #0ea5e9); font-size: 0.95rem;">🔌 Expected Ports Alert</h4>
+                <div class="form-group">
+                    <label class="form-label" for="expected-ports">Ports to verify (comma-separated)</label>
+                    <input type="text" id="expected-ports" class="form-input" placeholder="e.g., 80, 443, 3306">
+                    <small style="color: var(--text-muted); font-size: 0.8rem;">If any of these ports stop listening, the server status will become DOWN.</small>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label class="form-label" for="device-type">Device Type</label>
                 <select id="device-type" class="form-select">
@@ -661,6 +671,56 @@
                 </button>
                 <button class="btn btn-secondary" onclick="closeImportModal()">
                     Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Ports Modal -->
+<div id="ports-modal" class="modal">
+    <div class="modal-content" style="max-width: 900px;">
+        <div class="modal-header">
+            <h3>🔌 Active TCP/UDP Ports - <span id="ports-device-name"></span></h3>
+            <button class="modal-close" onclick="closePortsModal()">&times;</button>
+        </div>
+        <div style="padding: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <p class="text-muted mb-0">Live view of listening ports on this server.</p>
+                <div style="display: flex; gap: 0.5rem;">
+                    <input type="text" id="ports-search" class="form-input form-input-sm" placeholder="🔍 Search ports/process..." oninput="filterPortsTable()" style="width: 200px;">
+                    <button class="btn btn-primary btn-sm" onclick="refreshPortsData()">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                    <table style="width: 100%; font-size: 0.9rem;">
+                        <thead>
+                            <tr style="position: sticky; top: 0; background: var(--card-bg); z-index: 1;">
+                                <th style="width: 80px;">Protocol</th>
+                                <th>Local Address</th>
+                                <th>Port</th>
+                                <th>Process Name</th>
+                                <th>State</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ports-table-body">
+                            <tr>
+                                <td colspan="5" class="text-center" style="padding: 2rem; color: var(--text-muted);">
+                                    Loading ports data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <button class="btn btn-secondary" onclick="closePortsModal()" style="width: 100%;">
+                    Close
                 </button>
             </div>
         </div>

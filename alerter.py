@@ -7,6 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 import requests
+from secret_store import decrypt_secret
 
 
 class Alerter:
@@ -14,6 +15,7 @@ class Alerter:
     
     def __init__(self, database):
         self.db = database
+        self.plugin_manager = None
         self._settings_cache = {}
         self._cache_time = None
         self._cache_duration = timedelta(seconds=30)
@@ -440,6 +442,15 @@ This is an automated message from Network Monitor.
                 print(f"[Alert] Telegram sent for {device_name}: {event_type} (to {recipient_info})")
             else:
                 print(f"[Alert] Telegram failed for {device_name}: {result.get('error')}")
+
+        integration_result = self._send_integration_plugins(
+            subject=subject,
+            message=full_message,
+            device=device,
+            event_type=event_type
+        )
+        if integration_result.get('sent_any'):
+            sent_any = True
         
         if not sent_any:
             print(f"[Alert] No channels enabled or all failed for {device_name}")
@@ -530,5 +541,104 @@ This is an automated message from Network Monitor.
             return self.send_telegram(f"🧪 *Test Alert*\n\n{test_message}")
         elif channel == 'webhook':
             return self.send_webhook("🧪 Test Alert", test_message, event_type='test')
+        elif channel.startswith('plugin:'):
+            plugin_id = channel.split(':', 1)[1].strip()
+            return self.send_integration_test(plugin_id)
         else:
             return {'success': False, 'error': f'Unknown channel: {channel}'}
+
+    def _get_integration_plugin_runtime(self, plugin_id):
+        """Load enabled flag and config for an integration plugin from alert settings."""
+        enabled = str(self.db.get_alert_setting(f'plugin_integration_{plugin_id}_enabled') or 'false').lower() == 'true'
+        raw_config = self.db.get_alert_setting(f'plugin_integration_{plugin_id}_config_json') or '{}'
+        try:
+            import json
+            config = json.loads(raw_config or '{}')
+        except Exception:
+            config = {}
+
+        if self.plugin_manager is not None:
+            plugin = self.plugin_manager.get_plugin(plugin_id, plugin_type='integration')
+            secret_keys = self.plugin_manager.get_secret_field_keys(
+                plugin_id=plugin_id,
+                plugin_type='integration',
+                schema=(plugin or {}).get('config_schema') or []
+            )
+            for key in secret_keys:
+                secret_value = self.db.get_alert_setting(f'plugin_integration_{plugin_id}_secret_{key}')
+                if secret_value:
+                    config[key] = decrypt_secret(secret_value)
+
+        return {'enabled': enabled, 'config': config}
+
+    def _send_integration_plugins(self, subject, message, device=None, event_type=None, is_test=False, plugin_ids=None):
+        """Send alert payloads through configured integration plugins."""
+        if self.plugin_manager is None:
+            return {'sent_any': False, 'results': []}
+
+        payload = {
+            'subject': subject,
+            'message': message,
+            'event_type': event_type or 'unknown',
+            'timestamp': datetime.now().isoformat(),
+            'source': 'NetMonitor',
+        }
+        if device:
+            payload['device'] = {
+                'id': device.get('id'),
+                'name': device.get('name'),
+                'ip_address': device.get('ip_address'),
+                'device_type': device.get('device_type'),
+                'status': device.get('status'),
+            }
+
+        if plugin_ids is None:
+            plugin_ids = [plugin.get('id') for plugin in self.plugin_manager.get_integration_plugins()]
+
+        results = []
+        sent_any = False
+        for plugin_id in plugin_ids:
+            runtime = self._get_integration_plugin_runtime(plugin_id)
+            if not runtime.get('enabled') and not is_test:
+                continue
+
+            result = self.plugin_manager.execute_integration_plugin(
+                plugin_id,
+                payload,
+                plugin_config=runtime.get('config') or {},
+                integration_context={
+                    'is_test': is_test,
+                    'device': device,
+                    'event_type': event_type,
+                }
+            )
+            results.append(result)
+            if not is_test:
+                self.db.log_alert(
+                    device.get('id') if device else None,
+                    event_type or 'test',
+                    message,
+                    f'plugin:{plugin_id}',
+                    'sent' if result.get('success') else 'failed',
+                    result.get('error') or result.get('message')
+                )
+            if result.get('success'):
+                sent_any = True
+                print(f"[Alert] Integration plugin sent via {plugin_id}")
+            else:
+                print(f"[Alert] Integration plugin failed via {plugin_id}: {result.get('error')}")
+
+        return {'sent_any': sent_any, 'results': results}
+
+    def send_integration_test(self, plugin_id):
+        """Send a test alert through a single integration plugin."""
+        result = self._send_integration_plugins(
+            subject='Test Alert',
+            message='This is a test alert from Network Monitor integration plugins.',
+            event_type='test',
+            is_test=True,
+            plugin_ids=[plugin_id]
+        )
+        if result.get('results'):
+            return result['results'][0]
+        return {'success': False, 'error': f'No integration plugin executed for {plugin_id}'}

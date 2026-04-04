@@ -169,6 +169,26 @@
         position: relative;
     }
 
+    .grid-stack-item-content:fullscreen,
+    .grid-stack-item-content:-webkit-full-screen,
+    .grid-stack-item-content:-moz-full-screen {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        padding: 0.75rem !important;
+        border-radius: 0 !important;
+        background: var(--bg-secondary) !important;
+    }
+
+    .grid-stack-item-content:fullscreen .widget-content,
+    .grid-stack-item-content:-webkit-full-screen .widget-content,
+    .grid-stack-item-content:-moz-full-screen .widget-content {
+        height: auto !important;
+        min-height: 0 !important;
+        flex: 1 1 0 !important;
+    }
+
     /* Widget Types Sizes */
     .w-col-3 {
         grid-column: span 3;
@@ -256,6 +276,7 @@
 {% endblock %}
 
 {% block content %}
+{% include 'partials/premium_components.html' %}
 <div class="builder-layout">
     <!-- Sidebar -->
     <div class="sidebar-builder">
@@ -321,8 +342,8 @@
             <div class="widget-item" onclick="addWidget('topology')">
                 <i class="fas fa-project-diagram"></i>
                 <div>
-                    <div style="font-weight: 500;">Mini Topology</div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">Network Graph</div>
+                    <div style="font-weight: 500;">Topology</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Main or Sub-Topology</div>
                 </div>
             </div>
             <div class="widget-item" onclick="addWidget('device_list')">
@@ -439,6 +460,6 @@
 
 {% block scripts %}
 <!-- Use the new shared renderer -->
-<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=3"></script>
-<script src="{{ url_for('static', filename='js/dashboard_builder.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=10"></script>
+<script src="{{ url_for('static', filename='js/dashboard_builder.js') }}?v=4"></script>
 {% endblock %}

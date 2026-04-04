@@ -102,7 +102,7 @@ function renderSubTopology() {
         if (subTopoData.theme_mode === 'premium') {
             const nodeData = {
                 id: device.id,
-                label: '', // Hide canvas label
+                label: null, // Forcefully hide canvas label
                 x: savedPos ? savedPos.x : 0,
                 y: savedPos ? savedPos.y : 0,
                 shape: 'dot',
@@ -112,6 +112,7 @@ function renderSubTopology() {
                     border: 'rgba(0,0,0,0)',
                     highlight: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' }
                 },
+                font: { size: 0, color: 'rgba(0,0,0,0)' }, // Fail-safe hide
                 title: `${device.name} (${device.ip_address})`
             };
             subTopoNodes.add(nodeData);
@@ -150,9 +151,12 @@ function renderSubTopology() {
         }
     });
 
-    // Style edges for premium
+    // Style nodes and edges for premium
     if (subTopoData.theme_mode === 'premium') {
         subTopoNetwork.setOptions({
+            nodes: {
+                font: { size: 0, color: 'rgba(0,0,0,0)' } // Globally hide canvas labels in premium mode
+            },
             edges: {
                 color: { color: 'rgba(56, 189, 248, 0.5)', highlight: '#38bdf8' },
                 width: 3,
@@ -162,6 +166,9 @@ function renderSubTopology() {
         });
     } else {
         subTopoNetwork.setOptions({
+            nodes: {
+                font: { size: 14, color: getTextColor() } // Restore labels in standard mode
+            },
             edges: {
                 color: { color: '#999' },
                 width: 2,
@@ -206,8 +213,8 @@ function renderSubTopology() {
             physics: { enabled: false },
             interaction: {
                 dragNodes: false,
-                dragView: false,
-                zoomView: false,
+                dragView: true,
+                zoomView: true,
                 navigationButtons: false
             }
         });
@@ -335,6 +342,35 @@ function fitSubTopoNetwork() {
     fitSubTopoCentered();
 }
 
+function zoomSubTopoIn() {
+    zoomSubTopo(1.2);
+}
+
+function zoomSubTopoOut() {
+    zoomSubTopo(0.85);
+}
+
+function zoomSubTopo(factor) {
+    if (!subTopoNetwork) return;
+
+    try {
+        const currentScale = subTopoNetwork.getScale();
+        const currentPosition = typeof subTopoNetwork.getViewPosition === 'function'
+            ? subTopoNetwork.getViewPosition()
+            : { x: 0, y: 0 };
+
+        subTopoNetwork.moveTo({
+            position: currentPosition,
+            scale: Math.max(0.15, Math.min(3, currentScale * factor)),
+            animation: { duration: 180, easingFunction: 'easeInOutQuad' }
+        });
+
+        setTimeout(() => syncOverlayNodes(), 200);
+    } catch (e) {
+        console.warn('Failed to zoom sub-topology:', e);
+    }
+}
+
 /**
  * Custom fit function that keeps origin (0,0) at the center of the canvas.
  * This ensures alignment with CSS background-position: center.
@@ -419,9 +455,13 @@ function syncOverlayNodes() {
         el.style.left = `${domPos.x + offsetX - (width / 2)}px`;
         el.style.top = `${domPos.y + offsetY - (height / 2)}px`;
 
-        // Scale with zoom
+        // Keep switch cards readable when the overall topology is zoomed out.
         const scale = subTopoNetwork.getScale();
-        el.style.transform = `scale(${Math.max(0.3, Math.min(1.5, scale))})`;
+        const isSwitchNode = !!el.querySelector('.rackmount-node');
+        const effectiveScale = isSwitchNode
+            ? Math.max(1.08, Math.min(1.55, scale * 1.55))
+            : Math.max(0.45, Math.min(1.5, scale));
+        el.style.transform = `scale(${effectiveScale})`;
     });
 
     // Also ensure selection is synced during generic sync
@@ -523,7 +563,8 @@ function setupSocketListeners() {
                 // In premium mode, keep canvas node transparent and label empty
                 updateObj.image = null;
                 updateObj.color = { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' };
-                updateObj.label = '';
+                updateObj.label = null;
+                updateObj.font = { size: 0, color: 'rgba(0,0,0,0)' };
             } else {
                 updateObj.image = svgIcon;
                 updateObj.color = { background: color, border: color, highlight: { background: color, border: '#fff' } };
@@ -570,14 +611,33 @@ function getTextColor() {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? '#e2e8f0' : '#1e293b';
 }
 
+function applyThemeToSubTopology() {
+    const container = document.getElementById('sub-topo-network');
+    if (container) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        container.style.backgroundColor = isDark ? '#111827' : '#f8fafc';
+    }
+
+    if (subTopoData) {
+        renderSubTopology();
+        setTimeout(() => {
+            if (subTopoNetwork) {
+                subTopoNetwork.redraw();
+                syncOverlayNodes();
+            }
+        }, 0);
+    } else if (subTopoNetwork) {
+        subTopoNetwork.redraw();
+        syncOverlayNodes();
+    }
+}
+
 function setupThemeListener() {
     const observer = new MutationObserver(() => {
-        const newColor = getTextColor();
-        subTopoNodes.forEach(node => {
-            subTopoNodes.update({ id: node.id, font: { color: newColor } });
-        });
+        applyThemeToSubTopology();
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.addEventListener('themechange', applyThemeToSubTopology);
 }
 
 // ========================================
@@ -659,11 +719,12 @@ function renderPremiumDOMNode(device) {
         el.className = 'dom-overlay-node';
         container.appendChild(el);
         
-        // Add click event to mimic vis.js behavior
+        // Add click event for premium details
         el.onclick = (e) => {
              e.stopPropagation();
              subTopoNetwork.selectNodes([device.id]);
              syncPremiumSelection();
+             if (typeof showPremiumDeviceDetails === 'function') showPremiumDeviceDetails(device);
         };
         el.setAttribute('data-node-id', device.id);
     }
@@ -671,11 +732,13 @@ function renderPremiumDOMNode(device) {
     const type = (device.device_type || 'server').toLowerCase();
     const isServer = type === 'server' || type === 'vmware';
     const isSwitch = type === 'switch';
+    const isWireless = type === 'wireless' || type === 'wifi';
     
     // Choose Template
     let templateId = 'floating-node-template';
     if (isServer) templateId = 'wide-server-template';
     if (isSwitch) templateId = 'rackmount-hardware-template';
+    if (isWireless) templateId = 'wireless-ap-template';
 
     const templateNode = document.getElementById(templateId);
     if (!templateNode) return;
@@ -701,12 +764,17 @@ function renderPremiumDOMNode(device) {
         .replace(/{ip}/g, device.ip_address || 'N/A')
         .replace(/{icon}/g, icon)
         .replace(/{status}/g, device.status || 'unknown')
+        .replace(/{type-label}/g, device.device_type || 'N/A')
+        .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
         .replace(/{glow-class}/g, glowClass);
 
     // Switch/Hardware Image path
     if (isSwitch) {
         // Use the generated switch icon
-        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png');
+        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png?v=2');
+    }
+    if (isWireless) {
+        html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
     }
 
     // Dynamic metrics for visual flair
@@ -718,5 +786,39 @@ function renderPremiumDOMNode(device) {
     }
 
     el.innerHTML = html;
+
+    // FORCE POSITION VIA JS - Bypasses all CSS Caching
+    setTimeout(() => {
+        if (isSwitch) {
+            const title = el.querySelector('.hardware-title');
+            const ip = el.querySelector('.hardware-ip');
+            if (title) {
+                title.style.setProperty('position', 'absolute', 'important');
+                title.style.setProperty('display', 'block', 'important');
+                title.style.setProperty('bottom', '8px', 'important');
+                title.style.setProperty('top', 'auto', 'important');
+            }
+            if (ip) {
+                ip.style.setProperty('display', 'none', 'important');
+            }
+            return;
+        }
+
+        if (isWireless) {
+            const label = el.querySelector('.floating-label');
+            if (label) {
+                label.style.setProperty('position', 'absolute', 'important');
+                label.style.setProperty('display', 'block', 'important');
+            }
+            return;
+        }
+
+        const label = el.querySelector('.floating-label');
+        if (label) {
+            label.style.setProperty('bottom', '8px', 'important');
+            label.style.setProperty('position', 'absolute', 'important');
+            label.style.setProperty('display', 'block', 'important');
+        }
+    }, 0);
 }
 

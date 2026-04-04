@@ -32,6 +32,16 @@
         opacity: 1;
         color: var(--primary);
     }
+    .field-error {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+    }
+    .field-error-message {
+        display: block;
+        margin-top: 0.35rem;
+        color: #dc2626;
+        font-size: 0.8rem;
+    }
 </style>
 {% endblock %}
 
@@ -318,6 +328,11 @@
                     <input type="text" id="expected-ports" class="form-input" placeholder="e.g., 80, 443, 3306">
                     <small style="color: var(--text-muted); font-size: 0.8rem;">If any of these ports stop listening, the server status will become DOWN.</small>
                 </div>
+            </div>
+
+            <div id="plugin-settings" style="display: none; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; margin-top: 0.75rem; background: rgba(16, 185, 129, 0.05);">
+                <h4 style="margin: 0 0 0.6rem 0; color: var(--success, #059669); font-size: 0.95rem;">Plugin Settings</h4>
+                <div id="plugin-settings-fields"></div>
             </div>
 
             <div class="form-group">

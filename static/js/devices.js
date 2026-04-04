@@ -13,6 +13,10 @@ let allDevices = [];
 // Current sorting state
 let currentSortColumn = 'name';
 let currentSortDirection = 'asc';
+let highlightedDeviceIds = [];
+let incidentContextLocation = '';
+let pluginMonitorMetadata = {};
+let currentPluginConfig = {};
 
 // Location type icon mapping
 const locationTypeIcons = {
@@ -47,9 +51,244 @@ const deviceTypeMetadata = {
 
 // Initialize devices page
 document.addEventListener('DOMContentLoaded', () => {
-    loadDevices();
+    applyIncidentContext();
+    loadPluginMonitorTypes().finally(() => loadDevices());
     setupSocketListeners();
 });
+
+async function loadPluginMonitorTypes() {
+    try {
+        const response = await fetch('/api/plugins/monitor-types');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const plugins = await response.json();
+        const select = document.getElementById('monitor-type');
+        if (!select) return;
+
+        plugins.forEach(plugin => {
+            pluginMonitorMetadata[plugin.monitor_type] = plugin;
+            const exists = [...select.options].some(option => option.value === plugin.monitor_type);
+            if (exists) return;
+
+            const option = document.createElement('option');
+            option.value = plugin.monitor_type;
+            option.textContent = `Plugin: ${plugin.name}`;
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load plugin monitor types:', error);
+    }
+}
+
+function renderPluginSettingsFields(monitorType, pluginConfig = {}) {
+    currentPluginConfig = pluginConfig || {};
+    const pluginSettings = document.getElementById('plugin-settings');
+    const fieldsContainer = document.getElementById('plugin-settings-fields');
+    const pluginMeta = pluginMonitorMetadata[monitorType];
+
+    if (!pluginSettings || !fieldsContainer) return;
+
+    if (!pluginMeta || !Array.isArray(pluginMeta.config_schema) || !pluginMeta.config_schema.length) {
+        pluginSettings.style.display = 'none';
+        fieldsContainer.innerHTML = '';
+        return;
+    }
+
+    const escapeAttr = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+    fieldsContainer.innerHTML = pluginMeta.config_schema.map(field => {
+        const key = field.key;
+        const type = field.type || 'text';
+        const value = pluginConfig[key] !== undefined ? pluginConfig[key] : field.default;
+        if (type === 'boolean') {
+            return `
+                <div class="form-group">
+                    <label class="form-label" for="plugin-config-${key}">${field.label || key}</label>
+                    <label class="switch">
+                        <input type="checkbox" id="plugin-config-${key}" data-plugin-config="true" data-plugin-key="${key}" ${value ? 'checked' : ''}>
+                        <span class="slider"></span>
+                    </label>
+                    ${field.help_text ? `<small style="color: var(--text-muted); font-size: 0.8rem;">${field.help_text}</small>` : ''}
+                </div>
+            `;
+        }
+
+        if (type === 'select') {
+            const options = Array.isArray(field.options) ? field.options : [];
+            const optionsHtml = options.map(option => {
+                const optionValue = typeof option === 'object' ? option.value : option;
+                const optionLabel = typeof option === 'object' ? option.label : option;
+                const selected = String(value ?? '') === String(optionValue) ? 'selected' : '';
+                return `<option value="${escapeAttr(optionValue)}" ${selected}>${escapeAttr(optionLabel)}</option>`;
+            }).join('');
+
+            return `
+                <div class="form-group">
+                    <label class="form-label" for="plugin-config-${key}">${field.label || key}</label>
+                    <select
+                        id="plugin-config-${key}"
+                        class="form-select"
+                        data-plugin-config="true"
+                        data-plugin-key="${key}"
+                    >
+                        ${optionsHtml}
+                    </select>
+                    ${field.help_text ? `<small style="color: var(--text-muted); font-size: 0.8rem;">${field.help_text}</small>` : ''}
+                </div>
+            `;
+        }
+
+        return `
+            <div class="form-group">
+                <label class="form-label" for="plugin-config-${key}">${field.label || key}</label>
+                <input
+                    type="${type === 'number' ? 'number' : (type === 'secret' ? 'password' : 'text')}"
+                    id="plugin-config-${key}"
+                    class="form-input"
+                    data-plugin-config="true"
+                    data-plugin-key="${key}"
+                    value="${escapeAttr(value !== undefined && value !== null ? value : '')}"
+                    placeholder="${escapeAttr(field.placeholder || '')}"
+                >
+                ${field.help_text ? `<small style="color: var(--text-muted); font-size: 0.8rem;">${field.help_text}</small>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    pluginSettings.style.display = 'block';
+}
+
+function collectPluginConfig() {
+    const config = {};
+    document.querySelectorAll('[data-plugin-config="true"]').forEach(element => {
+        const key = element.getAttribute('data-plugin-key');
+        if (!key) return;
+        if (element.type === 'checkbox') {
+            config[key] = !!element.checked;
+        } else if (element.type === 'number') {
+            config[key] = element.value === '' ? null : Number(element.value);
+        } else {
+            config[key] = element.value;
+        }
+    });
+    return config;
+}
+
+function clearFieldErrors(scope = document) {
+    scope.querySelectorAll('.field-error').forEach(element => {
+        element.classList.remove('field-error');
+    });
+    scope.querySelectorAll('.field-error-message').forEach(element => {
+        element.remove();
+    });
+}
+
+function setFieldError(element, message) {
+    if (!element) return;
+    element.classList.add('field-error');
+
+    const existing = element.parentElement?.querySelector('.field-error-message');
+    if (existing) existing.remove();
+
+    const error = document.createElement('small');
+    error.className = 'field-error-message';
+    error.textContent = message;
+    element.parentElement?.appendChild(error);
+}
+
+function validatePluginConfigUI(monitorType) {
+    const pluginMeta = pluginMonitorMetadata[monitorType];
+    if (!pluginMeta || !Array.isArray(pluginMeta.config_schema)) {
+        return { valid: true, config: {} };
+    }
+
+    const config = collectPluginConfig();
+    const errors = [];
+
+    pluginMeta.config_schema.forEach(field => {
+        const input = document.getElementById(`plugin-config-${field.key}`);
+        if (!input) return;
+
+        const value = config[field.key];
+        const label = field.label || field.key;
+        const fieldType = field.type || 'text';
+        const options = Array.isArray(field.options) ? field.options : [];
+        const allowedValues = options.map(option => typeof option === 'object' ? option.value : option);
+
+        if (field.required && fieldType !== 'boolean' && (value === null || value === undefined || String(value).trim() === '')) {
+            errors.push({ element: input, message: `${label} is required.` });
+            return;
+        }
+
+        if (fieldType === 'number' && value !== null && value !== '' && Number.isNaN(Number(value))) {
+            errors.push({ element: input, message: `${label} must be a valid number.` });
+            return;
+        }
+
+        if (allowedValues.length && value !== null && value !== undefined && value !== '' && !allowedValues.includes(value)) {
+            errors.push({ element: input, message: `${label} has an invalid option.` });
+        }
+    });
+
+    return { valid: errors.length === 0, config, errors };
+}
+
+function validateDeviceForm(deviceData) {
+    const errors = [];
+    const monitorType = deviceData.monitor_type;
+
+    const nameInput = document.getElementById('device-name');
+    const ipInput = document.getElementById('device-ip');
+
+    if (!deviceData.name || !String(deviceData.name).trim()) {
+        errors.push({ element: nameInput, message: 'Device Name is required.' });
+    }
+
+    if (!deviceData.ip_address || !String(deviceData.ip_address).trim()) {
+        errors.push({ element: ipInput, message: 'IP Address or URL is required.' });
+    }
+
+    if (monitorType === 'snmp' && deviceData.snmp_version === '3') {
+        if (!deviceData.snmp_v3_username) {
+            errors.push({ element: document.getElementById('snmp-v3-username'), message: 'SNMP v3 username is required.' });
+        }
+        if (!deviceData.snmp_v3_auth_password) {
+            errors.push({ element: document.getElementById('snmp-v3-auth-password'), message: 'SNMP v3 auth password is required.' });
+        }
+    }
+
+    if (pluginMonitorMetadata[monitorType]) {
+        const pluginValidation = validatePluginConfigUI(monitorType);
+        if (!pluginValidation.valid) {
+            pluginValidation.errors.forEach(error => errors.push(error));
+        }
+    }
+
+    return { valid: errors.length === 0, errors };
+}
+
+function applyIncidentContext() {
+    const params = new URLSearchParams(window.location.search);
+    const ids = [];
+    const single = params.get('highlight_device');
+    const multiple = params.get('highlight_devices');
+    const location = params.get('location');
+
+    if (single && !Number.isNaN(Number(single))) ids.push(Number(single));
+    if (multiple) {
+        multiple.split(',').forEach(value => {
+            const num = Number(String(value).trim());
+            if (!Number.isNaN(num)) ids.push(num);
+        });
+    }
+
+    highlightedDeviceIds = [...new Set(ids)];
+
+    incidentContextLocation = location || '';
+}
 
 // Load all devices
 async function loadDevices() {
@@ -58,6 +297,10 @@ async function loadDevices() {
         const devices = await response.json();
         allDevices = devices; // Store globally for filtering
         populateFilterOptions(devices); // Populate filter dropdowns
+        if (incidentContextLocation) {
+            const filter = document.getElementById('filter-location');
+            if (filter) filter.value = incidentContextLocation;
+        }
         updateSortIcons(); // Show default sort icon
         filterDevices(); // Apply current filters and sorting
         updateDeviceCount(devices.length);
@@ -87,8 +330,10 @@ function updateDevicesTable(devices) {
         const locTypeLabel = locationTypeLabels[device.location_type] || 'On-Premise';
         const isAgentMonitored = ['ssh', 'winrm', 'wmi'].includes(device.monitor_type);
         
+        const isHighlighted = highlightedDeviceIds.includes(device.id);
+
         return `
-        <tr class="fade-in">
+        <tr class="fade-in" id="device-row-${device.id}" style="${isHighlighted ? 'background: rgba(64, 145, 108, 0.12); box-shadow: inset 4px 0 0 var(--primary);' : ''}">
             <td>
                 <strong>${device.name}</strong>
                 ${device.parent_device_id ? `<br><small style="color: var(--text-muted);">🔗 ${getParentName(device.parent_device_id)}</small>` : ''}
@@ -333,6 +578,7 @@ function filterDevices() {
     const sortedDevices = sortDevices(filteredDevices);
     updateDevicesTable(sortedDevices);
     updateFilteredCount(sortedDevices.length, allDevices.length);
+    focusHighlightedDeviceRow();
 }
 
 // Update device count with filter info
@@ -354,6 +600,16 @@ function clearFilters() {
     const locationTypeFilter = document.getElementById('filter-location-type');
     if (locationTypeFilter) locationTypeFilter.value = '';
     filterDevices();
+}
+
+function focusHighlightedDeviceRow() {
+    if (!highlightedDeviceIds.length) return;
+    const row = highlightedDeviceIds
+        .map(id => document.getElementById(`device-row-${id}`))
+        .find(Boolean);
+    if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
 }
 
 // Show add device modal
@@ -382,6 +638,7 @@ function showAddDeviceModal() {
     document.getElementById('expected-status-code').value = '200';
     // Reset expected ports
     document.getElementById('expected-ports').value = '';
+    renderPluginSettingsFields('ping', {});
     // Reset location type to default
     document.getElementById('device-location-type').value = 'on-premise';
     // Reset coordinate fields
@@ -404,6 +661,7 @@ function showAddDeviceModal() {
 // Update IP field label based on monitor type
 function updateIPFieldLabel() {
     const monitorType = document.getElementById('monitor-type').value;
+    const pluginMeta = pluginMonitorMetadata[monitorType];
     const ipLabel = document.getElementById('ip-label');
     const ipInput = document.getElementById('device-ip');
     const ipHint = document.getElementById('ip-hint');
@@ -414,6 +672,7 @@ function updateIPFieldLabel() {
     const sshSettings = document.getElementById('ssh-settings');
     const winrmSettings = document.getElementById('winrm-settings');
     const expectedPortsSettings = document.getElementById('expected-ports-settings');
+    const pluginSettings = document.getElementById('plugin-settings');
 
     // Hide all optional settings first
     snmpSettings.style.display = 'none';
@@ -423,8 +682,19 @@ function updateIPFieldLabel() {
     sshSettings.style.display = 'none';
     winrmSettings.style.display = 'none';
     if (expectedPortsSettings) expectedPortsSettings.style.display = 'none';
+    if (pluginSettings) pluginSettings.style.display = 'none';
 
-    if (monitorType === 'http') {
+    if (pluginMeta) {
+        ipLabel.textContent = 'IP Address *';
+        ipInput.placeholder = 'e.g., 192.168.1.10';
+        ipInput.removeAttribute('pattern');
+        ipHint.textContent = pluginMeta.description || 'Enter IP address for plugin monitoring';
+        renderPluginSettingsFields(monitorType, currentPluginConfig);
+
+        if (pluginMeta.ui_hint === 'tcp') {
+            tcpSettings.style.display = 'block';
+        }
+    } else if (monitorType === 'http') {
         ipLabel.textContent = 'URL *';
         ipInput.placeholder = 'e.g., https://www.google.com';
         ipInput.removeAttribute('pattern');
@@ -508,6 +778,7 @@ async function editDevice(deviceId) {
             document.getElementById('device-type').value = device.device_type || 'server';
             document.getElementById('device-location').value = device.location || '';
             document.getElementById('monitor-type').value = device.monitor_type || 'ping';
+            currentPluginConfig = device.plugin_config || {};
 
             // Load SNMP settings
             document.getElementById('snmp-community').value = device.snmp_community || 'public';
@@ -591,6 +862,7 @@ function getElementValue(id, defaultValue = '') {
 async function saveDevice(event) {
     event.preventDefault();
     console.log('saveDevice called');
+    clearFieldErrors(document.getElementById('device-form'));
 
     const saveBtn = event.target.querySelector('button[type="submit"]');
     const originalBtnText = saveBtn.textContent;
@@ -666,6 +938,24 @@ async function saveDevice(event) {
             deviceData.wmi_username = getElementValue('winrm-username', '');
             deviceData.wmi_password = getElementValue('winrm-password', '');
             deviceData.expected_ports = getElementValue('expected-ports', '');
+        }
+
+        if (pluginMonitorMetadata[monitorType]) {
+            const pluginValidation = validatePluginConfigUI(monitorType);
+            deviceData.plugin_config_json = JSON.stringify(pluginValidation.config || {});
+            if (pluginMonitorMetadata[monitorType].ui_hint === 'tcp') {
+                deviceData.tcp_port = parseInt(getElementValue('tcp-port', '80')) || 80;
+            }
+        } else {
+            deviceData.plugin_config_json = JSON.stringify({});
+        }
+
+        const validation = validateDeviceForm(deviceData);
+        if (!validation.valid) {
+            validation.errors.forEach(error => setFieldError(error.element, error.message));
+            validation.errors[0]?.element?.focus();
+            alert(validation.errors[0]?.message || 'Please fix the highlighted fields.');
+            return;
         }
 
         console.log('Device Data to send:', deviceData);

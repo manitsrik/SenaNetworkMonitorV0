@@ -1,0 +1,85 @@
+{
+  "id": "generic_webhook",
+  "name": "Generic Webhook",
+  "version": "0.1.0",
+  "type": "integration",
+  "description": "Sends alert payloads to any HTTP webhook endpoint with optional bearer auth and custom header.",
+  "enabled": true,
+  "ui_hint": "webhook",
+  "config_schema": [
+    {
+      "key": "url",
+      "label": "Webhook URL",
+      "type": "text",
+      "required": true,
+      "format": "url",
+      "default": "https://example.com/webhook"
+    },
+    {
+      "key": "method",
+      "label": "HTTP Method",
+      "type": "select",
+      "required": true,
+      "default": "POST",
+      "options": [
+        { "label": "POST", "value": "POST" },
+        { "label": "PUT", "value": "PUT" }
+      ]
+    },
+    {
+      "key": "timeout_seconds",
+      "label": "Timeout (seconds)",
+      "type": "number",
+      "required": false,
+      "min": 1,
+      "max": 60,
+      "default": 10
+    },
+    {
+      "key": "retry_attempts",
+      "label": "Retry Attempts",
+      "type": "number",
+      "required": false,
+      "min": 0,
+      "max": 5,
+      "default": 2
+    },
+    {
+      "key": "retry_backoff_seconds",
+      "label": "Retry Backoff (seconds)",
+      "type": "number",
+      "required": false,
+      "min": 0,
+      "max": 30,
+      "default": 1
+    },
+    {
+      "key": "verify_tls",
+      "label": "Verify TLS",
+      "type": "boolean",
+      "required": false,
+      "default": true
+    },
+    {
+      "key": "bearer_token",
+      "label": "Bearer Token",
+      "type": "secret",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "header_name",
+      "label": "Extra Header Name",
+      "type": "text",
+      "required": false,
+      "default": ""
+    },
+    {
+      "key": "header_value",
+      "label": "Extra Header Value",
+      "type": "secret",
+      "required": false,
+      "default": ""
+    }
+  ]
+}

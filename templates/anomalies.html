@@ -1,0 +1,914 @@
+{% extends "layout.html" %}
+{% block title %}Network Monitor - Anomalies{% endblock %}
+{% block page_title %}Anomaly Detection{% endblock %}
+{% set active_page = 'anomalies' %}
+
+{% block content %}
+<style>
+    .anomalies-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .anomaly-toolbar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.75rem;
+        align-items: end;
+    }
+
+    .anomaly-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .summary-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .summary-label {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin-bottom: 0.35rem;
+    }
+
+    .summary-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .anomaly-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .anomaly-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-left: 5px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .anomaly-card.severity-critical {
+        border-left-color: #dc2626;
+    }
+
+    .anomaly-card.severity-warning {
+        border-left-color: #d97706;
+    }
+
+    .anomaly-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-bottom: 0.8rem;
+    }
+
+    .anomaly-title h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--text-primary);
+    }
+
+    .anomaly-title .text-muted {
+        margin-top: 0.25rem;
+    }
+
+    .severity-badge,
+    .workflow-badge {
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        padding: 0.45rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+    }
+
+    .severity-critical .severity-badge {
+        background: rgba(220, 38, 38, 0.12);
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.25);
+    }
+
+    .severity-warning .severity-badge {
+        background: rgba(217, 119, 6, 0.12);
+        color: #d97706;
+        border-color: rgba(217, 119, 6, 0.25);
+    }
+
+    .workflow-badge {
+        border-color: rgba(148, 163, 184, 0.24);
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-secondary);
+    }
+
+    .workflow-open {
+        background: rgba(239, 68, 68, 0.1);
+        color: #dc2626;
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .workflow-acknowledged {
+        background: rgba(245, 158, 11, 0.12);
+        color: #d97706;
+        border-color: rgba(245, 158, 11, 0.24);
+    }
+
+    .workflow-investigating {
+        background: rgba(59, 130, 246, 0.12);
+        color: #2563eb;
+        border-color: rgba(59, 130, 246, 0.24);
+    }
+
+    .workflow-resolved {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+        border-color: rgba(16, 185, 129, 0.24);
+    }
+
+    .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.75rem;
+    }
+
+    .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .meta-pill.action-link {
+        text-decoration: none;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .meta-pill.action-link:hover {
+        transform: translateY(-1px);
+        border-color: rgba(64, 145, 108, 0.35);
+        background: rgba(64, 145, 108, 0.12);
+    }
+
+    .anomaly-body {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 1rem;
+        margin-top: 0.95rem;
+    }
+
+    .anomaly-section {
+        background: rgba(148, 163, 184, 0.06);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 12px;
+        padding: 0.9rem;
+    }
+
+    .anomaly-section h4 {
+        margin: 0 0 0.65rem 0;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+    }
+
+    .detail-list,
+    .timeline-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+
+    .detail-list a {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .detail-list a:hover {
+        text-decoration: underline;
+    }
+
+    .score-value {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        line-height: 1;
+    }
+
+    .anomaly-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.9rem;
+    }
+
+    .timeline-item {
+        border-left: 3px solid rgba(64, 145, 108, 0.25);
+        padding-left: 0.7rem;
+    }
+
+    .timeline-item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        font-size: 0.83rem;
+        margin-bottom: 0.2rem;
+        color: var(--text-secondary);
+    }
+
+    .timeline-item-body {
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        line-height: 1.45;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-muted);
+        background: var(--card-bg);
+        border: 1px dashed var(--border-color);
+        border-radius: 16px;
+    }
+
+    @media (max-width: 920px) {
+        .anomaly-body {
+            grid-template-columns: 1fr;
+        }
+
+        .anomaly-head {
+            flex-direction: column;
+        }
+    }
+</style>
+
+<div class="anomalies-page">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h3 class="card-title"><i class="fa-solid fa-wave-square"></i> Anomaly Detection</h3>
+                <p class="text-muted" style="margin: 0.35rem 0 0 0;">Switch between materialized snapshots and live rolling-baseline analysis for response time, bandwidth, CPU, RAM, and disk.</p>
+            </div>
+        </div>
+
+        <div class="anomaly-toolbar">
+            <div>
+                <label class="form-label">Source</label>
+                <select id="source-filter" class="form-control">
+                    <option value="materialized" selected>Materialized</option>
+                    <option value="live">Live Detection</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Severity</label>
+                <select id="severity-filter" class="form-control">
+                    <option value="">All severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="warning">Warning</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Workflow</label>
+                <select id="workflow-filter" class="form-control">
+                    <option value="">All workflow states</option>
+                    <option value="open">Open</option>
+                    <option value="acknowledged">Acknowledged</option>
+                    <option value="investigating">Investigating</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Anomaly Type</label>
+                <select id="type-filter" class="form-control">
+                    <option value="">All anomaly types</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Metric</label>
+                <select id="metric-filter" class="form-control">
+                    <option value="">All metrics</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Device</label>
+                <select id="device-filter" class="form-control">
+                    <option value="">All devices</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Location</label>
+                <select id="location-filter" class="form-control">
+                    <option value="">All locations</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Recent Window</label>
+                <select id="recent-minutes" class="form-control">
+                    <option value="15">15 minutes</option>
+                    <option value="30" selected>30 minutes</option>
+                    <option value="60">60 minutes</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Baseline</label>
+                <select id="baseline-hours" class="form-control">
+                    <option value="6">6 hours</option>
+                    <option value="12">12 hours</option>
+                    <option value="24" selected>24 hours</option>
+                    <option value="48">48 hours</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Min Samples</label>
+                <select id="min-points" class="form-control">
+                    <option value="3">3</option>
+                    <option value="5" selected>5</option>
+                    <option value="8">8</option>
+                    <option value="10">10</option>
+                </select>
+            </div>
+            <div>
+                <button class="btn btn-secondary" onclick="materializeAnomalies()" style="width: 100%;">
+                    <i class="fa-solid fa-bolt"></i> Run Detection
+                </button>
+            </div>
+            <div>
+                <button class="btn btn-primary" onclick="loadAnomalies()" style="width: 100%;">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="anomaly-summary">
+        <div class="summary-card">
+            <div class="summary-label">Active Anomalies</div>
+            <div class="summary-value" id="summary-total">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Critical</div>
+            <div class="summary-value" id="summary-critical">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Warnings</div>
+            <div class="summary-value" id="summary-warning">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Affected Devices</div>
+            <div class="summary-value" id="summary-devices">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Highest Score</div>
+            <div class="summary-value" id="summary-score">0</div>
+        </div>
+    </div>
+
+    <div id="anomaly-list" class="anomaly-list">
+        <div class="empty-state">Loading anomalies...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allAnomalies = [];
+    let assignableUsers = [];
+    let deviceContextById = {};
+    let pendingDeviceFilter = '';
+    let pendingLocationFilter = '';
+    let pendingSeverityFilter = '';
+    let pendingTypeFilter = '';
+    let pendingMetricFilter = '';
+    let pendingSourceFilter = '';
+    let pendingWorkflowFilter = '';
+
+    function getDetectionOptions() {
+        return {
+            recent_minutes: Number(document.getElementById('recent-minutes').value || 30),
+            baseline_hours: Number(document.getElementById('baseline-hours').value || 24),
+            min_points: Number(document.getElementById('min-points').value || 5)
+        };
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatTime(value) {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString();
+    }
+
+    function workflowLabel(status) {
+        const map = {
+            open: 'Open',
+            acknowledged: 'Acknowledged',
+            investigating: 'Investigating',
+            resolved: 'Resolved'
+        };
+        return map[status] || (status || 'Open');
+    }
+
+    function fillSelectOptions(elementId, values, placeholder) {
+        const select = document.getElementById(elementId);
+        const current = select.value;
+        const unique = Array.from(new Set(values.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+        select.innerHTML = `<option value="">${placeholder}</option>` +
+            unique.map(v => `<option value="${escapeHtml(String(v))}">${escapeHtml(String(v))}</option>`).join('');
+        if (unique.includes(current)) {
+            select.value = current;
+        }
+    }
+
+    function renderOwnerOptions(selectedId) {
+        const current = selectedId == null ? '' : String(selectedId);
+        return `<option value="">Unassigned</option>` + assignableUsers.map(user => {
+            const label = user.display_name || user.username;
+            const selected = String(user.id) === current ? 'selected' : '';
+            return `<option value="${escapeHtml(String(user.id))}" ${selected}>${escapeHtml(label)} (${escapeHtml(user.role || '-')})</option>`;
+        }).join('');
+    }
+
+    function rebuildFilters(anomalies) {
+        fillSelectOptions('type-filter', anomalies.map(a => a.anomaly_type), 'All anomaly types');
+        fillSelectOptions('metric-filter', anomalies.map(a => a.metric_name), 'All metrics');
+        fillSelectOptions('device-filter', anomalies.map(a => a.device_name), 'All devices');
+        fillSelectOptions('location-filter', anomalies.map(a => a.location), 'All locations');
+
+        if (pendingDeviceFilter) {
+            const deviceFilter = document.getElementById('device-filter');
+            if ([...deviceFilter.options].some(option => option.value === pendingDeviceFilter)) {
+                deviceFilter.value = pendingDeviceFilter;
+            }
+            pendingDeviceFilter = '';
+        }
+        if (pendingLocationFilter) {
+            const locationFilter = document.getElementById('location-filter');
+            if ([...locationFilter.options].some(option => option.value === pendingLocationFilter)) {
+                locationFilter.value = pendingLocationFilter;
+            }
+            pendingLocationFilter = '';
+        }
+        if (pendingSeverityFilter) {
+            document.getElementById('severity-filter').value = pendingSeverityFilter;
+            pendingSeverityFilter = '';
+        }
+        if (pendingTypeFilter) {
+            document.getElementById('type-filter').value = pendingTypeFilter;
+            pendingTypeFilter = '';
+        }
+        if (pendingMetricFilter) {
+            document.getElementById('metric-filter').value = pendingMetricFilter;
+            pendingMetricFilter = '';
+        }
+        if (pendingSourceFilter) {
+            document.getElementById('source-filter').value = pendingSourceFilter;
+            pendingSourceFilter = '';
+        }
+        if (pendingWorkflowFilter) {
+            document.getElementById('workflow-filter').value = pendingWorkflowFilter;
+            pendingWorkflowFilter = '';
+        }
+    }
+
+    function updateSummary(anomalies) {
+        const critical = anomalies.filter(a => a.severity === 'critical').length;
+        const warning = anomalies.filter(a => a.severity === 'warning').length;
+        const devices = new Set(anomalies.map(a => a.device_id).filter(Boolean));
+        const highestScore = anomalies.length ? Math.max(...anomalies.map(a => Number(a.score) || 0)) : 0;
+        document.getElementById('summary-total').textContent = anomalies.length;
+        document.getElementById('summary-critical').textContent = critical;
+        document.getElementById('summary-warning').textContent = warning;
+        document.getElementById('summary-devices').textContent = devices.size;
+        document.getElementById('summary-score').textContent = highestScore.toFixed(2).replace(/\.00$/, '');
+    }
+
+    function renderAnomalies(anomalies) {
+        const container = document.getElementById('anomaly-list');
+        const severityFilter = document.getElementById('severity-filter').value;
+        const workflowFilter = document.getElementById('workflow-filter').value;
+        const typeFilter = document.getElementById('type-filter').value;
+        const metricFilter = document.getElementById('metric-filter').value;
+        const deviceFilter = document.getElementById('device-filter').value;
+        const locationFilter = document.getElementById('location-filter').value;
+
+        const filtered = anomalies.filter(a => {
+            return (!severityFilter || a.severity === severityFilter) &&
+                (!workflowFilter || (a.workflow_status || 'open') === workflowFilter) &&
+                (!typeFilter || a.anomaly_type === typeFilter) &&
+                (!metricFilter || a.metric_name === metricFilter) &&
+                (!deviceFilter || a.device_name === deviceFilter) &&
+                (!locationFilter || a.location === locationFilter);
+        });
+
+        updateSummary(filtered);
+
+        if (!filtered.length) {
+            container.innerHTML = '<div class="empty-state">No active anomalies found for the current filters.</div>';
+            return;
+        }
+
+        container.innerHTML = filtered.map(anomaly => {
+            const details = anomaly.details || {};
+            const anomalyKey = String(anomaly.anomaly_key || '');
+            const highlighted = encodeURIComponent(String(anomaly.device_id || ''));
+            const devicesLink = anomaly.device_id ? `/devices?highlight_device=${highlighted}` : '/devices';
+            const topologyLink = anomaly.device_id ? `/topology?highlight_device=${highlighted}` : '/topology';
+            const bandwidthLink = anomaly.device_id ? `/bandwidth?device_id=${highlighted}` : '/bandwidth';
+            const performanceApiLink = anomaly.device_id ? `/api/devices/${anomaly.device_id}/performance?hours=24` : '#';
+            const incidentsLink = anomaly.device_name
+                ? `/incidents?device=${encodeURIComponent(anomaly.device_name)}${anomaly.location ? `&location=${encodeURIComponent(anomaly.location)}` : ''}`
+                : '/incidents';
+            const workflowStatus = anomaly.workflow_status || 'open';
+            const workflowOwner = anomaly.workflow_owner_username || 'Unassigned';
+            const relatedIncidents = anomaly.related_incidents || [];
+            const linkedIncident = anomaly.linked_incident || null;
+            const timelineHtml = (anomaly.activity || []).length
+                ? anomaly.activity.map(item => `
+                    <div class="timeline-item">
+                        <div class="timeline-item-head">
+                            <span>${escapeHtml(item.actor_username || 'system')}</span>
+                            <span>${escapeHtml(formatTime(item.created_at))}</span>
+                        </div>
+                        <div class="timeline-item-body">
+                            ${escapeHtml(item.action || 'update')}
+                            ${item.old_status || item.new_status ? ` | ${escapeHtml(item.old_status || 'none')} -> ${escapeHtml(item.new_status || 'none')}` : ''}
+                            ${item.note ? `<div class="text-muted" style="margin-top:0.25rem;">${escapeHtml(item.note)}</div>` : ''}
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="text-muted" style="font-size:0.85rem;">No workflow activity yet.</div>';
+            const linkedIncidentHtml = linkedIncident
+                ? `
+                    <div class="timeline-item">
+                        <div class="timeline-item-head">
+                            <span>${escapeHtml(linkedIncident.incident_id || '-')}</span>
+                            <span>${escapeHtml(formatTime(linkedIncident.updated_at || linkedIncident.linked_at))}</span>
+                        </div>
+                        <div class="timeline-item-body">
+                            ${escapeHtml((((linkedIncident.incident || {}).payload || {}).summary) || 'Linked incident')}
+                            <div class="text-muted" style="margin-top:0.25rem;">linked by ${escapeHtml(linkedIncident.linked_by_username || 'system')}</div>
+                            ${linkedIncident.note ? `<div class="text-muted" style="margin-top:0.25rem;">${escapeHtml(linkedIncident.note)}</div>` : ''}
+                            <div style="margin-top:0.45rem; display:flex; gap:0.45rem; flex-wrap:wrap;">
+                                <a href="${incidentsLink}" class="meta-pill action-link"><i class="fa-solid fa-up-right-from-square"></i>Open Incident</a>
+                                <button class="btn btn-secondary btn-sm" onclick="unlinkAnomalyIncident('${escapeHtml(anomalyKey)}')">Unlink</button>
+                            </div>
+                        </div>
+                    </div>
+                `
+                : '<div class="text-muted" style="font-size:0.85rem;">No incident linked yet.</div>';
+            const suggestionsHtml = relatedIncidents.length
+                ? relatedIncidents.map(item => {
+                    const itemLink = `/incidents?device=${encodeURIComponent(anomaly.device_name || '')}${anomaly.location ? `&location=${encodeURIComponent(anomaly.location)}` : ''}`;
+                    return `
+                        <div class="timeline-item">
+                            <div class="timeline-item-head">
+                                <span>${escapeHtml(item.incident_id || '-')}</span>
+                                <span>Score ${escapeHtml(String(item.score || 0))}</span>
+                            </div>
+                            <div class="timeline-item-body">
+                                ${escapeHtml(item.summary || 'Related incident')}
+                                <div class="text-muted" style="margin-top:0.25rem;">${escapeHtml((item.reasons || []).join(', ') || '-')}</div>
+                                <div style="margin-top:0.35rem; display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center;">
+                                    <a href="${itemLink}">Open incident context</a>
+                                    ${item.is_linked
+                                        ? `<span class="meta-pill"><i class="fa-solid fa-link"></i>Linked</span>`
+                                        : `<button class="btn btn-secondary btn-sm" onclick="linkAnomalyToIncident('${escapeHtml(anomalyKey)}', '${escapeHtml(item.incident_id || '')}')">Link This Incident</button>`}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')
+                : '<div class="text-muted" style="font-size:0.85rem;">No related incidents suggested yet.</div>';
+
+            return `
+                <div class="anomaly-card severity-${escapeHtml(anomaly.severity || 'warning')}">
+                    <div class="anomaly-head">
+                        <div class="anomaly-title">
+                            <h3>${escapeHtml(anomaly.summary || 'Anomaly')}</h3>
+                            <div class="text-muted">Detected ${escapeHtml(formatTime(anomaly.detected_at))} | Last seen ${escapeHtml(formatTime(anomaly.last_seen_at))}</div>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                            <div class="workflow-badge workflow-${escapeHtml(workflowStatus)}">${escapeHtml(workflowLabel(workflowStatus))}</div>
+                            <div class="severity-badge">${escapeHtml(anomaly.severity || 'warning')}</div>
+                        </div>
+                    </div>
+
+                    <div class="pill-row">
+                        <span class="meta-pill"><i class="fa-solid fa-server"></i>${escapeHtml(anomaly.device_name || 'Unknown')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-location-dot"></i>${escapeHtml(anomaly.location || 'Unknown')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-wave-square"></i>${escapeHtml(anomaly.anomaly_type || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-gauge-high"></i>${escapeHtml(anomaly.metric_name || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-sigma"></i>Score ${escapeHtml(String(anomaly.score ?? '-'))}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-user-check"></i>${escapeHtml(anomaly.workflow_acknowledged_by || 'Unassigned')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-user-tag"></i>${escapeHtml(workflowOwner)}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-link"></i>${escapeHtml(String(anomaly.related_incident_count || 0))} related incidents</span>
+                        ${linkedIncident ? `<span class="meta-pill"><i class="fa-solid fa-paperclip"></i>${escapeHtml(linkedIncident.incident_id || 'Linked')}</span>` : ''}
+                    </div>
+
+                    <div class="anomaly-body">
+                        <div class="anomaly-section">
+                            <h4>Signal Strength</h4>
+                            <div class="score-value">${escapeHtml(String(anomaly.score ?? '-'))}</div>
+                            <div class="detail-list" style="margin-top: 0.8rem;">
+                                <div><strong>Baseline mean:</strong> ${escapeHtml(String(details.baseline_mean ?? '-'))}</div>
+                                <div><strong>Baseline stddev:</strong> ${escapeHtml(String(details.baseline_stddev ?? '-'))}</div>
+                                <div><strong>Recent average:</strong> ${escapeHtml(String(details.recent_average ?? '-'))}</div>
+                                <div><strong>Recent samples:</strong> ${escapeHtml(String(details.recent_samples ?? '-'))}</div>
+                                <div><strong>Baseline samples:</strong> ${escapeHtml(String(details.baseline_samples ?? '-'))}</div>
+                                <div><strong>Workflow updated:</strong> ${escapeHtml(formatTime(anomaly.workflow_updated_at || anomaly.last_seen_at))}</div>
+                                <div><strong>Owner:</strong> ${escapeHtml(workflowOwner)}</div>
+                                <div><strong>Note:</strong> ${escapeHtml(anomaly.workflow_note || '-')}</div>
+                            </div>
+                            <div class="anomaly-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="updateAnomalyStatus('${escapeHtml(anomalyKey)}', 'acknowledged')">Acknowledge</button>
+                                <button class="btn btn-secondary btn-sm" onclick="updateAnomalyStatus('${escapeHtml(anomalyKey)}', 'investigating')">Investigating</button>
+                                <button class="btn btn-primary btn-sm" onclick="updateAnomalyStatus('${escapeHtml(anomalyKey)}', 'resolved')">Resolve</button>
+                                <button class="btn btn-secondary btn-sm" onclick="updateAnomalyStatus('${escapeHtml(anomalyKey)}', 'open')">Reopen</button>
+                            </div>
+                            <div class="anomaly-actions">
+                                <select id="owner-select-${escapeHtml(anomalyKey)}" class="form-control" style="min-width: 220px;">
+                                    ${renderOwnerOptions(anomaly.workflow_owner_user_id)}
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="assignAnomalyOwner('${escapeHtml(anomalyKey)}')">Assign Owner</button>
+                                <button class="btn btn-secondary btn-sm" onclick="clearAnomalyOwner('${escapeHtml(anomalyKey)}')">Clear Owner</button>
+                            </div>
+                        </div>
+                        <div class="anomaly-section">
+                            <h4>Deep Links</h4>
+                            <div class="detail-list">
+                                <div><a href="${devicesLink}">Open Devices</a></div>
+                                <div><a href="${topologyLink}">Open Topology</a></div>
+                                <div><a href="${bandwidthLink}">Open Bandwidth</a></div>
+                                <div><a href="${incidentsLink}">Open Related Incidents</a></div>
+                                ${anomaly.device_id ? `<div><a href="${performanceApiLink}" target="_blank">Open Performance API</a></div>` : ''}
+                            </div>
+                            <div class="pill-row" style="margin-top: 0.9rem;">
+                                ${anomaly.device_id ? `<a class="meta-pill action-link" href="${devicesLink}"><i class="fa-solid fa-crosshairs"></i>Focus Device</a>` : ''}
+                                ${anomaly.device_id ? `<a class="meta-pill action-link" href="${topologyLink}"><i class="fa-solid fa-project-diagram"></i>Show Topology</a>` : ''}
+                                <a class="meta-pill action-link" href="${incidentsLink}"><i class="fa-solid fa-triangle-exclamation"></i>Incidents</a>
+                            </div>
+                            <h4 style="margin-top: 1rem;">Linked Incident</h4>
+                            <div class="timeline-list">${linkedIncidentHtml}</div>
+                            <h4 style="margin-top: 1rem;">Suggested Incidents</h4>
+                            <div class="timeline-list">${suggestionsHtml}</div>
+                            <h4 style="margin-top: 1rem;">Activity Timeline</h4>
+                            <div class="timeline-list">${timelineHtml}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadAssignableUsers() {
+        try {
+            const res = await fetch('/api/users/assignable');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            assignableUsers = await res.json();
+        } catch (error) {
+            console.error('Failed to load assignable users:', error);
+            assignableUsers = [];
+        }
+    }
+
+    async function loadDeviceContext() {
+        try {
+            const res = await fetch('/api/devices');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const devices = await res.json();
+            deviceContextById = {};
+            (devices || []).forEach(device => {
+                deviceContextById[device.id] = device;
+            });
+        } catch (error) {
+            console.error('Failed to load device context:', error);
+            deviceContextById = {};
+        }
+    }
+
+    function normalizeAnomalies(anomalies) {
+        return (anomalies || []).map(anomaly => {
+            const device = deviceContextById[anomaly.device_id] || {};
+            return {
+                ...anomaly,
+                location: anomaly.location || device.location || '',
+                device_name: anomaly.device_name || device.name || ''
+            };
+        });
+    }
+
+    function applyQueryFilters() {
+        const params = new URLSearchParams(window.location.search);
+        const source = params.get('source');
+        const severity = params.get('severity');
+        const workflow = params.get('workflow');
+        const type = params.get('type');
+        const metric = params.get('metric');
+        const location = params.get('location');
+        const deviceId = params.get('device_id') || params.get('highlight_device');
+
+        pendingSourceFilter = source || pendingSourceFilter;
+        pendingSeverityFilter = severity || pendingSeverityFilter;
+        pendingWorkflowFilter = workflow || pendingWorkflowFilter;
+        pendingTypeFilter = type || pendingTypeFilter;
+        pendingMetricFilter = metric || pendingMetricFilter;
+        pendingLocationFilter = location || pendingLocationFilter;
+
+        if (deviceId && deviceContextById[deviceId] && deviceContextById[deviceId].name) {
+            pendingDeviceFilter = deviceContextById[deviceId].name;
+        }
+    }
+
+    async function loadAnomalies() {
+        const container = document.getElementById('anomaly-list');
+        container.innerHTML = '<div class="empty-state">Loading anomalies...</div>';
+        try {
+            const source = document.getElementById('source-filter').value;
+            const options = getDetectionOptions();
+            let endpoint = '/api/anomalies/materialized';
+            const query = new URLSearchParams();
+
+            if (source === 'live') {
+                endpoint = '/api/anomalies';
+                query.set('recent_minutes', String(options.recent_minutes));
+                query.set('baseline_hours', String(options.baseline_hours));
+                query.set('min_points', String(options.min_points));
+            } else {
+                query.set('active_only', 'true');
+                query.set('limit', '200');
+            }
+
+            const res = await fetch(`${endpoint}?${query.toString()}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            allAnomalies = normalizeAnomalies(await res.json());
+            rebuildFilters(allAnomalies);
+            renderAnomalies(allAnomalies);
+        } catch (error) {
+            console.error('Failed to load anomalies:', error);
+            container.innerHTML = `<div class="empty-state">Failed to load anomalies: ${escapeHtml(error.message)}</div>`;
+            updateSummary([]);
+        }
+    }
+
+    async function materializeAnomalies() {
+        try {
+            const options = getDetectionOptions();
+            const res = await fetch('/api/anomalies/materialize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+            document.getElementById('source-filter').value = 'materialized';
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to run anomaly detection:', error);
+            alert(`Failed to run anomaly detection: ${error.message}`);
+        }
+    }
+
+    async function updateAnomalyStatus(anomalyKey, status) {
+        const note = window.prompt(`Optional note for "${workflowLabel(status)}"`, '') || '';
+
+        try {
+            const res = await fetch(`/api/anomalies/${encodeURIComponent(anomalyKey)}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, note })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to update anomaly status:', error);
+            alert(`Failed to update anomaly status: ${error.message}`);
+        }
+    }
+
+    async function assignAnomalyOwner(anomalyKey) {
+        const select = document.getElementById(`owner-select-${anomalyKey}`);
+        const ownerUserId = select ? select.value : '';
+        const note = window.prompt('Optional assignment note', '') || '';
+
+        try {
+            const res = await fetch(`/api/anomalies/${encodeURIComponent(anomalyKey)}/owner`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner_user_id: ownerUserId || null, note })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to assign anomaly owner:', error);
+            alert(`Failed to assign owner: ${error.message}`);
+        }
+    }
+
+    async function clearAnomalyOwner(anomalyKey) {
+        try {
+            const res = await fetch(`/api/anomalies/${encodeURIComponent(anomalyKey)}/owner`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner_user_id: null, note: 'Owner cleared' })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to clear anomaly owner:', error);
+            alert(`Failed to clear owner: ${error.message}`);
+        }
+    }
+
+    async function linkAnomalyToIncident(anomalyKey, incidentId) {
+        const note = window.prompt('Optional link note', '') || '';
+        try {
+            const res = await fetch(`/api/anomalies/${encodeURIComponent(anomalyKey)}/link-incident`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ incident_id: incidentId, note })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to link anomaly to incident:', error);
+            alert(`Failed to link incident: ${error.message}`);
+        }
+    }
+
+    async function unlinkAnomalyIncident(anomalyKey) {
+        try {
+            const res = await fetch(`/api/anomalies/${encodeURIComponent(anomalyKey)}/link-incident`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note: 'Link removed' })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadAnomalies();
+        } catch (error) {
+            console.error('Failed to unlink anomaly from incident:', error);
+            alert(`Failed to unlink incident: ${error.message}`);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        ['severity-filter', 'workflow-filter', 'type-filter', 'metric-filter', 'device-filter', 'location-filter'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => renderAnomalies(allAnomalies));
+        });
+        ['recent-minutes', 'baseline-hours', 'min-points'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (document.getElementById('source-filter').value === 'live') {
+                    loadAnomalies();
+                }
+            });
+        });
+        document.getElementById('source-filter').addEventListener('change', loadAnomalies);
+
+        Promise.all([loadAssignableUsers(), loadDeviceContext()]).then(() => {
+            applyQueryFilters();
+            return loadAnomalies();
+        });
+    });
+</script>
+{% endblock %}

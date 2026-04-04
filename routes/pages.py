@@ -58,6 +58,20 @@ def history():
     return render_template('history.html')
 
 
+@pages_bp.route('/incidents')
+@login_required
+def incidents_page():
+    """Correlated incidents page"""
+    return render_template('incidents.html')
+
+
+@pages_bp.route('/anomalies')
+@login_required
+def anomalies_page():
+    """Anomaly detection page"""
+    return render_template('anomalies.html')
+
+
 @pages_bp.route('/settings')
 @login_required
 def settings():

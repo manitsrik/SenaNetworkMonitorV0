@@ -1,0 +1,493 @@
+{% extends "layout.html" %}
+{% block title %}Network Monitor - Plugins{% endblock %}
+{% block page_title %}Plugin System{% endblock %}
+{% set active_page = 'plugins' %}
+
+{% block content %}
+<style>
+    .plugins-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    .plugin-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1rem;
+    }
+    .plugin-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1rem;
+        box-shadow: var(--shadow-sm);
+    }
+    .plugin-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.75rem;
+    }
+    .plugin-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+    .plugin-status-ok {
+        color: #059669;
+    }
+    .plugin-status-bad {
+        color: #dc2626;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-muted);
+        background: var(--card-bg);
+        border: 1px dashed var(--border-color);
+        border-radius: 16px;
+    }
+    .plugin-form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    .plugin-field label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.3rem;
+    }
+    .plugin-field input,
+    .plugin-field select {
+        width: 100%;
+        padding: 0.55rem 0.65rem;
+        border-radius: 10px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        color: var(--text-primary);
+    }
+    .plugin-actions {
+        display: flex;
+        gap: 0.65rem;
+        margin-top: 1rem;
+        flex-wrap: wrap;
+    }
+    .field-error {
+        border-color: #dc2626 !important;
+        box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+    }
+    .field-error-message {
+        display: block;
+        margin-top: 0.35rem;
+        color: #dc2626;
+        font-size: 0.8rem;
+    }
+</style>
+
+<div class="plugins-page">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h3 class="card-title"><i class="fa-solid fa-plug"></i> Plugin Registry</h3>
+                <p class="text-muted" style="margin: 0.35rem 0 0 0;">Local plugin loader for monitor and integration extensions under <code>plugins/</code>.</p>
+                <p class="text-muted" style="margin: 0.5rem 0 0 0;">
+                    Developer guide: <a href="/PLUGIN_DEVELOPMENT.md" target="_blank">PLUGIN_DEVELOPMENT.md</a>
+                </p>
+            </div>
+            <div>
+                <button class="btn btn-primary" onclick="reloadPlugins()">
+                    <i class="fa-solid fa-rotate"></i> Reload Plugins
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="plugin-grid" class="plugin-grid">
+        <div class="empty-state">Loading plugins...</div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h3 class="card-title"><i class="fa-solid fa-bell-concierge"></i> Integration Plugins</h3>
+                <p class="text-muted" style="margin: 0.35rem 0 0 0;">Configure alert delivery plugins that run alongside the built-in channels.</p>
+            </div>
+        </div>
+        <div id="integration-grid" class="plugin-grid">
+            <div class="empty-state">Loading integration plugins...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function escapeAttr(value) {
+        return escapeHtml(value).replace(/"/g, '&quot;');
+    }
+
+    function renderField(field, value, pluginId, secretState = {}) {
+        const key = field.key;
+        const inputId = `${pluginId}-${key}`;
+        const label = `${escapeHtml(field.label || key)}${field.required ? ' *' : ''}`;
+
+        if (field.type === 'boolean') {
+            return `
+                <div class="plugin-field">
+                    <label for="${escapeAttr(inputId)}">${label}</label>
+                    <select id="${escapeAttr(inputId)}" data-plugin-field="${escapeAttr(key)}">
+                        <option value="true" ${value ? 'selected' : ''}>True</option>
+                        <option value="false" ${!value ? 'selected' : ''}>False</option>
+                    </select>
+                </div>
+            `;
+        }
+
+        if (field.type === 'select') {
+            const options = (field.options || []).map(option => {
+                const optValue = typeof option === 'object' ? option.value : option;
+                const optLabel = typeof option === 'object' ? (option.label || option.value) : option;
+                return `<option value="${escapeAttr(optValue)}" ${String(value) === String(optValue) ? 'selected' : ''}>${escapeHtml(optLabel)}</option>`;
+            }).join('');
+            return `
+                <div class="plugin-field">
+                    <label for="${escapeAttr(inputId)}">${label}</label>
+                    <select id="${escapeAttr(inputId)}" data-plugin-field="${escapeAttr(key)}">${options}</select>
+                </div>
+            `;
+        }
+
+        if (field.type === 'secret') {
+            const hasStoredSecret = !!secretState[key];
+            return `
+                <div class="plugin-field">
+                    <label for="${escapeAttr(inputId)}">${label}</label>
+                    <input
+                        id="${escapeAttr(inputId)}"
+                        type="password"
+                        data-plugin-field="${escapeAttr(key)}"
+                        value=""
+                        placeholder="${hasStoredSecret ? 'Stored securely. Enter a new value to replace.' : ''}"
+                    >
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-size:0.8rem; color:var(--text-secondary);">
+                        <input type="checkbox" data-plugin-secret-clear="${escapeAttr(key)}" ${hasStoredSecret ? '' : 'disabled'}>
+                        Clear stored secret
+                    </label>
+                    ${hasStoredSecret ? '<small style="display:block; margin-top:0.35rem; color: var(--text-muted);">A secret is already stored for this field.</small>' : ''}
+                </div>
+            `;
+        }
+
+        const type = field.type === 'secret' ? 'password' : (field.type === 'number' ? 'number' : 'text');
+        return `
+            <div class="plugin-field">
+                <label for="${escapeAttr(inputId)}">${label}</label>
+                <input id="${escapeAttr(inputId)}" type="${escapeAttr(type)}" data-plugin-field="${escapeAttr(key)}" value="${escapeAttr(value ?? '')}">
+            </div>
+        `;
+    }
+
+    function collectIntegrationConfig(pluginId, schema) {
+        const card = document.querySelector(`[data-plugin-card="${pluginId}"]`);
+        const config = {};
+        (schema || []).forEach(field => {
+            const input = card.querySelector(`[data-plugin-field="${field.key}"]`);
+            if (!input) return;
+            if (field.type === 'boolean') {
+                config[field.key] = input.value === 'true';
+            } else if (field.type === 'number') {
+                config[field.key] = input.value === '' ? '' : Number(input.value);
+            } else {
+                config[field.key] = input.value;
+            }
+        });
+        return config;
+    }
+
+    function collectIntegrationSecretActions(pluginId, schema) {
+        const card = document.querySelector(`[data-plugin-card="${pluginId}"]`);
+        const secretState = (window.integrationPluginSecretState || {})[pluginId] || {};
+        const actions = {};
+
+        (schema || []).forEach(field => {
+            if (field.type !== 'secret') return;
+            const input = card.querySelector(`[data-plugin-field="${field.key}"]`);
+            const clearCheckbox = card.querySelector(`[data-plugin-secret-clear="${field.key}"]`);
+            const incoming = input ? String(input.value || '').trim() : '';
+            if (clearCheckbox?.checked) {
+                actions[field.key] = 'clear';
+            } else if (incoming) {
+                actions[field.key] = 'replace';
+            } else if (secretState[field.key]) {
+                actions[field.key] = 'keep';
+            }
+        });
+
+        return actions;
+    }
+
+    function clearIntegrationFieldErrors(card) {
+        card.querySelectorAll('.field-error').forEach(element => element.classList.remove('field-error'));
+        card.querySelectorAll('.field-error-message').forEach(element => element.remove());
+    }
+
+    function setIntegrationFieldError(input, message) {
+        if (!input) return;
+        input.classList.add('field-error');
+        const existing = input.parentElement?.querySelector('.field-error-message');
+        if (existing) existing.remove();
+        const error = document.createElement('small');
+        error.className = 'field-error-message';
+        error.textContent = message;
+        input.parentElement?.appendChild(error);
+    }
+
+    function validateIntegrationPluginCard(pluginId, schema) {
+        const card = document.querySelector(`[data-plugin-card="${pluginId}"]`);
+        const config = collectIntegrationConfig(pluginId, schema);
+        const secretActions = collectIntegrationSecretActions(pluginId, schema);
+        const secretState = (window.integrationPluginSecretState || {})[pluginId] || {};
+        const errors = [];
+
+        (schema || []).forEach(field => {
+            const input = card.querySelector(`[data-plugin-field="${field.key}"]`);
+            if (!input) return;
+
+            const label = field.label || field.key;
+            const value = config[field.key];
+            const fieldType = field.type || 'text';
+            const options = Array.isArray(field.options) ? field.options : [];
+            const allowedValues = options.map(option => typeof option === 'object' ? option.value : option);
+            const secretWillBeCleared = secretActions[field.key] === 'clear';
+            const hasStoredSecret = !!secretState[field.key] && !secretWillBeCleared;
+
+            if (field.required && fieldType === 'secret' && !hasStoredSecret && (value === null || value === undefined || String(value).trim() === '')) {
+                errors.push({ element: input, message: `${label} is required.` });
+                return;
+            }
+
+            if (field.required && fieldType !== 'boolean' && fieldType !== 'secret' && (value === null || value === undefined || String(value).trim() === '')) {
+                errors.push({ element: input, message: `${label} is required.` });
+                return;
+            }
+
+            if (fieldType === 'number' && value !== '' && value !== null && Number.isNaN(Number(value))) {
+                errors.push({ element: input, message: `${label} must be a valid number.` });
+                return;
+            }
+
+            if (fieldType === 'number' && value !== '' && value !== null) {
+                if (field.min !== undefined && Number(value) < Number(field.min)) {
+                    errors.push({ element: input, message: `${label} must be at least ${field.min}.` });
+                    return;
+                }
+                if (field.max !== undefined && Number(value) > Number(field.max)) {
+                    errors.push({ element: input, message: `${label} must be at most ${field.max}.` });
+                    return;
+                }
+            }
+
+            if (allowedValues.length && value !== '' && value !== null && value !== undefined && !allowedValues.includes(value)) {
+                errors.push({ element: input, message: `${label} has an invalid option.` });
+                return;
+            }
+
+            if (field.pattern && value !== '' && value !== null && value !== undefined) {
+                try {
+                    const regex = new RegExp(`^${field.pattern}$`);
+                    if (!regex.test(String(value))) {
+                        errors.push({ element: input, message: `${label} has invalid format.` });
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('Invalid regex pattern in schema:', field.pattern, error);
+                }
+            }
+
+            if (field.format === 'url' && value) {
+                try {
+                    const url = new URL(String(value));
+                    if (!['http:', 'https:'].includes(url.protocol)) {
+                        errors.push({ element: input, message: `${label} must start with http:// or https://.` });
+                    }
+                } catch (error) {
+                    errors.push({ element: input, message: `${label} must be a valid URL.` });
+                }
+            }
+        });
+
+        return { valid: errors.length === 0, config, errors, secretActions };
+    }
+
+    async function loadPlugins() {
+        const container = document.getElementById('plugin-grid');
+        container.innerHTML = '<div class="empty-state">Loading plugins...</div>';
+        try {
+            const res = await fetch('/api/plugins');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const plugins = await res.json();
+            if (!plugins.length) {
+                container.innerHTML = '<div class="empty-state">No plugins found in the plugins directory.</div>';
+                return;
+            }
+            container.innerHTML = plugins.map(plugin => `
+                <div class="plugin-card">
+                    <div style="display:flex; justify-content:space-between; gap:0.75rem; align-items:flex-start;">
+                        <div>
+                            <h3 style="margin:0; color:var(--text-primary);">${escapeHtml(plugin.name || plugin.id)}</h3>
+                            <div class="text-muted" style="margin-top:0.25rem;">${escapeHtml(plugin.description || 'No description')}</div>
+                        </div>
+                        <div class="${plugin.enabled ? 'plugin-status-ok' : 'plugin-status-bad'}">
+                            <strong>${plugin.enabled ? 'Enabled' : 'Disabled'}</strong>
+                        </div>
+                    </div>
+                    <div class="plugin-meta">
+                        <span class="plugin-pill"><i class="fa-solid fa-fingerprint"></i>${escapeHtml(plugin.id)}</span>
+                        <span class="plugin-pill"><i class="fa-solid fa-layer-group"></i>${escapeHtml(plugin.type)}</span>
+                        <span class="plugin-pill"><i class="fa-solid fa-code-branch"></i>${escapeHtml(plugin.version)}</span>
+                        <span class="plugin-pill"><i class="fa-solid fa-heart-pulse"></i>${escapeHtml(plugin.monitor_type || '-')}</span>
+                        <span class="plugin-pill"><i class="fa-solid fa-table-cells-large"></i>${escapeHtml(plugin.ui_hint || 'generic')}</span>
+                    </div>
+                    <div class="text-muted" style="margin-top:0.85rem; font-size:0.85rem;">
+                        Loaded: ${escapeHtml(plugin.loaded_at || '-')}
+                    </div>
+                    ${plugin.load_error ? `<div style="margin-top:0.65rem; color:#dc2626; font-size:0.85rem;">Load error: ${escapeHtml(plugin.load_error)}</div>` : ''}
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load plugins:', error);
+            container.innerHTML = `<div class="empty-state">Failed to load plugins: ${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    async function loadIntegrationPlugins() {
+        const container = document.getElementById('integration-grid');
+        container.innerHTML = '<div class="empty-state">Loading integration plugins...</div>';
+        try {
+            const res = await fetch('/api/plugins/integration-types');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const plugins = await res.json();
+            if (!plugins.length) {
+                container.innerHTML = '<div class="empty-state">No integration plugins found.</div>';
+                return;
+            }
+            container.innerHTML = plugins.map(plugin => {
+                const schema = plugin.config_schema || [];
+                const config = plugin.runtime_config || {};
+                const secretState = plugin.runtime_secret_fields || {};
+                return `
+                    <div class="plugin-card" data-plugin-card="${escapeAttr(plugin.id)}">
+                        <div style="display:flex; justify-content:space-between; gap:0.75rem; align-items:flex-start;">
+                            <div>
+                                <h3 style="margin:0; color:var(--text-primary);">${escapeHtml(plugin.name || plugin.id)}</h3>
+                                <div class="text-muted" style="margin-top:0.25rem;">${escapeHtml(plugin.description || 'No description')}</div>
+                            </div>
+                            <label class="plugin-pill" style="cursor:pointer;">
+                                <input type="checkbox" data-plugin-enabled ${plugin.runtime_enabled ? 'checked' : ''}>
+                                <span>${plugin.runtime_enabled ? 'Enabled' : 'Disabled'}</span>
+                            </label>
+                        </div>
+                        <div class="plugin-meta">
+                            <span class="plugin-pill"><i class="fa-solid fa-fingerprint"></i>${escapeHtml(plugin.id)}</span>
+                            <span class="plugin-pill"><i class="fa-solid fa-layer-group"></i>${escapeHtml(plugin.type)}</span>
+                            <span class="plugin-pill"><i class="fa-solid fa-code-branch"></i>${escapeHtml(plugin.version)}</span>
+                        </div>
+                        <div class="plugin-form-grid">
+                            ${schema.map(field => renderField(field, config[field.key] ?? field.default ?? '', plugin.id, secretState)).join('') || '<div class="text-muted">This integration plugin has no runtime configuration.</div>'}
+                        </div>
+                        <div class="plugin-actions">
+                            <button class="btn btn-primary" onclick="saveIntegrationPlugin('${escapeAttr(plugin.id)}')">
+                                <i class="fa-solid fa-floppy-disk"></i> Save Settings
+                            </button>
+                            <button class="btn btn-secondary" onclick="testIntegrationPlugin('${escapeAttr(plugin.id)}')">
+                                <i class="fa-solid fa-vial"></i> Send Test
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            window.integrationPluginSchemas = Object.fromEntries(plugins.map(plugin => [plugin.id, plugin.config_schema || []]));
+            window.integrationPluginSecretState = Object.fromEntries(plugins.map(plugin => [plugin.id, plugin.runtime_secret_fields || {}]));
+        } catch (error) {
+            console.error('Failed to load integration plugins:', error);
+            container.innerHTML = `<div class="empty-state">Failed to load integration plugins: ${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    async function saveIntegrationPlugin(pluginId) {
+        const schema = (window.integrationPluginSchemas || {})[pluginId] || [];
+        const card = document.querySelector(`[data-plugin-card="${pluginId}"]`);
+        const enabled = !!card.querySelector('[data-plugin-enabled]')?.checked;
+        clearIntegrationFieldErrors(card);
+        const validation = validateIntegrationPluginCard(pluginId, schema);
+        if (!validation.valid) {
+            validation.errors.forEach(error => setIntegrationFieldError(error.element, error.message));
+            validation.errors[0]?.element?.focus();
+            alert(validation.errors[0]?.message || 'Please fix the highlighted fields.');
+            return;
+        }
+        const config = validation.config;
+        const secretActions = validation.secretActions || {};
+        try {
+            const res = await fetch(`/api/plugins/integrations/${encodeURIComponent(pluginId)}/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled, config, secret_actions: secretActions })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+            await loadIntegrationPlugins();
+        } catch (error) {
+            console.error('Failed to save integration plugin settings:', error);
+            alert(`Failed to save settings: ${error.message}`);
+        }
+    }
+
+    async function testIntegrationPlugin(pluginId) {
+        try {
+            const res = await fetch(`/api/plugins/integrations/${encodeURIComponent(pluginId)}/test`, { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+            alert(data.message || `Test sent via ${pluginId}`);
+        } catch (error) {
+            console.error('Failed to test integration plugin:', error);
+            alert(`Failed to send test: ${error.message}`);
+        }
+    }
+
+    async function reloadPlugins() {
+        try {
+            const res = await fetch('/api/plugins/reload', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
+            await loadPlugins();
+            await loadIntegrationPlugins();
+        } catch (error) {
+            console.error('Failed to reload plugins:', error);
+            alert(`Failed to reload plugins: ${error.message}`);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadPlugins();
+        await loadIntegrationPlugins();
+    });
+</script>
+{% endblock %}

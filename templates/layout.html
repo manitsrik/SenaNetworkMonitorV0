@@ -124,6 +124,14 @@
                     <i class="fa-solid fa-clock-rotate-left"></i>
                     <span>{{ _('History') }}</span>
                 </a>
+                <a href="/incidents" class="nav-item {% if active_page == 'incidents' %}active{% endif %}">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>{{ _('Incidents') }}</span>
+                </a>
+                <a href="/anomalies" class="nav-item {% if active_page == 'anomalies' %}active{% endif %}">
+                    <i class="fa-solid fa-wave-square"></i>
+                    <span>{{ _('Anomalies') }}</span>
+                </a>
                 <a href="/sla" class="nav-item {% if active_page == 'sla' %}active{% endif %}">
                     <i class="fa-solid fa-file-contract"></i>
                     <span>{{ _('SLA Reports') }}</span>
@@ -143,6 +151,10 @@
                 <a href="/reports/builder" class="nav-item {% if active_page == 'reports_builder' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice"></i>
                     <span>{{ _('Custom Reports') }}</span>
+                </a>
+                <a href="/plugins" class="nav-item {% if active_page == 'plugins' %}active{% endif %}">
+                    <i class="fa-solid fa-plug"></i>
+                    <span>{{ _('Plugins') }}</span>
                 </a>
 
                 <div class="menu-label">{{ _('System') }}</div>
@@ -229,7 +241,7 @@
 
     <!-- Scripts -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}?v=2.0"></script>
     <script>
         // Sidebar Toggle Logic
         function toggleSidebar() {

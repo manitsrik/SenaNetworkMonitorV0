@@ -1,0 +1,25 @@
+{
+  "id": "jsonl_alert_sink",
+  "name": "JSONL Alert Sink",
+  "version": "0.1.0",
+  "type": "integration",
+  "description": "Writes alert payloads to a local JSONL file for testing and downstream ingestion.",
+  "enabled": true,
+  "ui_hint": "file",
+  "config_schema": [
+    {
+      "key": "file_path",
+      "label": "Output File",
+      "type": "text",
+      "required": true,
+      "default": "plugin_logs/integration_alerts.jsonl"
+    },
+    {
+      "key": "write_pretty",
+      "label": "Pretty JSON",
+      "type": "boolean",
+      "required": false,
+      "default": false
+    }
+  ]
+}

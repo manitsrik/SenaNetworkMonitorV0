@@ -6,6 +6,7 @@ let currentLayout = [];
 let isEditMode = true;
 let dashboardId = document.getElementById('dashboard-id').value;
 let cachedData = null; // Store fetched data
+let cachedSubTopologies = [];
 let configuringIndex = -1;
 let grid = null; // GridStack instance
 
@@ -58,16 +59,19 @@ async function fetchData() {
         
         const bwUrl = bandwidthIds.length > 0 ? `/api/bandwidth/current?ids=${bandwidthIds.join(',')}` : '/api/bandwidth/current';
 
-        const [devices, stats, topology, bandwidth] = await Promise.all([
+        const [devices, stats, topology, bandwidth, subTopologies] = await Promise.all([
             fetch('/api/devices').then(r => r.json()),
             fetch('/api/statistics').then(r => r.json()),
             fetch('/api/topology').then(r => r.json()),
-            fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] }))
+            fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] })),
+            fetch('/api/sub-topologies').then(r => r.json()).catch(() => [])
         ]);
         cachedData = { devices, stats, connections: topology.connections, bandwidth };
+        cachedSubTopologies = Array.isArray(subTopologies) ? subTopologies : [];
     } catch (error) {
         console.error('Error fetching data:', error);
         cachedData = { devices: [], stats: {}, connections: [], bandwidth: { top_interfaces: [] } }; // Fallback
+        cachedSubTopologies = [];
     }
 }
 
@@ -501,6 +505,39 @@ function configureWidget(index) {
         }
     }
 
+    if (widget.type === 'topology') {
+        const topologyMode = (widget.config && widget.config.topologyMode) || 'main';
+        const selectedSubTopologyId = (widget.config && widget.config.subTopologyId) || '';
+        const renderStyle = (widget.config && widget.config.renderStyle) || 'standard';
+
+        html += `
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom: 0.5rem;">Topology Source</label>
+                <select id="config-topology-mode" class="form-input" onchange="toggleTopologySource(this.value)">
+                    <option value="main" ${topologyMode === 'main' ? 'selected' : ''}>Main Topology</option>
+                    <option value="sub_topology" ${topologyMode === 'sub_topology' ? 'selected' : ''}>Sub-Topology</option>
+                </select>
+            </div>
+            <div id="topology-subtopology-field" style="display: ${topologyMode === 'sub_topology' ? 'block' : 'none'}; margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom: 0.5rem;">Select Sub-Topology</label>
+                <select id="config-sub-topology-id" class="form-input">
+                    <option value="">-- Select Sub-Topology --</option>
+                    ${cachedSubTopologies.map(st => `<option value="${st.id}" ${String(selectedSubTopologyId) === String(st.id) ? 'selected' : ''}>${st.name}</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="display:block; margin-bottom: 0.5rem;">Render Style</label>
+                <select id="config-topology-render-style" class="form-input">
+                    <option value="standard" ${renderStyle === 'standard' ? 'selected' : ''}>Standard</option>
+                    <option value="premium3d" ${renderStyle === 'premium3d' ? 'selected' : ''}>Premium 3D</option>
+                </select>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.35rem;">
+                    Premium 3D will use the saved layout from the selected sub-topology.
+                </div>
+            </div>
+        `;
+    }
+
     // Add layout controls (width and height)
     html += `
         <div style="display: flex; gap: 1rem; margin-top: 1rem;">
@@ -579,6 +616,24 @@ function saveWidgetConfig() {
         }
     }
 
+    if (widget.type === 'topology') {
+        const topologyModeEl = document.getElementById('config-topology-mode');
+        const subTopologyEl = document.getElementById('config-sub-topology-id');
+        const renderStyleEl = document.getElementById('config-topology-render-style');
+        widget.config.topologyMode = topologyModeEl ? topologyModeEl.value : 'main';
+        widget.config.renderStyle = renderStyleEl ? renderStyleEl.value : 'standard';
+
+        if (widget.config.topologyMode === 'sub_topology' && subTopologyEl && subTopologyEl.value) {
+            widget.config.subTopologyId = subTopologyEl.value;
+        } else {
+            delete widget.config.subTopologyId;
+        }
+
+        if (widget.config.topologyMode !== 'sub_topology') {
+            widget.config.renderStyle = 'standard';
+        }
+    }
+
     renderGrid();
     closeModal();
 }
@@ -587,6 +642,11 @@ function saveWidgetConfig() {
 window.toggleFilterMode = function(val) {
     document.getElementById('filter-type-field').style.display = (val === 'type') ? 'block' : 'none';
     document.getElementById('filter-device-field').style.display = (val === 'device') ? 'block' : 'none';
+};
+
+window.toggleTopologySource = function(val) {
+    const field = document.getElementById('topology-subtopology-field');
+    if (field) field.style.display = (val === 'sub_topology') ? 'block' : 'none';
 };
 
 // Bandwidth Customization Helpers (Global scope)

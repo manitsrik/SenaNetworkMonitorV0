@@ -1,0 +1,720 @@
+/* =========================================
+   PREMIUM TOPOLOGY DESIGN SYSTEM
+   ========================================= */
+
+/* NODE TYPE A: 3D ISOMETRIC FLOATING (Tiers 1-3) */
+.floating-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    width: 100px;
+    height: 100px;
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.floating-node:hover {
+    transform: translateY(-10px) scale(1.05);
+}
+
+/* The 3D Base Platform */
+.floating-platform {
+    width: 90px;
+    height: 90px;
+    background: rgba(30, 40, 60, 0.3);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 15px;
+    position: absolute;
+    bottom: -15px;
+    left: 5px;
+    box-shadow: 0 15px 30px rgba(0,0,0,0.6), inset 0 2px 5px rgba(255,255,255,0.1);
+    /* Isometric Tilt */
+    transform: rotateX(65deg) rotateZ(-45deg);
+    z-index: 1;
+    transition: box-shadow 0.4s ease;
+}
+
+/* Colored glows underneath the platform */
+.glow-firewall .floating-platform { box-shadow: 0 15px 50px rgba(16, 185, 129, 0.7), inset 0 1px 1px rgba(16, 185, 129, 0.5); border-color: rgba(16, 185, 129, 0.4); }
+.glow-switch .floating-platform { box-shadow: 0 15px 50px rgba(245, 158, 11, 0.7), inset 0 1px 1px rgba(245, 158, 11, 0.5); border-color: rgba(245, 158, 11, 0.4); }
+.glow-internet .floating-platform { box-shadow: 0 15px 50px rgba(59, 130, 246, 0.7), inset 0 1px 1px rgba(59, 130, 246, 0.5); border-color: rgba(59, 130, 246, 0.4); }
+.glow-wireless .floating-platform { box-shadow: 0 15px 50px rgba(6, 182, 212, 0.7), inset 0 1px 1px rgba(6, 182, 212, 0.5); border-color: rgba(6, 182, 212, 0.4); }
+.glow-router .floating-platform { box-shadow: 0 15px 50px rgba(139, 92, 246, 0.7), inset 0 1px 1px rgba(139, 92, 246, 0.5); border-color: rgba(139, 92, 246, 0.4); }
+.glow-server .floating-platform { box-shadow: 0 15px 50px rgba(236, 72, 153, 0.7), inset 0 1px 1px rgba(236, 72, 153, 0.5); border-color: rgba(236, 72, 153, 0.4); }
+
+.floating-icon {
+    font-size: 2.8rem;
+    z-index: 2;
+    transform: translateY(-15px);
+    text-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    pointer-events: none;
+}
+
+/* Icon solid neon colors */
+.glow-firewall .floating-icon { color: #34d399; filter: drop-shadow(0 0 15px #10b981); }
+.glow-switch .floating-icon { color: #fbbf24; filter: drop-shadow(0 0 15px #f59e0b); }
+.glow-internet .floating-icon { color: #60a5fa; filter: drop-shadow(0 0 15px #3b82f6); }
+.glow-wireless .floating-icon { color: #22d3ee; filter: drop-shadow(0 0 15px #06b6d4); }
+.glow-router .floating-icon { color: #a78bfa; filter: drop-shadow(0 0 15px #8b5cf6); }
+.glow-server .floating-icon { color: #f472b6; filter: drop-shadow(0 0 15px #ec4899); }
+
+/* CRITICAL: Premium Labels must be absolutely positioned INSIDE the card */
+.floating-label {
+    position: absolute !important;
+    bottom: 12px !important; 
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    background: rgba(15, 23, 42, 0.9) !important;
+    backdrop-filter: blur(8px);
+    border-radius: 8px !important;
+    padding: 3px 12px !important;
+    color: #ffffff !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 8px !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.05) !important;
+    z-index: 50 !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5) !important;
+    display: block !important;
+}
+
+.floating-status {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.floating-status::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: currentColor;
+    border-radius: 50%;
+    box-shadow: 0 0 12px currentColor, 0 0 4px rgba(255,255,255,0.5);
+}
+
+.floating-status::after {
+    content: '';
+    position: absolute;
+    width: 220%;
+    height: 220%;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    opacity: 0;
+    animation: statusPulse 2.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes statusPulse {
+    0% { transform: scale(0.5); opacity: 0.8; }
+    70% { transform: scale(1.5); opacity: 0; }
+    100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* NODE TYPE B: WIDE SERVER CARDS (Tier 4) */
+.wide-server-card {
+    background: rgba(18, 24, 38, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 8px 14px 10px 14px;
+    width: 200px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    cursor: pointer;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.wide-server-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.wide-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+.wide-card-icon {
+    background: rgba(6, 182, 212, 0.1);
+    color: #22d3ee;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+}
+
+.wide-card-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.wide-card-title {
+    color: #f8fafc;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.wide-card-ip {
+    color: #64748b;
+    font-size: 0.75rem;
+    font-family: monospace;
+}
+
+.wide-bottom-metric {
+    position: absolute;
+    bottom: 8px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.wide-metric-value {
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.wide-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.wide-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1), background 0.5s;
+}
+
+/* NODE TYPE C: RACKMOUNT HARDWARE (Switch/Router) */
+.rackmount-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    width: 188px;
+    height: 60px;
+    overflow: visible;
+    justify-content: flex-start;
+}
+
+.rackmount-node:hover {
+    transform: translateY(-3px) scale(1.03);
+}
+
+.rackmount-node .hardware-hover-card {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    min-width: 126px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.97);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    color: #e2e8f0;
+    font-size: 8px;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.45);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    transform: translateX(-50%) translateY(4px);
+    z-index: 8;
+}
+
+.rackmount-node .hardware-hover-card strong {
+    font-weight: 800;
+}
+
+.rackmount-node:hover .hardware-hover-card {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+[data-theme="light"] .rackmount-node .hardware-hover-card {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    color: #0f172a;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+}
+
+.hardware-image {
+    width: 100%;
+    height: 34px;
+    object-fit: contain;
+    object-position: center left;
+    margin-top: 12px;
+    z-index: 2;
+    display: block;
+    opacity: 1;
+    filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.45));
+}
+
+/* Switch card text layout */
+.rackmount-node .hardware-title {
+    position: absolute !important;
+    top: 7px !important;
+    left: 8px !important;
+    right: 8px !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    color: #e5eefc !important;
+    font-weight: 800 !important;
+    font-size: 8px !important;
+    line-height: 1 !important;
+    letter-spacing: 0.2px !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-shadow: 0 0 10px rgba(96, 165, 250, 0.2), 0 1px 2px rgba(0, 0, 0, 0.8) !important;
+    z-index: 100 !important;
+}
+
+.rackmount-node .hardware-ip {
+    position: absolute !important;
+    bottom: 8px !important;
+    left: 8px !important;
+    right: 8px !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    color: #dbeafe !important;
+    font-weight: 700 !important;
+    font-size: 8px !important;
+    line-height: 1 !important;
+    letter-spacing: 0.2px !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    z-index: 100 !important;
+    box-shadow: none !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75) !important;
+}
+
+[data-theme="light"] .rackmount-node .hardware-title {
+    color: #0f172a !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.98), 0 0 8px rgba(255, 255, 255, 0.88) !important;
+}
+
+[data-theme="light"] .rackmount-node .hardware-ip {
+    color: #1d4ed8 !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.98), 0 0 8px rgba(255, 255, 255, 0.88) !important;
+}
+
+.rackmount-node .floating-status {
+    top: 22px;
+    right: 10px;
+    width: 12px;
+    height: 12px;
+    z-index: 4;
+}
+
+/* NODE TYPE D: WIRELESS AP ICON */
+.wireless-ap-node {
+    position: relative;
+    width: 124px;
+    height: 124px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    cursor: pointer;
+    transition: transform 0.3s ease;
+}
+
+.wireless-ap-node:hover {
+    transform: translateY(-4px) scale(1.03);
+}
+
+.wireless-ap-node .wireless-hover-card {
+    position: absolute;
+    bottom: calc(100% - 2px);
+    left: 50%;
+    min-width: 128px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.97);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    color: #e2e8f0;
+    font-size: 8px;
+    line-height: 1.35;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.45);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    transform: translateX(-50%) translateY(4px);
+    z-index: 8;
+    white-space: nowrap;
+}
+
+.wireless-ap-node .wireless-hover-card strong {
+    font-weight: 800;
+}
+
+.wireless-ap-node:hover .wireless-hover-card {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+[data-theme="light"] .wireless-ap-node .wireless-hover-card {
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    color: #0f172a;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+}
+
+.wireless-ap-image-wrap {
+    position: relative;
+    width: 104px;
+    height: 104px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 10px 16px rgba(15, 23, 42, 0.18));
+}
+
+.wireless-ap-image {
+    width: 62px;
+    height: 62px;
+    object-fit: contain;
+    object-position: center;
+    display: block;
+}
+
+.wireless-status-badge {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 24px;
+    height: 24px;
+    transform: translate(-50%, -50%);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(16, 185, 129, 0.24);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.14);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 5;
+}
+
+.wireless-status-icon {
+    font-size: 0.68rem;
+    line-height: 1;
+    animation: wirelessStatusPulse 1.6s ease-in-out infinite;
+    transform: translateX(-1px);
+}
+
+.wireless-status-badge.status-up {
+    color: #16a34a;
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.wireless-status-badge.status-slow {
+    color: #d97706;
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.wireless-status-badge.status-down {
+    color: #dc2626;
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.wireless-status-badge.status-unknown {
+    color: #64748b;
+    border-color: rgba(100, 116, 139, 0.35);
+}
+
+@keyframes wirelessStatusPulse {
+    0% { opacity: 0.45; transform: scale(0.92); }
+    50% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0.45; transform: scale(0.92); }
+}
+
+.wireless-ap-node .floating-label {
+    top: 70px !important;
+    bottom: auto !important;
+    min-width: 104px;
+    max-width: 122px;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 8px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.2px !important;
+    color: #f8fafc !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    text-shadow: 0 1px 5px rgba(15, 23, 42, 0.18), 0 1px 1px rgba(0, 0, 0, 0.32) !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+[data-theme="light"] .wireless-ap-node .floating-label {
+    color: #0f172a !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.98), 0 0 8px rgba(255, 255, 255, 0.88) !important;
+}
+
+/* Common Overlays */
+.dom-overlay-node {
+    position: absolute;
+    pointer-events: auto;
+    transform-origin: center center;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.dom-overlay-node:hover {
+    z-index: 450 !important;
+}
+
+.dom-overlay-node.selected {
+    z-index: 200 !important;
+}
+
+.dom-overlay-node.selected .floating-node,
+.dom-overlay-node.selected .wide-server-card,
+.dom-overlay-node.selected .rackmount-node,
+.dom-overlay-node.selected .wireless-ap-node {
+    transform: scale(1.08);
+}
+
+/* =========================================
+   PREMIUM DEVICE DETAIL MODAL
+   ========================================= */
+.premium-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.premium-modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.premium-modal-content {
+    width: 380px;
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    transform: scale(0.9) translateY(20px);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.premium-modal-overlay.active .premium-modal-content {
+    transform: scale(1) translateY(0);
+}
+
+.premium-modal-header {
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.premium-modal-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    padding: 6px 12px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.premium-modal-status-badge.offline {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.2);
+}
+
+.premium-modal-status-badge.slow {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.2);
+}
+
+.pulse-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 0 currentColor;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.premium-modal-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.premium-modal-close:hover { color: #fff; }
+
+.premium-modal-body { padding: 32px 24px; text-align: center; }
+
+.premium-modal-device-icon {
+    font-size: 4rem;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 10px 15px rgba(0, 0, 0, 0.3));
+}
+
+.premium-modal-device-name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+}
+
+.premium-modal-device-ip {
+    font-family: monospace;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    margin-bottom: 32px;
+}
+
+.premium-modal-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 32px;
+}
+
+.premium-stat-item {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 16px;
+    border-radius: 16px;
+    text-align: left;
+}
+
+.premium-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.premium-stat-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.premium-modal-actions { display: flex; flex-direction: column; gap: 12px; }
+
+.btn-premium-action {
+    padding: 14px;
+    border-radius: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.btn-premium-action.primary {
+    background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+    color: #fff;
+    box-shadow: 0 10px 20px -5px rgba(56, 189, 248, 0.4);
+}
+
+.btn-premium-action.primary:hover { transform: translateY(-2px); box-shadow: 0 15px 25px -5px rgba(56, 189, 248, 0.5); }
+
+.btn-premium-action.secondary {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.btn-premium-action.secondary:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }

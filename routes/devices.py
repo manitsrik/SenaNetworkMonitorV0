@@ -19,6 +19,9 @@ def _get_monitor():
 def _get_socketio():
     return current_app.config['SOCKETIO']
 
+def _get_plugin_manager():
+    return current_app.config['PLUGIN_MANAGER']
+
 
 @devices_bp.route('/api/devices', methods=['GET'])
 def get_devices():
@@ -31,10 +34,26 @@ def get_devices():
 @operator_required
 def add_device():
     """Add a new device"""
-    data = request.json
+    data = request.json or {}
     
     if not data.get('name') or not data.get('ip_address'):
         return jsonify({'success': False, 'error': 'Name and IP/URL are required'}), 400
+
+    monitor_type = data.get('monitor_type', 'ping')
+    plugin_config_json = data.get('plugin_config_json')
+    if str(monitor_type).startswith('plugin:'):
+        try:
+            plugin_config = plugin_config_json
+            if isinstance(plugin_config_json, str):
+                import json
+                plugin_config = json.loads(plugin_config_json or '{}')
+            validation = _get_plugin_manager().validate_plugin_config(monitor_type, plugin_config or {})
+            if not validation.get('success'):
+                return jsonify(validation), 400
+            import json
+            plugin_config_json = json.dumps(validation.get('config') or {}, ensure_ascii=False)
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Invalid plugin configuration: {e}'}), 400
     
     db = _get_db()
     result = db.add_device(
@@ -42,7 +61,7 @@ def add_device():
         ip_address=data['ip_address'],
         device_type=data.get('device_type'),
         location=data.get('location'),
-        monitor_type=data.get('monitor_type', 'ping'),
+        monitor_type=monitor_type,
         expected_status_code=data.get('expected_status_code', 200),
         snmp_community=data.get('snmp_community', 'public'),
         snmp_port=data.get('snmp_port', 161),
@@ -63,7 +82,8 @@ def add_device():
         ssh_port=data.get('ssh_port', 22),
         wmi_username=data.get('wmi_username'),
         wmi_password=data.get('wmi_password'),
-        expected_ports=data.get('expected_ports')
+        expected_ports=data.get('expected_ports'),
+        plugin_config_json=plugin_config_json
     )
     
     if result['success']:
@@ -102,7 +122,22 @@ def add_device():
 @operator_required
 def update_device(device_id):
     """Update a device"""
-    data = request.json
+    data = request.json or {}
+    monitor_type = data.get('monitor_type')
+    plugin_config_json = data.get('plugin_config_json', '__NOT_SET__')
+    if monitor_type and str(monitor_type).startswith('plugin:') and plugin_config_json != '__NOT_SET__':
+        try:
+            plugin_config = plugin_config_json
+            if isinstance(plugin_config_json, str):
+                import json
+                plugin_config = json.loads(plugin_config_json or '{}')
+            validation = _get_plugin_manager().validate_plugin_config(monitor_type, plugin_config or {})
+            if not validation.get('success'):
+                return jsonify(validation), 400
+            import json
+            plugin_config_json = json.dumps(validation.get('config') or {}, ensure_ascii=False)
+        except Exception as e:
+            return jsonify({'success': False, 'error': f'Invalid plugin configuration: {e}'}), 400
     # Handle parent_device_id — use sentinel to distinguish "not provided" vs "set to null"
     parent_kw = {}
     if 'parent_device_id' in data:
@@ -114,7 +149,7 @@ def update_device(device_id):
         ip_address=data.get('ip_address'),
         device_type=data.get('device_type'),
         location=data.get('location'),
-        monitor_type=data.get('monitor_type'),
+        monitor_type=monitor_type,
         snmp_community=data.get('snmp_community'),
         snmp_port=data.get('snmp_port'),
         snmp_version=data.get('snmp_version'),
@@ -135,6 +170,7 @@ def update_device(device_id):
         wmi_username=data.get('wmi_username', '__NOT_SET__'),
         wmi_password=data.get('wmi_password', '__NOT_SET__'),
         expected_ports=data.get('expected_ports', '__NOT_SET__'),
+        plugin_config_json=plugin_config_json,
         **parent_kw
     )
     log_audit('update', 'device', 'device', device_id, data.get('name'))
@@ -369,6 +405,131 @@ def get_trend_statistics():
     device_id = request.args.get('device_id', type=int)
     trends = _get_db().get_device_type_trends(minutes, device_id=device_id)
     return jsonify(trends)
+
+
+@devices_bp.route('/api/anomalies', methods=['GET'])
+def get_anomalies():
+    """Get live anomaly detection results."""
+    recent_minutes = request.args.get('recent_minutes', 30, type=int)
+    baseline_hours = request.args.get('baseline_hours', 24, type=int)
+    min_points = request.args.get('min_points', 5, type=int)
+    anomalies = _get_db().detect_anomalies(
+        recent_minutes=recent_minutes,
+        baseline_hours=baseline_hours,
+        min_points=min_points,
+    )
+    return jsonify(anomalies)
+
+
+@devices_bp.route('/api/anomalies/materialized', methods=['GET'])
+def get_materialized_anomalies():
+    """Get persistent anomaly snapshots."""
+    active_only = request.args.get('active_only', 'true').lower() != 'false'
+    limit = request.args.get('limit', 100, type=int)
+    anomalies = _get_db().get_anomaly_snapshots(active_only=active_only, limit=limit)
+    return jsonify(anomalies)
+
+
+@devices_bp.route('/api/anomalies/materialize', methods=['POST'])
+@operator_required
+def materialize_anomalies_now():
+    """Run anomaly materialization on demand."""
+    data = request.json or {}
+    result = _get_db().sync_anomaly_snapshots(
+        recent_minutes=data.get('recent_minutes', 30),
+        baseline_hours=data.get('baseline_hours', 24),
+        min_points=data.get('min_points', 5),
+    )
+    code = 200 if result.get('success') else 500
+    return jsonify(result), code
+
+
+@devices_bp.route('/api/anomalies/<path:anomaly_key>/status', methods=['POST'])
+@operator_required
+def update_anomaly_status(anomaly_key):
+    """Update workflow status for an anomaly."""
+    data = request.json or {}
+    status = (data.get('status') or '').strip().lower()
+    if status not in {'open', 'acknowledged', 'investigating', 'resolved'}:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+
+    result = _get_db().update_anomaly_state(
+        anomaly_key=anomaly_key,
+        status=status,
+        user_id=session.get('user_id'),
+        username=session.get('username'),
+        note=(data.get('note') or '').strip() or None,
+    )
+    code = 200 if result.get('success') else 500
+    return jsonify(result), code
+
+
+@devices_bp.route('/api/anomalies/<path:anomaly_key>/owner', methods=['POST'])
+@operator_required
+def update_anomaly_owner(anomaly_key):
+    """Assign or clear owner for an anomaly."""
+    data = request.json or {}
+    owner_user_id = data.get('owner_user_id')
+    owner_username = None
+
+    if owner_user_id not in (None, ''):
+        try:
+            owner_user_id = int(owner_user_id)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'Invalid owner_user_id'}), 400
+
+        user = _get_db().get_user_by_id(owner_user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        owner_username = user.get('display_name') or user.get('username')
+    else:
+        owner_user_id = None
+
+    result = _get_db().update_anomaly_owner(
+        anomaly_key=anomaly_key,
+        owner_user_id=owner_user_id,
+        owner_username=owner_username,
+        actor_user_id=session.get('user_id'),
+        actor_username=session.get('username'),
+        note=(data.get('note') or '').strip() or None,
+    )
+    code = 200 if result.get('success') else 500
+    return jsonify(result), code
+
+
+@devices_bp.route('/api/anomalies/<path:anomaly_key>/link-incident', methods=['POST'])
+@operator_required
+def link_anomaly_incident(anomaly_key):
+    """Persistently link an anomaly to a materialized incident."""
+    data = request.json or {}
+    incident_id = (data.get('incident_id') or '').strip()
+    if not incident_id:
+        return jsonify({'success': False, 'error': 'incident_id is required'}), 400
+
+    result = _get_db().link_anomaly_to_incident(
+        anomaly_key=anomaly_key,
+        incident_id=incident_id,
+        actor_user_id=session.get('user_id'),
+        actor_username=session.get('username'),
+        note=(data.get('note') or '').strip() or None,
+    )
+    code = 200 if result.get('success') else 400
+    return jsonify(result), code
+
+
+@devices_bp.route('/api/anomalies/<path:anomaly_key>/link-incident', methods=['DELETE'])
+@operator_required
+def unlink_anomaly_incident(anomaly_key):
+    """Remove a persisted anomaly-to-incident link."""
+    data = request.json or {}
+    result = _get_db().unlink_anomaly_from_incident(
+        anomaly_key=anomaly_key,
+        actor_user_id=session.get('user_id'),
+        actor_username=session.get('username'),
+        note=(data.get('note') or '').strip() or 'Link removed',
+    )
+    code = 200 if result.get('success') else 400
+    return jsonify(result), code
 
 
 # ============================================================================

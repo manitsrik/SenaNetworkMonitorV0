@@ -1,0 +1,760 @@
+{% extends "layout.html" %}
+{% block title %}Network Monitor - Incidents{% endblock %}
+{% block page_title %}Correlated Incidents{% endblock %}
+{% set active_page = 'incidents' %}
+
+{% block content %}
+<style>
+    .incidents-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .incidents-toolbar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.75rem;
+        align-items: end;
+    }
+
+    .incident-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+    }
+
+    .summary-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 1rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .summary-label {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin-bottom: 0.35rem;
+    }
+
+    .summary-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .incident-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .incident-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-left: 5px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .incident-card.severity-critical {
+        border-left-color: #dc2626;
+    }
+
+    .incident-card.severity-warning {
+        border-left-color: #d97706;
+    }
+
+    .incident-card.severity-info {
+        border-left-color: #2563eb;
+    }
+
+    .incident-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: flex-start;
+        margin-bottom: 0.8rem;
+    }
+
+    .incident-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .incident-title h3 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: var(--text-primary);
+    }
+
+    .incident-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.75rem;
+    }
+
+    .meta-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.12);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .meta-pill.action-link {
+        text-decoration: none;
+        transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .meta-pill.action-link:hover {
+        transform: translateY(-1px);
+        border-color: rgba(64, 145, 108, 0.35);
+        background: rgba(64, 145, 108, 0.12);
+    }
+
+    .severity-badge {
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        padding: 0.45rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+    }
+
+    .severity-critical .severity-badge {
+        background: rgba(220, 38, 38, 0.12);
+        color: #dc2626;
+        border-color: rgba(220, 38, 38, 0.25);
+    }
+
+    .severity-warning .severity-badge {
+        background: rgba(217, 119, 6, 0.12);
+        color: #d97706;
+        border-color: rgba(217, 119, 6, 0.25);
+    }
+
+    .severity-info .severity-badge {
+        background: rgba(37, 99, 235, 0.12);
+        color: #2563eb;
+        border-color: rgba(37, 99, 235, 0.25);
+    }
+
+    .workflow-badge {
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        padding: 0.45rem 0.7rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(148, 163, 184, 0.1);
+        color: var(--text-secondary);
+    }
+
+    .workflow-open {
+        background: rgba(239, 68, 68, 0.1);
+        color: #dc2626;
+        border-color: rgba(239, 68, 68, 0.2);
+    }
+
+    .workflow-acknowledged {
+        background: rgba(245, 158, 11, 0.12);
+        color: #d97706;
+        border-color: rgba(245, 158, 11, 0.24);
+    }
+
+    .workflow-investigating {
+        background: rgba(59, 130, 246, 0.12);
+        color: #2563eb;
+        border-color: rgba(59, 130, 246, 0.24);
+    }
+
+    .workflow-resolved {
+        background: rgba(16, 185, 129, 0.12);
+        color: #059669;
+        border-color: rgba(16, 185, 129, 0.24);
+    }
+
+    .incident-body {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr;
+        gap: 1rem;
+    }
+
+    .incident-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.9rem;
+    }
+
+    .incident-section {
+        background: rgba(148, 163, 184, 0.06);
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        border-radius: 12px;
+        padding: 0.9rem;
+    }
+
+    .incident-section h4 {
+        margin: 0 0 0.65rem 0;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+    }
+
+    .alert-items {
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+    }
+
+    .alert-item {
+        border-left: 3px solid rgba(148, 163, 184, 0.35);
+        padding-left: 0.7rem;
+    }
+
+    .alert-item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .alert-device {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .alert-message {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        line-height: 1.45;
+    }
+
+    .plain-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+    }
+
+    .timeline-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+        margin-top: 0.85rem;
+    }
+
+    .timeline-item {
+        border-left: 3px solid rgba(64, 145, 108, 0.25);
+        padding-left: 0.7rem;
+    }
+
+    .timeline-item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.5rem;
+        font-size: 0.83rem;
+        margin-bottom: 0.2rem;
+        color: var(--text-secondary);
+    }
+
+    .timeline-item-body {
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        line-height: 1.45;
+    }
+
+    .plain-list a {
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .plain-list a:hover {
+        text-decoration: underline;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+        color: var(--text-muted);
+        background: var(--card-bg);
+        border: 1px dashed var(--border-color);
+        border-radius: 16px;
+    }
+
+    @media (max-width: 920px) {
+        .incident-body {
+            grid-template-columns: 1fr;
+        }
+
+        .incident-head {
+            flex-direction: column;
+        }
+    }
+</style>
+
+<div class="incidents-page">
+    <div class="card">
+        <div class="card-header">
+            <div>
+                <h3 class="card-title"><i class="fa-solid fa-triangle-exclamation"></i> Correlated Incidents</h3>
+                <p class="text-muted" style="margin: 0.35rem 0 0 0;">Groups related alerts into incident views using time, dependency, and topology relationships.</p>
+            </div>
+        </div>
+
+        <div class="incidents-toolbar">
+            <div>
+                <label class="form-label">Incident Window</label>
+                <select id="window-minutes" class="form-control">
+                    <option value="5">5 minutes</option>
+                    <option value="10" selected>10 minutes</option>
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Dedupe Window</label>
+                <select id="dedupe-minutes" class="form-control">
+                    <option value="1">1 minute</option>
+                    <option value="2" selected>2 minutes</option>
+                    <option value="5">5 minutes</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Max Alerts</label>
+                <select id="incident-limit" class="form-control">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Severity</label>
+                <select id="severity-filter" class="form-control">
+                    <option value="">All severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="warning">Warning</option>
+                    <option value="info">Info</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Device</label>
+                <select id="device-filter" class="form-control">
+                    <option value="">All devices</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Location</label>
+                <select id="location-filter" class="form-control">
+                    <option value="">All locations</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Event Type</label>
+                <select id="event-type-filter" class="form-control">
+                    <option value="">All event types</option>
+                </select>
+            </div>
+            <div>
+                <button class="btn btn-primary" onclick="loadIncidents()" style="width: 100%;">
+                    <i class="fa-solid fa-rotate"></i> Refresh Incidents
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="incident-summary">
+        <div class="summary-card">
+            <div class="summary-label">Total Incidents</div>
+            <div class="summary-value" id="summary-total">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Critical</div>
+            <div class="summary-value" id="summary-critical">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Warnings</div>
+            <div class="summary-value" id="summary-warning">0</div>
+        </div>
+        <div class="summary-card">
+            <div class="summary-label">Affected Devices</div>
+            <div class="summary-value" id="summary-devices">0</div>
+        </div>
+    </div>
+
+    <div id="incident-list" class="incident-list">
+        <div class="empty-state">Loading incidents...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allIncidents = [];
+    let assignableUsers = [];
+    let pendingIncidentDeviceFilter = '';
+    let pendingIncidentLocationFilter = '';
+    let pendingIncidentEventTypeFilter = '';
+    let pendingIncidentSeverityFilter = '';
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatTime(value) {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString();
+    }
+
+    function fillSelectOptions(elementId, values, placeholder) {
+        const select = document.getElementById(elementId);
+        const current = select.value;
+        const unique = Array.from(new Set(values.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
+
+        select.innerHTML = `<option value="">${placeholder}</option>` +
+            unique.map(v => `<option value="${escapeHtml(String(v))}">${escapeHtml(String(v))}</option>`).join('');
+
+        if (unique.includes(current)) {
+            select.value = current;
+        }
+    }
+
+    function rebuildFilterOptions(incidents) {
+        const deviceNames = [];
+        const locations = [];
+        const eventTypes = [];
+
+        incidents.forEach(incident => {
+            (incident.alerts || []).forEach(alert => {
+                if (alert.device_name) deviceNames.push(alert.device_name);
+                if (alert.location) locations.push(alert.location);
+                if (alert.event_type) eventTypes.push(alert.event_type);
+            });
+        });
+
+        fillSelectOptions('device-filter', deviceNames, 'All devices');
+        fillSelectOptions('location-filter', locations, 'All locations');
+        fillSelectOptions('event-type-filter', eventTypes, 'All event types');
+
+        if (pendingIncidentDeviceFilter) {
+            const select = document.getElementById('device-filter');
+            if ([...select.options].some(option => option.value === pendingIncidentDeviceFilter)) {
+                select.value = pendingIncidentDeviceFilter;
+            }
+            pendingIncidentDeviceFilter = '';
+        }
+        if (pendingIncidentLocationFilter) {
+            const select = document.getElementById('location-filter');
+            if ([...select.options].some(option => option.value === pendingIncidentLocationFilter)) {
+                select.value = pendingIncidentLocationFilter;
+            }
+            pendingIncidentLocationFilter = '';
+        }
+        if (pendingIncidentEventTypeFilter) {
+            const select = document.getElementById('event-type-filter');
+            if ([...select.options].some(option => option.value === pendingIncidentEventTypeFilter)) {
+                select.value = pendingIncidentEventTypeFilter;
+            }
+            pendingIncidentEventTypeFilter = '';
+        }
+        if (pendingIncidentSeverityFilter) {
+            document.getElementById('severity-filter').value = pendingIncidentSeverityFilter;
+            pendingIncidentSeverityFilter = '';
+        }
+    }
+
+    function updateSummary(incidents) {
+        const critical = incidents.filter(i => i.severity === 'critical').length;
+        const warning = incidents.filter(i => i.severity === 'warning').length;
+        const devices = new Set();
+
+        incidents.forEach(i => (i.device_ids || []).forEach(id => devices.add(id)));
+
+        document.getElementById('summary-total').textContent = incidents.length;
+        document.getElementById('summary-critical').textContent = critical;
+        document.getElementById('summary-warning').textContent = warning;
+        document.getElementById('summary-devices').textContent = devices.size;
+    }
+
+    function workflowLabel(status) {
+        const map = {
+            open: 'Open',
+            acknowledged: 'Acknowledged',
+            investigating: 'Investigating',
+            resolved: 'Resolved'
+        };
+        return map[status] || (status || 'Open');
+    }
+
+    function renderOwnerOptions(selectedId) {
+        const current = selectedId == null ? '' : String(selectedId);
+        return `<option value="">Unassigned</option>` + assignableUsers.map(user => {
+            const label = user.display_name || user.username;
+            const selected = String(user.id) === current ? 'selected' : '';
+            return `<option value="${escapeHtml(String(user.id))}" ${selected}>${escapeHtml(label)} (${escapeHtml(user.role || '-')})</option>`;
+        }).join('');
+    }
+
+    function renderIncidents(incidents) {
+        const container = document.getElementById('incident-list');
+        const severityFilter = document.getElementById('severity-filter').value;
+        const deviceFilter = document.getElementById('device-filter').value;
+        const locationFilter = document.getElementById('location-filter').value;
+        const eventTypeFilter = document.getElementById('event-type-filter').value;
+
+        const filtered = incidents.filter(i => {
+            const severityOk = !severityFilter || i.severity === severityFilter;
+            const deviceOk = !deviceFilter || (i.alerts || []).some(a => a.device_name === deviceFilter);
+            const locationOk = !locationFilter || (i.alerts || []).some(a => a.location === locationFilter);
+            const eventTypeOk = !eventTypeFilter || (i.alerts || []).some(a => a.event_type === eventTypeFilter);
+            return severityOk && deviceOk && locationOk && eventTypeOk;
+        });
+
+        updateSummary(filtered);
+
+        if (!filtered.length) {
+            container.innerHTML = '<div class="empty-state">No correlated incidents found for the current filters.</div>';
+            return;
+        }
+
+        container.innerHTML = filtered.map(incident => {
+            const rootCause = incident.root_cause_candidate || {};
+            const rootDeviceId = rootCause.device_id || '';
+            const rootDeviceName = rootCause.device_name || 'Unknown';
+            const workflowStatus = incident.workflow_status || 'open';
+            const workflowOwner = incident.workflow_owner_username || 'Unassigned';
+            const historyLink = incident.device_ids && incident.device_ids.length
+                ? `/api/history?device_ids=${incident.device_ids.join(',')}`
+                : '/history';
+            const bandwidthLink = rootDeviceId ? `/bandwidth?device_id=${rootDeviceId}` : '/bandwidth';
+            const highlightedList = encodeURIComponent((incident.device_ids || []).join(','));
+            const encodedLocation = encodeURIComponent((incident.alerts || []).find(a => a.location)?.location || '');
+            const deviceManageLink = `/devices?highlight_device=${encodeURIComponent(rootDeviceId)}&highlight_devices=${highlightedList}${encodedLocation ? `&location=${encodedLocation}` : ''}`;
+            const topologyLink = `/topology?highlight_device=${encodeURIComponent(rootDeviceId)}&highlight_devices=${highlightedList}`;
+            const timelineHtml = (incident.activity || []).length
+                ? (incident.activity || []).map(item => `
+                    <div class="timeline-item">
+                        <div class="timeline-item-head">
+                            <span>${escapeHtml(item.actor_username || 'system')}</span>
+                            <span>${escapeHtml(formatTime(item.created_at))}</span>
+                        </div>
+                        <div class="timeline-item-body">
+                            ${escapeHtml(item.action || 'update')}
+                            ${item.old_status || item.new_status ? ` · ${escapeHtml(item.old_status || 'none')} → ${escapeHtml(item.new_status || 'none')}` : ''}
+                            ${item.note ? `<div class="text-muted" style="margin-top:0.25rem;">${escapeHtml(item.note)}</div>` : ''}
+                        </div>
+                    </div>
+                `).join('')
+                : '<div class="text-muted" style="font-size:0.85rem;">No workflow activity yet.</div>';
+            const alertsHtml = (incident.alerts || []).map(alert => `
+                <div class="alert-item">
+                    <div class="alert-item-head">
+                        <span class="alert-device">${escapeHtml(alert.device_name || 'Unknown Device')} (${escapeHtml(alert.event_type || '-')})</span>
+                        <span>${escapeHtml(formatTime(alert.created_at))}</span>
+                    </div>
+                    <div class="alert-message">${escapeHtml(alert.message || '')}</div>
+                    <div class="incident-meta" style="margin-top: 0.45rem;">
+                        <span class="meta-pill"><i class="fa-solid fa-network-wired"></i>${escapeHtml(alert.ip_address || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-location-dot"></i>${escapeHtml(alert.location || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-share-nodes"></i>${escapeHtml((alert.channels || []).join(', ') || '-')}</span>
+                        ${alert.device_id ? `<a class="meta-pill action-link" href="/api/devices/${alert.device_id}/history?minutes=1440&sample=50" target="_blank"><i class="fa-solid fa-chart-line"></i>History API</a>` : ''}
+                    </div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="incident-card severity-${escapeHtml(incident.severity || 'warning')}">
+                    <div class="incident-head">
+                        <div class="incident-title">
+                            <h3>Incident #${escapeHtml(incident.sequence)} · ${escapeHtml(incident.summary)}</h3>
+                            <div class="text-muted">Started ${escapeHtml(formatTime(incident.started_at))} · Latest ${escapeHtml(formatTime(incident.latest_at))}</div>
+                        </div>
+                        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                            <div class="workflow-badge workflow-${escapeHtml(workflowStatus)}">${escapeHtml(workflowLabel(workflowStatus))}</div>
+                            <div class="severity-badge">${escapeHtml(incident.severity || 'warning')}</div>
+                        </div>
+                    </div>
+
+                    <div class="incident-meta">
+                        <span class="meta-pill"><i class="fa-solid fa-bell"></i>${escapeHtml(String(incident.alert_count || 0))} alerts</span>
+                        <span class="meta-pill"><i class="fa-solid fa-server"></i>${escapeHtml(String(incident.device_count || 0))} devices</span>
+                        <span class="meta-pill"><i class="fa-solid fa-code-branch"></i>${escapeHtml((incident.event_types || []).join(', ') || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-paper-plane"></i>${escapeHtml((incident.channels || []).join(', ') || '-')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-user-check"></i>${escapeHtml(incident.workflow_acknowledged_by || 'Unassigned')}</span>
+                        <span class="meta-pill"><i class="fa-solid fa-user-tag"></i>${escapeHtml(workflowOwner)}</span>
+                    </div>
+
+                    <div class="incident-body" style="margin-top: 0.95rem;">
+                        <div class="incident-section">
+                            <h4>Alerts In This Incident</h4>
+                            <div class="alert-items">${alertsHtml}</div>
+                        </div>
+                        <div class="incident-section">
+                            <h4>Correlation Summary</h4>
+                            <div class="plain-list">
+                                <div><strong>Root cause candidate:</strong> ${escapeHtml(rootDeviceName)}</div>
+                                <div><strong>Affected device IDs:</strong> ${escapeHtml((incident.device_ids || []).join(', ') || '-')}</div>
+                                <div><strong>Event types:</strong> ${escapeHtml((incident.event_types || []).join(', ') || '-')}</div>
+                                <div><strong>Channels:</strong> ${escapeHtml((incident.channels || []).join(', ') || '-')}</div>
+                                <div><strong>Grouping basis:</strong> Time window + dependency + topology adjacency</div>
+                                <div><strong>Workflow updated:</strong> ${escapeHtml(formatTime(incident.workflow_updated_at || incident.latest_at))}</div>
+                                <div><strong>Owner:</strong> ${escapeHtml(workflowOwner)}</div>
+                                <div><strong>Note:</strong> ${escapeHtml(incident.workflow_note || '-')}</div>
+                                <div style="margin-top: 0.4rem;"><strong>Deep links:</strong></div>
+                                <div><a href="${deviceManageLink}">Open Devices</a></div>
+                                <div><a href="${topologyLink}">Open Topology</a></div>
+                                <div><a href="${historyLink}" target="_blank">Open History API for affected devices</a></div>
+                                <div><a href="${bandwidthLink}">Open Bandwidth</a></div>
+                            </div>
+                            <div class="incident-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="updateIncidentStatus('${escapeHtml(incident.id)}', 'acknowledged')">Acknowledge</button>
+                                <button class="btn btn-secondary btn-sm" onclick="updateIncidentStatus('${escapeHtml(incident.id)}', 'investigating')">Investigating</button>
+                                <button class="btn btn-primary btn-sm" onclick="updateIncidentStatus('${escapeHtml(incident.id)}', 'resolved')">Resolve</button>
+                                <button class="btn btn-secondary btn-sm" onclick="updateIncidentStatus('${escapeHtml(incident.id)}', 'open')">Reopen</button>
+                            </div>
+                            <div class="incident-actions">
+                                <select id="owner-select-${escapeHtml(incident.id)}" class="form-control" style="min-width: 220px;">
+                                    ${renderOwnerOptions(incident.workflow_owner_user_id)}
+                                </select>
+                                <button class="btn btn-secondary btn-sm" onclick="assignIncidentOwner('${escapeHtml(incident.id)}')">Assign Owner</button>
+                                <button class="btn btn-secondary btn-sm" onclick="clearIncidentOwner('${escapeHtml(incident.id)}')">Clear Owner</button>
+                            </div>
+                            <h4 style="margin-top: 1rem;">Activity Timeline</h4>
+                            <div class="timeline-list">${timelineHtml}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadIncidents() {
+        const limit = document.getElementById('incident-limit').value;
+        const windowMinutes = document.getElementById('window-minutes').value;
+        const dedupeMinutes = document.getElementById('dedupe-minutes').value;
+        const container = document.getElementById('incident-list');
+
+        container.innerHTML = '<div class="empty-state">Loading incidents...</div>';
+
+        try {
+            const res = await fetch(`/api/alert-incidents?limit=${limit}&window_minutes=${windowMinutes}&dedupe_minutes=${dedupeMinutes}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const incidents = await res.json();
+            allIncidents = incidents || [];
+            rebuildFilterOptions(allIncidents);
+            renderIncidents(allIncidents);
+        } catch (error) {
+            console.error('Failed to load incidents:', error);
+            container.innerHTML = `<div class="empty-state">Failed to load incidents: ${escapeHtml(error.message)}</div>`;
+            updateSummary([]);
+        }
+    }
+
+    async function loadAssignableUsers() {
+        try {
+            const res = await fetch('/api/users/assignable');
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            assignableUsers = await res.json();
+        } catch (error) {
+            console.error('Failed to load assignable users:', error);
+            assignableUsers = [];
+        }
+    }
+
+    async function updateIncidentStatus(incidentId, status) {
+        const note = window.prompt(`Optional note for "${workflowLabel(status)}"`, '') || '';
+
+        try {
+            const res = await fetch(`/api/alert-incidents/${encodeURIComponent(incidentId)}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, note })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadIncidents();
+        } catch (error) {
+            console.error('Failed to update incident status:', error);
+            alert(`Failed to update incident status: ${error.message}`);
+        }
+    }
+
+    async function assignIncidentOwner(incidentId) {
+        const select = document.getElementById(`owner-select-${incidentId}`);
+        const ownerUserId = select ? select.value : '';
+        const note = window.prompt('Optional assignment note', '') || '';
+
+        try {
+            const res = await fetch(`/api/alert-incidents/${encodeURIComponent(incidentId)}/owner`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner_user_id: ownerUserId || null, note })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadIncidents();
+        } catch (error) {
+            console.error('Failed to assign incident owner:', error);
+            alert(`Failed to assign owner: ${error.message}`);
+        }
+    }
+
+    async function clearIncidentOwner(incidentId) {
+        try {
+            const res = await fetch(`/api/alert-incidents/${encodeURIComponent(incidentId)}/owner`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ owner_user_id: null, note: 'Owner cleared' })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            await loadIncidents();
+        } catch (error) {
+            console.error('Failed to clear incident owner:', error);
+            alert(`Failed to clear owner: ${error.message}`);
+        }
+    }
+
+    function applyIncidentQueryFilters() {
+        const params = new URLSearchParams(window.location.search);
+        pendingIncidentDeviceFilter = params.get('device') || '';
+        pendingIncidentLocationFilter = params.get('location') || '';
+        pendingIncidentEventTypeFilter = params.get('event_type') || '';
+        pendingIncidentSeverityFilter = params.get('severity') || '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        ['severity-filter', 'device-filter', 'location-filter', 'event-type-filter'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => renderIncidents(allIncidents));
+        });
+        applyIncidentQueryFilters();
+        loadAssignableUsers().finally(() => loadIncidents());
+    });
+</script>
+{% endblock %}

@@ -2,7 +2,7 @@
 User management API routes (Admin only)
 """
 from flask import Blueprint, jsonify, request, session, current_app
-from .auth import login_required, admin_required
+from .auth import login_required, admin_required, operator_required
 from .audit import log_audit
 import pyotp
 import qrcode
@@ -21,6 +21,24 @@ def get_users():
     """Get all users"""
     users = _get_db().get_all_users()
     return jsonify(users)
+
+
+@users_bp.route('/api/users/assignable', methods=['GET'])
+@operator_required
+def get_assignable_users():
+    """Get active users that can be assigned to incidents."""
+    users = _get_db().get_all_users()
+    assignable = [
+        {
+            'id': u['id'],
+            'username': u['username'],
+            'display_name': u.get('display_name'),
+            'role': u.get('role'),
+        }
+        for u in users
+        if u.get('is_active')
+    ]
+    return jsonify(assignable)
 
 
 @users_bp.route('/api/users', methods=['POST'])

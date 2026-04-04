@@ -1,0 +1,44 @@
+{
+  "id": "tcp_banner",
+  "name": "TCP Banner Check",
+  "version": "0.1.0",
+  "type": "monitor",
+  "monitor_type": "plugin:tcp_banner",
+  "ui_hint": "tcp",
+  "enabled": true,
+  "description": "Connects to a TCP port and optionally evaluates whether a banner is returned.",
+  "config_schema": [
+    {
+      "key": "expected_banner",
+      "label": "Expected Banner",
+      "type": "text",
+      "placeholder": "e.g., SSH-2.0 or SMTP",
+      "help_text": "If set, the plugin will try to match this text inside the returned banner."
+    },
+    {
+      "key": "match_mode",
+      "label": "Match Mode",
+      "type": "select",
+      "default": "contains",
+      "options": [
+        { "label": "Contains", "value": "contains" },
+        { "label": "Exact", "value": "exact" }
+      ],
+      "help_text": "Choose whether the returned banner must contain or exactly match the expected text."
+    },
+    {
+      "key": "read_banner",
+      "label": "Read Banner",
+      "type": "boolean",
+      "default": true,
+      "help_text": "Disable this if the service does not return a banner immediately."
+    },
+    {
+      "key": "shared_secret",
+      "label": "Shared Secret",
+      "type": "secret",
+      "placeholder": "Optional reference token",
+      "help_text": "Reserved for future plugin-side verification logic."
+    }
+  ]
+}

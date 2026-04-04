@@ -9,7 +9,7 @@ let socket;
 const TIER_MAPPING = {
     'internet': 'internet', 'cloud': 'internet',
     'firewall': 'firewall', 'router': 'firewall', 'vpnrouter': 'firewall',
-    'switch': 'core', 'wifi': 'core',
+    'switch': 'core', 'wifi': 'core', 'wireless': 'core',
     'server': 'servers', 'database': 'servers', 'web': 'servers', 
     'storage': 'servers', 'linux': 'servers', 'windows': 'servers', 'vmware': 'servers',
     'wmi': 'servers', 'ssh': 'servers'
@@ -18,7 +18,7 @@ const TIER_MAPPING = {
 const ICON_MAPPING = {
     'internet': 'fa-globe', 'cloud': 'fa-cloud',
     'firewall': 'fa-shield-halved', 'router': 'fa-route',
-    'switch': 'fa-network-wired', 'wifi': 'fa-wifi',
+    'switch': 'fa-network-wired', 'wifi': 'fa-wifi', 'wireless': 'fa-wifi',
     'database': 'fa-database', 'web': 'fa-server',
     'storage': 'fa-hard-drive', 'vmware': 'fa-layer-group',
     'server': 'fa-server', 'linux': 'fa-linux', 'windows': 'fa-windows'
@@ -83,9 +83,11 @@ function getBarColor(val) {
 function createDeviceCardDom(dv) {
     const tier = getTier(dv.device_type);
     const isServer = (tier === 'servers');
+    const type = (dv.device_type || '').toLowerCase();
+    const isWireless = type === 'wireless' || type === 'wifi';
     
     // Choose Template
-    const tmplId = isServer ? 'wide-server-template' : 'floating-node-template';
+    const tmplId = isWireless ? 'wireless-ap-template' : (isServer ? 'wide-server-template' : 'floating-node-template');
     const tmpl = document.getElementById(tmplId).innerHTML;
     
     let cpu = dv.cpu_usage || 0;
@@ -102,12 +104,22 @@ function createDeviceCardDom(dv) {
         .replace(/{ip}/g, dv.ip_address || '0.0.0.0')
         .replace(/{cpu}/g, cpu)
         .replace(/{cpu-color}/g, getBarColor(cpu));
+
+    if (isWireless) {
+        html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
+    }
         
     const div = document.createElement('div');
     div.innerHTML = html.trim();
     const card = div.firstChild;
 
     // Interaction
+    card.onclick = (e) => {
+        if (!dv.isVirtual && typeof showPremiumDeviceDetails === 'function') {
+            showPremiumDeviceDetails(dv);
+        }
+    };
+
     card.addEventListener('dblclick', () => {
         if (!dv.isVirtual) window.location.href = `/dashboard/${dv.id}`;
     });

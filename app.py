@@ -25,6 +25,7 @@ from service_manager import ServiceManager
 from task_scheduler import TaskScheduler
 from snmp_trap_receiver import SnmpTrapReceiver
 from syslog_receiver import SyslogReceiver
+from plugin_manager import PluginManager
 from config import Config
 import atexit
 import os
@@ -61,7 +62,10 @@ report_generator = ReportGenerator(db)
 discovery = DeviceDiscovery()
 trap_receiver = SnmpTrapReceiver(db)
 syslog_receiver = SyslogReceiver(db)
+plugin_manager = PluginManager(db)
 monitor.alerter = alerter
+monitor.plugin_manager = plugin_manager
+alerter.plugin_manager = plugin_manager
 
 # Store shared instances in app.config for Blueprint access
 app.config['DB'] = db
@@ -72,6 +76,7 @@ app.config['REPORT_GENERATOR'] = report_generator
 app.config['DISCOVERY'] = discovery
 app.config['TRAP_RECEIVER'] = trap_receiver
 app.config['SYSLOG_RECEIVER'] = syslog_receiver
+app.config['PLUGIN_MANAGER'] = plugin_manager
 
 # ============================================================================
 # Register Blueprints
@@ -99,6 +104,11 @@ def serve_sw():
 def serve_manifest():
     from flask import send_from_directory
     return send_from_directory('static', 'manifest.json', mimetype='application/json')
+
+@app.route('/PLUGIN_DEVELOPMENT.md')
+def serve_plugin_development_guide():
+    from flask import send_from_directory
+    return send_from_directory('.', 'PLUGIN_DEVELOPMENT.md', mimetype='text/markdown')
 
 # ============================================================================
 # Task Scheduler & Service Manager
@@ -260,6 +270,18 @@ def check_custom_reports_schedule():
             print(f"[CustomReports] Task error for {r['name']}: {e}")
 
 
+def materialize_incidents():
+    """Background task to persist correlated incident snapshots."""
+    print("Running persistent incident materialization...")
+    return db.sync_persistent_incidents(limit=500, window_minutes=10, dedupe_minutes=2)
+
+
+def materialize_anomalies():
+    """Background task to persist anomaly snapshots."""
+    print("Running anomaly detection materialization...")
+    return db.sync_anomaly_snapshots(recent_minutes=30, baseline_hours=24, min_points=5)
+
+
 # Register tasks with metadata and history tracking
 task_scheduler.add_task('monitor_job', 'Device Monitoring', monitor_devices,
                         trigger='interval', seconds=Config.PING_INTERVAL)
@@ -270,6 +292,10 @@ task_scheduler.add_task('alert_escalation', 'Alert Escalation Check', check_aler
                         trigger='interval', minutes=1)
 task_scheduler.add_task('custom_reports', 'Custom Reports Dispatch', check_custom_reports_schedule,
                         trigger='interval', minutes=1)
+task_scheduler.add_task('incident_materialize', 'Incident Materialization', materialize_incidents,
+                        trigger='interval', minutes=1)
+task_scheduler.add_task('anomaly_detection', 'Anomaly Detection', materialize_anomalies,
+                        trigger='interval', minutes=5)
 task_scheduler.add_task('daily_report', 'Daily Report', scheduled_daily_report,
                         trigger='cron', hour=8, minute=0)
 task_scheduler.add_task('cleanup', 'Data Cleanup', scheduled_data_cleanup,

@@ -57,6 +57,7 @@ class NetworkMonitor:
         self.db = database
         self.monitoring_active = False
         self.alerter = None  # Will be set by app.py
+        self.plugin_manager = None  # Will be set by app.py
         self.max_workers = Config.MONITOR_MAX_WORKERS
         
         # Dedicated Asyncio thread for SNMP (Stable Architecture)
@@ -1085,6 +1086,12 @@ class NetworkMonitor:
         elif monitor_type == 'dns':
             query_domain = device.get('dns_query_domain', 'google.com')
             result = self.check_dns(device['ip_address'], query_domain)
+        elif str(monitor_type).startswith('plugin:') and self.plugin_manager is not None:
+            result = self.plugin_manager.execute_monitor_plugin(
+                monitor_type,
+                device,
+                monitor_context={'db': self.db, 'monitor': self, 'config': Config},
+            )
         else:
             result = self.ping_device(device['ip_address'])
             
@@ -1246,7 +1253,7 @@ class NetworkMonitor:
                     f"SSL Certificate expires in {ssl_days} days!"
                 )
         
-        return {
+        payload = {
             'id': device['id'],
             'name': device['name'],
             'ip_address': device['ip_address'],
@@ -1266,6 +1273,10 @@ class NetworkMonitor:
             'ssl_status': result.get('ssl_status'),
             'last_check': datetime.now().isoformat()
         }
+        for extra_key in ['plugin_id', 'plugin_name', 'message', 'banner', 'error']:
+            if extra_key in result:
+                payload[extra_key] = result.get(extra_key)
+        return payload
     
     def check_all_devices(self):
         """Check all devices in parallel using eventlet GreenPool"""

@@ -182,6 +182,8 @@
             </div>
             <div class="flex gap-1" style="flex-wrap: wrap;">
                 <div class="device-stats-row" id="device-stats"></div>
+                <button class="btn btn-sm btn-secondary" onclick="zoomSubTopoIn()">+</button>
+                <button class="btn btn-sm btn-secondary" onclick="zoomSubTopoOut()">-</button>
                 <button class="btn btn-sm btn-secondary" onclick="fitSubTopoNetwork()">📐 Fit</button>
                 <button class="btn btn-sm btn-primary" onclick="refreshSubTopo()">🔄 Refresh</button>
                 <button class="btn btn-sm btn-info" onclick="toggleSubTopoFullscreen()">⛶ Fullscreen</button>
@@ -215,6 +217,8 @@
             <span>Unknown</span>
         </div>
     </div>
+
+    </div>
 </div>
 
 {% include 'partials/premium_components.html' %}
@@ -225,5 +229,5 @@
 <script>
     const SUB_TOPO_ID = {{ sub_topo_id }};
 </script>
-<script src="{{ url_for('static', filename='js/sub_topology_view.js') }}?v=2.1"></script>
+<script src="{{ url_for('static', filename='js/sub_topology_view.js') }}?v=6.4"></script>
 {% endblock %}

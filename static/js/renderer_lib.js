@@ -23,6 +23,8 @@ window.DashboardRenderer = {
 
     // Store references to charts/networks to destroy them when re-rendering
     instances: {},
+    lastFullscreenWidgetIndex: null,
+    fullscreenListenerBound: false,
 
     /**
      * Render a list of widgets into a container
@@ -33,6 +35,8 @@ window.DashboardRenderer = {
      */
 
     renderDashboard: function (container, layoutConfig, data, isEditMode = false) {
+        this.ensureFullscreenListeners();
+
         // Normalize layoutConfig: handle both array and {widgets, variables} object format
         if (layoutConfig && !Array.isArray(layoutConfig) && typeof layoutConfig === 'object') {
             layoutConfig = layoutConfig.widgets || [];
@@ -97,13 +101,23 @@ window.DashboardRenderer = {
 
             let controlsHtml = '';
             let dragHandleHtml = '';
+            const fullscreenControl = widget.type === 'topology'
+                ? `<button class="widget-btn fullscreen" onclick="window.DashboardRenderer.toggleWidgetFullscreen(${index})" title="Fullscreen"><i class="fas fa-expand"></i></button>`
+                : '';
             if (isEditMode) {
                 // Remove individual drag handle icon to use the whole title as handle
                 dragHandleHtml = ``;
                 controlsHtml = `
                     <div class="widget-controls">
+                        ${fullscreenControl}
                         <button class="widget-btn configure" onclick="configureWidget(${index})" title="Configure"><i class="fas fa-cog"></i></button>
                         <button class="widget-btn delete" onclick="removeWidget(${index})" title="Remove"><i class="fas fa-trash"></i></button>
+                    </div>
+                `;
+            } else if (fullscreenControl) {
+                controlsHtml = `
+                    <div class="widget-controls">
+                        ${fullscreenControl}
                     </div>
                 `;
             }
@@ -113,7 +127,7 @@ window.DashboardRenderer = {
             // GridStack requires an inner div with class 'grid-stack-item-content'
             // We use this inner div to house our custom widget structure
             const contentWrapperHtml = `
-                <div class="grid-stack-item-content">
+                <div class="grid-stack-item-content" data-fullscreen-widget-index="${index}">
                     <div class="widget-header">
                         <div class="widget-title" style="display: flex; align-items: center;">${dragHandleHtml}${widget.title || getWidgetDefaultTitle(widget.type)}</div>
                         ${controlsHtml}
@@ -144,7 +158,7 @@ window.DashboardRenderer = {
 
             switch (widget.type) {
                 case 'topology':
-                    this.updateTopology(index, widgetData, widget);
+                    this.updateTopology(container, index, widgetData, widget);
                     break;
                 case 'gauge':
                     this.updateGauge(index, widgetData);
@@ -303,6 +317,436 @@ window.DashboardRenderer = {
             connections: connections,
             stats: stats
         };
+    },
+
+    ensureFullscreenListeners: function () {
+        if (this.fullscreenListenerBound) return;
+        const handler = () => {
+            const active = document.fullscreenElement;
+            const activeIndex = active && active.dataset ? active.dataset.fullscreenWidgetIndex : null;
+            if (activeIndex !== null && activeIndex !== undefined) {
+                this.lastFullscreenWidgetIndex = activeIndex;
+            }
+            const targetIndex = activeIndex !== null && activeIndex !== undefined ? activeIndex : this.lastFullscreenWidgetIndex;
+            if (targetIndex !== null && targetIndex !== undefined) {
+                [80, 220, 500].forEach(delay => {
+                    setTimeout(() => this.refreshTopologyLayout(targetIndex), delay);
+                });
+            }
+        };
+        document.addEventListener('fullscreenchange', handler);
+        document.addEventListener('webkitfullscreenchange', handler);
+        document.addEventListener('mozfullscreenchange', handler);
+        document.addEventListener('MSFullscreenChange', handler);
+        this.fullscreenListenerBound = true;
+    },
+
+    toggleWidgetFullscreen: function (index) {
+        const wrapper = document.querySelector(`#widget-${index} .grid-stack-item-content`);
+        if (!wrapper) return;
+
+        this.lastFullscreenWidgetIndex = index;
+
+        if (document.fullscreenElement) {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            else if (document.msExitFullscreen) document.msExitFullscreen();
+            return;
+        }
+
+        if (wrapper.requestFullscreen) wrapper.requestFullscreen();
+        else if (wrapper.webkitRequestFullscreen) wrapper.webkitRequestFullscreen();
+        else if (wrapper.msRequestFullscreen) wrapper.msRequestFullscreen();
+    },
+
+    refreshTopologyLayout: function (index) {
+        const network = this.instances[`network_${index}`];
+        if (!network) return;
+        try {
+            if (typeof network.redraw === 'function') network.redraw();
+            if (typeof network.fit === 'function') network.fit({ animation: false });
+            this.syncPremiumWidgetOverlay(index);
+        } catch (e) {
+            console.warn('Failed to refresh topology fullscreen layout:', e);
+        }
+    },
+
+    addTopologyZoomControls: function (container, index) {
+        const controls = document.createElement('div');
+        controls.className = 'topology-zoom-controls';
+        controls.style.position = 'absolute';
+        controls.style.top = '0.5rem';
+        controls.style.right = '0.5rem';
+        controls.style.zIndex = '20';
+        controls.style.display = 'flex';
+        controls.style.gap = '0.35rem';
+        controls.style.pointerEvents = 'auto';
+        controls.innerHTML = `
+            <button class="widget-btn" title="Zoom In" onclick="window.DashboardRenderer.zoomTopology(${index}, 1.2)"><i class="fas fa-plus"></i></button>
+            <button class="widget-btn" title="Zoom Out" onclick="window.DashboardRenderer.zoomTopology(${index}, 0.85)"><i class="fas fa-minus"></i></button>
+            <button class="widget-btn" title="Fit" onclick="window.DashboardRenderer.fitTopology(${index})"><i class="fas fa-expand-arrows-alt"></i></button>
+        `;
+        container.appendChild(controls);
+    },
+
+    zoomTopology: function (index, factor) {
+        const network = this.instances[`network_${index}`];
+        if (!network || typeof network.getScale !== 'function' || typeof network.moveTo !== 'function') return;
+        try {
+            const scale = network.getScale();
+            const position = typeof network.getViewPosition === 'function' ? network.getViewPosition() : { x: 0, y: 0 };
+            network.moveTo({
+                position,
+                scale: Math.max(0.15, Math.min(3, scale * factor)),
+                animation: { duration: 180, easingFunction: 'easeInOutQuad' }
+            });
+            setTimeout(() => this.syncPremiumWidgetOverlay(index), 200);
+        } catch (e) {
+            console.warn('Failed to zoom topology widget:', e);
+        }
+    },
+
+    fitTopology: function (index) {
+        const network = this.instances[`network_${index}`];
+        if (!network || typeof network.fit !== 'function') return;
+        try {
+            network.fit({ animation: { duration: 220, easingFunction: 'easeInOutQuad' } });
+            setTimeout(() => this.syncPremiumWidgetOverlay(index), 240);
+        } catch (e) {
+            console.warn('Failed to fit topology widget:', e);
+        }
+    },
+
+    resolveTopologyData: async function (widget, fallbackData, index) {
+        const topologyMode = widget && widget.config ? (widget.config.topologyMode || 'main') : 'main';
+        const subTopologyId = widget && widget.config ? widget.config.subTopologyId : null;
+
+        if (topologyMode !== 'sub_topology' || !subTopologyId) {
+            return fallbackData;
+        }
+
+        const response = await fetch(`/api/sub-topologies/${subTopologyId}?_t=${Date.now()}`);
+        if (!response.ok) {
+            throw new Error(`Failed to load sub-topology ${subTopologyId}`);
+        }
+        const subTopology = await response.json();
+        const resolvedData = {
+            devices: subTopology.devices || [],
+            connections: subTopology.connections || [],
+            stats: this.buildStatsFromDevices(subTopology.devices || []),
+            node_positions: subTopology.node_positions || {},
+            theme_mode: subTopology.theme_mode || 'standard',
+            background_image: subTopology.background_image || null
+        };
+
+        if (widget.config && (widget.config.deviceType || widget.config.deviceId)) {
+            return this.filterData(resolvedData, widget.config);
+        }
+
+        return resolvedData;
+    },
+
+    buildStatsFromDevices: function (devices) {
+        const totalDevices = devices.length;
+        const devicesUp = devices.filter(d => d.status === 'up').length;
+        const devicesDown = devices.filter(d => d.status === 'down').length;
+        const devicesSlow = devices.filter(d => d.status === 'slow').length;
+
+        let uptimePercentage = 0;
+        let averageResponseTime = 0;
+
+        if (totalDevices > 0) {
+            uptimePercentage = Math.round(((devicesUp + devicesSlow) / totalDevices) * 100);
+
+            const responseTimes = devices
+                .map(d => parseFloat(d.response_time))
+                .filter(t => !isNaN(t) && t > 0);
+
+            if (responseTimes.length > 0) {
+                const totalRt = responseTimes.reduce((a, b) => a + b, 0);
+                averageResponseTime = Math.round((totalRt / responseTimes.length) * 100) / 100;
+            }
+        }
+
+        return {
+            total_devices: totalDevices,
+            devices_up: devicesUp,
+            devices_down: devicesDown,
+            devices_slow: devicesSlow,
+            uptime_percentage: uptimePercentage,
+            average_response_time: averageResponseTime
+        };
+    },
+
+    buildTopologyDatasets: function (data) {
+        const nodes = new vis.DataSet(
+            (data.devices || []).map(device => {
+                const rt = device.response_time !== null && device.response_time !== undefined ? `${device.response_time} ms` : 'N/A';
+                return {
+                    id: device.id,
+                    label: device.name,
+                    title: `Device: ${device.name}\nStatus: ${device.status.toUpperCase()}\nLocation: ${device.location || 'N/A'}\nResponse: ${rt}`,
+                    shape: 'circularImage',
+                    image: this.getNodeSvgUrl(device.device_type, device.status),
+                    size: 100,
+                    borderWidth: 0,
+                    borderWidthSelected: 0,
+                    color: { background: 'transparent', border: 'transparent' }
+                };
+            })
+        );
+
+        const uniqueEdges = new Map();
+        (data.connections || []).forEach(conn => {
+            const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
+            const key = `${ids[0]}-${ids[1]}`;
+            if (!uniqueEdges.has(key)) {
+                uniqueEdges.set(key, conn);
+            } else {
+                const existing = uniqueEdges.get(key);
+                if (conn.view_type === 'standard' && existing.view_type !== 'standard') {
+                    uniqueEdges.set(key, conn);
+                }
+            }
+        });
+
+        const edges = new vis.DataSet(
+            Array.from(uniqueEdges.values()).map(conn => ({
+                id: conn.id,
+                from: conn.device_id,
+                to: conn.connected_to,
+                width: 5,
+                color: { color: 'rgba(148, 163, 184, 0.6)' }
+            }))
+        );
+
+        return { nodes, edges };
+    },
+
+    parseNodePositions: function (nodePositions) {
+        if (!nodePositions) return {};
+        try {
+            return typeof nodePositions === 'string' ? JSON.parse(nodePositions) : nodePositions;
+        } catch (e) {
+            return {};
+        }
+    },
+
+    isPremiumTopologyWidget: function (widget, resolvedData) {
+        return !!(
+            widget &&
+            widget.config &&
+            widget.config.topologyMode === 'sub_topology' &&
+            widget.config.renderStyle === 'premium3d' &&
+            resolvedData &&
+            (resolvedData.theme_mode || '').toLowerCase() === 'premium'
+        );
+    },
+
+    getPremiumWidgetTemplateId: function (device) {
+        const type = (device.device_type || 'server').toLowerCase();
+        if (type === 'server' || type === 'vmware') return 'wide-server-template';
+        if (type === 'switch') return 'rackmount-hardware-template';
+        if (type === 'wireless' || type === 'wifi') return 'wireless-ap-template';
+        return 'floating-node-template';
+    },
+
+    renderPremiumWidgetNode: function (overlay, device, index) {
+        let el = document.getElementById(`premium-widget-node-${index}-${device.id}`);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = `premium-widget-node-${index}-${device.id}`;
+            el.className = 'dom-overlay-node';
+            el.setAttribute('data-node-id', device.id);
+            el.style.position = 'absolute';
+            el.style.pointerEvents = 'auto';
+            overlay.appendChild(el);
+        }
+
+        const type = (device.device_type || 'server').toLowerCase();
+        const templateId = this.getPremiumWidgetTemplateId(device);
+        const templateNode = document.getElementById(templateId);
+        if (!templateNode) return;
+
+        const iconMap = {
+            'firewall': 'fa-shield-halved',
+            'switch': 'fa-network-wired',
+            'router': 'fa-globe',
+            'internet': 'fa-cloud',
+            'wireless': 'fa-wifi',
+            'server': 'fa-server',
+            'vmware': 'fa-database'
+        };
+
+        let html = templateNode.innerHTML
+            .replace(/{id}/g, `${index}-${device.id}`)
+            .replace(/{name}/g, device.name || 'Unknown')
+            .replace(/{ip}/g, device.ip_address || 'N/A')
+            .replace(/{icon}/g, iconMap[type] || 'fa-microchip')
+            .replace(/{status}/g, device.status || 'unknown')
+            .replace(/{type-label}/g, device.device_type || 'N/A')
+            .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
+            .replace(/{glow-class}/g, `glow-${type}`);
+
+        if (type === 'switch') {
+            html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png?v=2');
+        }
+        if (type === 'wireless' || type === 'wifi') {
+            html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
+        }
+        if (type === 'server' || type === 'vmware') {
+            const cpu = device.response_time != null ? Math.min(99, Math.max(5, Math.round(device.response_time % 100))) : 15;
+            const cpuColor = cpu > 80 ? 'critical' : (cpu > 50 ? 'warning' : 'healthy');
+            html = html.replace(/{cpu}/g, cpu).replace(/{cpu-color}/g, cpuColor);
+        }
+
+        el.innerHTML = html;
+        if (type === 'switch') {
+            const title = el.querySelector('.hardware-title');
+            const ip = el.querySelector('.hardware-ip');
+            if (title) {
+                title.style.setProperty('position', 'absolute', 'important');
+                title.style.setProperty('display', 'block', 'important');
+                title.style.setProperty('bottom', '8px', 'important');
+                title.style.setProperty('top', 'auto', 'important');
+            }
+            if (ip) {
+                ip.style.setProperty('display', 'none', 'important');
+            }
+        }
+        el.onclick = (evt) => {
+            evt.stopPropagation();
+            const network = this.instances[`network_${index}`];
+            if (network) network.selectNodes([device.id]);
+            if (typeof showPremiumDeviceDetails === 'function') {
+                showPremiumDeviceDetails(device);
+            }
+        };
+    },
+
+    syncPremiumWidgetOverlay: function (index) {
+        const network = this.instances[`network_${index}`];
+        const resolvedData = this.instances[`topology_data_${index}`];
+        const overlay = this.instances[`topology_overlay_${index}`];
+        if (!network || !resolvedData || !overlay) return;
+
+        const scale = network.getScale();
+        (resolvedData.devices || []).forEach(device => {
+            const el = document.getElementById(`premium-widget-node-${index}-${device.id}`);
+            if (!el) return;
+
+            const pos = network.getPositions([device.id])[device.id];
+            if (!pos) return;
+
+            const domPos = network.canvasToDOM(pos);
+            const width = el.offsetWidth || 120;
+            const height = el.offsetHeight || 120;
+            const isSwitchNode = !!el.querySelector('.rackmount-node');
+            const effectiveScale = isSwitchNode
+                ? Math.max(0.8, Math.min(1.25, scale * 1.2))
+                : Math.max(0.42, Math.min(1.2, scale));
+
+            el.style.left = `${domPos.x - (width / 2)}px`;
+            el.style.top = `${domPos.y - (height / 2)}px`;
+            el.style.transform = `scale(${effectiveScale})`;
+            el.style.transformOrigin = 'center center';
+        });
+    },
+
+    renderPremiumTopology: function (container, widget, resolvedData, index) {
+        container.innerHTML = '';
+        container.style.height = '100%';
+        container.style.position = 'relative';
+        container.style.overflow = 'hidden';
+
+        const canvas = document.createElement('div');
+        canvas.style.position = 'absolute';
+        canvas.style.inset = '0';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        container.appendChild(canvas);
+
+        const overlay = document.createElement('div');
+        overlay.className = 'premium-widget-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.inset = '0';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.overflow = 'hidden';
+        overlay.style.zIndex = '10';
+        container.appendChild(overlay);
+        this.addTopologyZoomControls(container, index);
+
+        const nodePositions = this.parseNodePositions(resolvedData.node_positions);
+        const nodes = new vis.DataSet((resolvedData.devices || []).map(device => ({
+            id: device.id,
+            label: null,
+            x: nodePositions[device.id] ? nodePositions[device.id].x : 0,
+            y: nodePositions[device.id] ? nodePositions[device.id].y : 0,
+            shape: 'dot',
+            size: 1,
+            color: {
+                background: 'rgba(0,0,0,0)',
+                border: 'rgba(0,0,0,0)',
+                highlight: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' }
+            },
+            font: { size: 0, color: 'rgba(0,0,0,0)' },
+            title: `${device.name} (${device.ip_address || 'N/A'})`
+        })));
+
+        const edges = new vis.DataSet((resolvedData.connections || []).map((conn, idx) => {
+            const fromDevice = (resolvedData.devices || []).find(d => d.id === conn.device_id);
+            const toDevice = (resolvedData.devices || []).find(d => d.id === conn.connected_to);
+            let edgeColor = '#999';
+            if (fromDevice && toDevice) {
+                if (fromDevice.status === 'down' || toDevice.status === 'down') edgeColor = '#ef4444';
+                else if (fromDevice.status === 'slow' || toDevice.status === 'slow') edgeColor = '#f59e0b';
+                else if (fromDevice.status === 'up' && toDevice.status === 'up') edgeColor = '#10b981';
+            }
+            return {
+                id: conn.id || `premium_edge_${index}_${idx}`,
+                from: conn.device_id,
+                to: conn.connected_to,
+                color: { color: edgeColor, highlight: '#38bdf8' },
+                width: 3,
+                smooth: { type: 'curvedCW', roundness: 0.2 },
+                shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 5, x: 2, y: 2 }
+            };
+        }));
+
+        const network = new vis.Network(canvas, { nodes, edges }, {
+            interaction: {
+                hover: true,
+                dragNodes: false,
+                dragView: true,
+                zoomView: true,
+                navigationButtons: false,
+                tooltipDelay: 200
+            },
+            physics: { enabled: false },
+            nodes: { font: { size: 0, color: 'rgba(0,0,0,0)' } },
+            edges: {
+                color: { color: 'rgba(56, 189, 248, 0.5)', highlight: '#38bdf8' },
+                width: 3,
+                smooth: { type: 'curvedCW', roundness: 0.2 },
+                shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 5, x: 2, y: 2 }
+            }
+        });
+
+        (resolvedData.devices || []).forEach(device => this.renderPremiumWidgetNode(overlay, device, index));
+        const sync = () => this.syncPremiumWidgetOverlay(index);
+        network.on('afterDrawing', sync);
+        network.on('selectNode', sync);
+        network.on('deselectNode', sync);
+        network.once('afterDrawing', () => {
+            network.fit({ animation: false });
+            setTimeout(sync, 0);
+        });
+
+        this.instances[`network_${index}`] = network;
+        this.instances[`nodes_${index}`] = nodes;
+        this.instances[`edges_${index}`] = edges;
+        this.instances[`topology_overlay_${index}`] = overlay;
+        this.instances[`topology_data_${index}`] = resolvedData;
     },
 
     // ===================================
@@ -887,55 +1331,45 @@ window.DashboardRenderer = {
         }
     },
 
-    renderTopology: function (container, widget, data, index) {
+    renderTopology: async function (container, widget, data, index) {
         // Just fill the container
         container.style.height = '100%';
         container.style.position = 'relative';
+        container.innerHTML = '';
+
         const canvas = document.createElement('div');
         canvas.style.width = '100%';
         canvas.style.height = '100%';
+        canvas.innerHTML = `<div class="flex-center" style="height:100%; color:var(--text-muted); font-size:0.9rem;">Loading topology...</div>`;
         container.appendChild(canvas);
 
-        const nodes = new vis.DataSet(
-            (data.devices || []).map(device => {
-                const rt = device.response_time !== null && device.response_time !== undefined ? `${device.response_time} ms` : 'N/A';
-                return {
-                    id: device.id,
-                    label: device.name,
-                    title: `Device: ${device.name}\nStatus: ${device.status.toUpperCase()}\nLocation: ${device.location || 'N/A'}\nResponse: ${rt}`,
-                    shape: 'circularImage',
-                    image: this.getNodeSvgUrl(device.device_type, device.status),
-                    size: 100, // Balanced size for many nodes
-                    borderWidth: 0,
-                    borderWidthSelected: 0,
-                    color: { background: 'transparent', border: 'transparent' }
-                };
-            })
-        );
+        const requestKey = `topology_request_${index}`;
+        const token = Date.now() + Math.random();
+        this.instances[requestKey] = token;
 
-        const uniqueEdges = new Map();
-        (data.connections || []).forEach(conn => {
-            const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
-            const key = `${ids[0]} -${ids[1]} `;
-            if (!uniqueEdges.has(key)) {
-                uniqueEdges.set(key, conn);
-            } else {
-                const existing = uniqueEdges.get(key);
-                if (conn.view_type === 'standard' && existing.view_type !== 'standard') {
-                    uniqueEdges.set(key, conn);
-                }
+        let resolvedData;
+        try {
+            resolvedData = await this.resolveTopologyData(widget, data, index);
+        } catch (e) {
+            console.error('Error loading topology widget:', e);
+            if (this.instances[requestKey] === token) {
+                canvas.innerHTML = `<div class="flex-center" style="height:100%; color:var(--danger); font-size:0.9rem;">Failed to load topology</div>`;
             }
-        });
+            return;
+        }
 
-        const edges = new vis.DataSet(
-            Array.from(uniqueEdges.values()).map(conn => ({
-                id: conn.id,
-                from: conn.device_id,
-                to: conn.connected_to,
-                width: 5, // Increased from 1.5
-                color: { color: 'rgba(148, 163, 184, 0.6)' }
-            }))
-        );
+        if (this.instances[requestKey] !== token) {
+            return;
+        }
+
+        if (this.isPremiumTopologyWidget(widget, resolvedData)) {
+            this.renderPremiumTopology(container, widget, resolvedData, index);
+            return;
+        }
+
+        const { nodes, edges } = this.buildTopologyDatasets(resolvedData);
+        canvas.innerHTML = '';
+        this.addTopologyZoomControls(container, index);
 
         const options = {
             nodes: {
@@ -1012,23 +1446,40 @@ window.DashboardRenderer = {
         this.instances[`network_${index}`] = network;
         this.instances[`nodes_${index}`] = nodes;
         this.instances[`edges_${index}`] = edges;
+        this.instances[`topology_overlay_${index}`] = null;
+        this.instances[`topology_data_${index}`] = resolvedData;
     },
 
 
 
 
-    updateTopology: function (index, data, widget) {
+    updateTopology: async function (container, index, data, widget) {
         const nodesDS = this.instances[`nodes_${index}`];
         const edgesDS = this.instances[`edges_${index}`];
         const network = this.instances[`network_${index}`];
 
-        if (!nodesDS || !edgesDS) return; // Should re-render if missing
+        let resolvedData;
+        try {
+            resolvedData = await this.resolveTopologyData(widget, data, index);
+        } catch (e) {
+            console.error('Error updating topology widget:', e);
+            return;
+        }
+
+        if (this.isPremiumTopologyWidget(widget, resolvedData)) {
+            this.renderPremiumTopology(container, widget, resolvedData, index);
+            return;
+        }
+
+        this.instances[`topology_data_${index}`] = resolvedData;
+
+        if (!nodesDS || !edgesDS || !network) return; // Should re-render if missing
 
         // 1. Update Nodes
         const currentIds = new Set(nodesDS.getIds());
         const newIds = new Set();
 
-        const validDevices = (data.devices || []);
+        const validDevices = (resolvedData.devices || []);
 
         const nodeUpdates = validDevices.map(device => {
             newIds.add(device.id);
@@ -1056,7 +1507,7 @@ window.DashboardRenderer = {
         const newEdgeIds = new Set();
 
         const uniqueEdges = new Map();
-        (data.connections || []).forEach(conn => {
+        (resolvedData.connections || []).forEach(conn => {
             const ids = [conn.device_id, conn.connected_to].sort((a, b) => a - b);
             const key = `${ids[0]}-${ids[1]}`;
             if (!uniqueEdges.has(key)) {
@@ -2019,7 +2470,7 @@ window.DashboardRenderer = {
 
     clearInstances: function () {
         Object.values(this.instances).forEach(inst => {
-            if (inst.destroy) inst.destroy();
+            if (inst && typeof inst.destroy === 'function') inst.destroy();
         });
         this.instances = {};
     },

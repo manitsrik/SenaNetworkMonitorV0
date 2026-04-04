@@ -3,9 +3,34 @@ Configuration settings for Network Monitor
 """
 import os
 
+
+def _load_env_file():
+    """Load key=value pairs from a local .env file if present."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+    if not os.path.exists(env_path):
+        return
+
+    try:
+        with open(env_path, 'r', encoding='utf-8') as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                os.environ.setdefault(key, value)
+    except Exception:
+        # Keep config import resilient even if .env is malformed.
+        pass
+
+
+_load_env_file()
+
 class Config:
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    SECRET_ENCRYPTION_KEY = os.environ.get('SECRET_ENCRYPTION_KEY') or SECRET_KEY
     
     # Server settings
     SERVER_HOST = os.environ.get('SERVER_HOST') or '0.0.0.0'

@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (SUB_TOPO_ID) {
         await loadExistingSubTopology();
     }
+    setupThemeListener();
 });
 
 async function loadAllDevices() {
@@ -48,6 +49,12 @@ async function loadExistingSubTopology() {
 
         document.getElementById('sub-topo-name').value = data.name || '';
         document.getElementById('sub-topo-desc').value = data.description || '';
+        themeMode = (data.theme_mode || 'standard').toLowerCase();
+
+        const themeSelect = document.getElementById('theme-mode-select');
+        if (themeSelect) {
+            themeSelect.value = themeMode;
+        }
 
         // Select devices
         data.devices.forEach(d => selectedDeviceIds.add(d.id));
@@ -326,13 +333,13 @@ function syncOverlayNodes() {
     const nodes = previewNodes.get();
     const networkEl = document.getElementById('preview-network');
     const overlayEl = container;
-    
+
     // Calculate offset between network container and overlay parent
     const netRect = networkEl.getBoundingClientRect();
     const overlayRect = overlayEl.getBoundingClientRect();
     const offsetX = netRect.left - overlayRect.left;
     const offsetY = netRect.top - overlayRect.top;
-    
+
     nodes.forEach(node => {
         const el = document.getElementById(`premium-node-${node.id}`);
         if (!el) return;
@@ -347,44 +354,115 @@ function syncOverlayNodes() {
         // Center the element on the glass frame
         const width = el.offsetWidth;
         const height = el.offsetHeight;
-        
+
         // Apply offset correction
         el.style.left = `${domPos.x + offsetX - (width / 2)}px`;
         el.style.top = `${domPos.y + offsetY - (height / 2)}px`;
 
-        // Scale with zoom
+        // Keep switch cards readable when the preview zooms out.
         const scale = previewNetwork.getScale();
-        el.style.transform = `scale(${Math.max(0.3, Math.min(1.5, scale))})`;
+        const isSwitchNode = !!el.querySelector('.rackmount-node');
+        const effectiveScale = isSwitchNode
+            ? Math.max(1.08, Math.min(1.55, scale * 1.55))
+            : Math.max(0.45, Math.min(1.5, scale));
+        el.style.transform = `scale(${effectiveScale})`;
+    });
+}
+
+function snapshotCurrentPreviewPositions() {
+    if (!previewNetwork || previewNodes.length === 0) return;
+
+    const positions = previewNetwork.getPositions();
+    Object.entries(positions || {}).forEach(([nodeId, pos]) => {
+        if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+            savedNodePositions[nodeId] = { x: pos.x, y: pos.y };
+        }
+    });
+}
+
+function getNewNodePlacement(existingPositions, newNodeIndex, totalNewNodes) {
+    if (!existingPositions.length) {
+        return null;
+    }
+
+    const xs = existingPositions.map(p => p.x);
+    const ys = existingPositions.map(p => p.y);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const centerY = (minY + maxY) / 2;
+
+    const columnX = maxX + 220;
+    const spacingY = 110;
+    const startY = centerY - ((totalNewNodes - 1) * spacingY) / 2;
+
+    return {
+        x: columnX,
+        y: startY + (newNodeIndex * spacingY)
+    };
+}
+
+function cleanupStalePremiumNodes(selectedDevices) {
+    const container = document.getElementById('dom-overlay-container');
+    if (!container) return;
+
+    const selectedIds = new Set((selectedDevices || []).map(d => String(d.id)));
+    container.querySelectorAll('[id^="premium-node-"]').forEach(el => {
+        const nodeId = String(el.getAttribute('data-node-id') || '').trim();
+        if (!selectedIds.has(nodeId)) {
+            el.remove();
+        }
     });
 }
 
 function updatePreview() {
+    snapshotCurrentPreviewPositions();
+
     const selectedDevices = allDevices.filter(d => selectedDeviceIds.has(d.id));
+    cleanupStalePremiumNodes(selectedDevices);
 
     previewNodes.clear();
     previewEdges.clear();
 
-    if (selectedDevices.length === 0) return;
+    if (selectedDevices.length === 0) {
+        const container = document.getElementById('dom-overlay-container');
+        if (container) container.innerHTML = '';
+        return;
+    }
 
     const count = selectedDevices.length;
     const radius = Math.max(150, count * 30);
     const angleStep = (2 * Math.PI) / count;
+    const devicesWithSavedPositions = selectedDevices.filter(d => savedNodePositions[d.id]);
+    const existingPositions = devicesWithSavedPositions.map(d => savedNodePositions[d.id]);
+    const devicesWithoutSavedPositions = selectedDevices.filter(d => !savedNodePositions[d.id]);
+    const hasExistingLayout = existingPositions.length > 0;
+    let newNodeCounter = 0;
 
     selectedDevices.forEach((device, index) => {
         const color = getStatusColor(device.status);
         const icon = getDeviceIcon(device.device_type);
-        
+
         // Use saved position if available, otherwise circle layout
-        const savedPos = savedNodePositions[device.id];
+        let savedPos = savedNodePositions[device.id];
+        if (!savedPos && hasExistingLayout) {
+            savedPos = getNewNodePlacement(existingPositions, newNodeCounter, devicesWithoutSavedPositions.length);
+            if (savedPos) {
+                savedNodePositions[device.id] = savedPos;
+                newNodeCounter += 1;
+            }
+        }
+
         const angle = index * angleStep;
         const nodeX = savedPos ? savedPos.x : radius * Math.cos(angle);
         const nodeY = savedPos ? savedPos.y : radius * Math.sin(angle);
 
-        if (themeMode === 'premium') {
+        const isPremiumMode = (themeMode || '').toLowerCase() === 'premium';
+        if (isPremiumMode) {
             // In premium mode, the actual vis.js node is just a transparent hit area
             previewNodes.add({
                 id: device.id,
-                label: '', // Hide canvas label
+                label: null, // Forcefully hide canvas label
                 x: nodeX,
                 y: nodeY,
                 fixed: savedPos ? { x: false, y: false } : undefined,
@@ -395,6 +473,7 @@ function updatePreview() {
                     border: 'rgba(0,0,0,0)',
                     highlight: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' }
                 },
+                font: { size: 0, color: 'rgba(0,0,0,0)' }, // Ensure canvas label is invisible
                 title: `${device.name} (${device.ip_address})`
             });
 
@@ -420,7 +499,7 @@ function updatePreview() {
                 font: { color: getTextColor(), size: 12 },
                 title: `${device.name}\n${device.ip_address}\nType: ${device.device_type || 'N/A'}\nStatus: ${device.status}`
             });
-            
+
             // Remove premium node if exists
             const el = document.getElementById(`premium-node-${device.id}`);
             if (el) el.remove();
@@ -456,11 +535,11 @@ function updatePreview() {
         }
     });
 
-    // If we have saved positions for all nodes, skip physics and just fit
+    // Preserve the existing layout when editing; only brand-new topologies should use circle/physics layout.
     const allHavePositions = selectedDevices.every(d => savedNodePositions[d.id]);
     if (previewNetwork) {
-        if (allHavePositions && selectedDevices.length > 0) {
-            // All nodes have saved positions — no physics needed
+        if ((allHavePositions || hasExistingLayout) && selectedDevices.length > 0) {
+            // Existing layouts should stay fixed even when new devices are added.
             previewNetwork.setOptions({ physics: { enabled: false } });
             setTimeout(() => {
                 fitPreviewCentered();
@@ -787,6 +866,36 @@ function getTextColor() {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? '#e2e8f0' : '#1e293b';
 }
 
+function applyThemeToBuilderPreview() {
+    renderDeviceList();
+
+    const container = document.getElementById('preview-network');
+    if (container) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        container.style.backgroundColor = isDark ? '#1a1a2e' : '#f8fafc';
+    }
+
+    updatePreview();
+
+    if (previewNetwork) {
+        setTimeout(() => {
+            if (previewNetwork) {
+                previewNetwork.redraw();
+                syncOverlayNodes();
+            }
+        }, 0);
+    }
+}
+
+function setupThemeListener() {
+    const observer = new MutationObserver(() => {
+        applyThemeToBuilderPreview();
+    });
+
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.addEventListener('themechange', applyThemeToBuilderPreview);
+}
+
 function getStatusColor(status) {
     switch (status) {
         case 'up': return '#10b981';
@@ -832,7 +941,7 @@ function getSvgIcon(emoji, color, size = 100) {
 function renderPremiumDOMNode(device) {
     const container = document.getElementById('dom-overlay-container');
     let el = document.getElementById(`premium-node-${device.id}`);
-    
+
     if (!el) {
         el = document.createElement('div');
         el.id = `premium-node-${device.id}`;
@@ -844,11 +953,13 @@ function renderPremiumDOMNode(device) {
     const type = (device.device_type || 'server').toLowerCase();
     const isServer = type === 'server' || type === 'vmware';
     const isSwitch = type === 'switch';
-    
+    const isWireless = type === 'wireless' || type === 'wifi';
+
     // Choose Template
     let templateId = 'floating-node-template';
     if (isServer) templateId = 'wide-server-template';
     if (isSwitch) templateId = 'rackmount-hardware-template';
+    if (isWireless) templateId = 'wireless-ap-template';
 
     const templateNode = document.getElementById(templateId);
     if (!templateNode) return;
@@ -874,12 +985,17 @@ function renderPremiumDOMNode(device) {
         .replace(/{ip}/g, device.ip_address || 'N/A')
         .replace(/{icon}/g, icon)
         .replace(/{status}/g, device.status || 'unknown')
+        .replace(/{type-label}/g, device.device_type || 'N/A')
+        .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
         .replace(/{glow-class}/g, glowClass);
 
     // Switch/Hardware Image path
     if (isSwitch) {
         // Use the generated switch icon
-        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png');
+        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png?v=2');
+    }
+    if (isWireless) {
+        html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
     }
 
     // Dynamic metrics for visual flair
@@ -890,4 +1006,37 @@ function renderPremiumDOMNode(device) {
     }
 
     el.innerHTML = html;
+
+    // FORCE POSITION VIA JS - Bypasses all CSS Caching
+    setTimeout(() => {
+        if (isSwitch) {
+            const title = el.querySelector('.hardware-title');
+            const ip = el.querySelector('.hardware-ip');
+            if (title) {
+                title.style.setProperty('position', 'absolute', 'important');
+                title.style.setProperty('display', 'block', 'important');
+            }
+            if (ip) {
+                ip.style.setProperty('position', 'absolute', 'important');
+                ip.style.setProperty('display', 'block', 'important');
+            }
+            return;
+        }
+
+        if (isWireless) {
+            const label = el.querySelector('.floating-label');
+            if (label) {
+                label.style.setProperty('position', 'absolute', 'important');
+                label.style.setProperty('display', 'block', 'important');
+            }
+            return;
+        }
+
+        const label = el.querySelector('.floating-label');
+        if (label) {
+            label.style.setProperty('bottom', '6px', 'important');
+            label.style.setProperty('position', 'absolute', 'important');
+            label.style.setProperty('display', 'block', 'important');
+        }
+    }, 0);
 }

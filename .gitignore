@@ -25,6 +25,7 @@ __pycache__/
 
 # Logs
 *.log
+plugin_logs/
 
 # OS
 .DS_Store

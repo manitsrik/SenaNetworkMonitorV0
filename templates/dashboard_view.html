@@ -106,10 +106,31 @@
         width: 100%;
         height: 100%;
     }
+
+    .grid-stack-item-content:fullscreen,
+    .grid-stack-item-content:-webkit-full-screen,
+    .grid-stack-item-content:-moz-full-screen {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: none !important;
+        max-height: none !important;
+        padding: 0.75rem !important;
+        border-radius: 0 !important;
+        background: var(--bg-secondary) !important;
+    }
+
+    .grid-stack-item-content:fullscreen .widget-content,
+    .grid-stack-item-content:-webkit-full-screen .widget-content,
+    .grid-stack-item-content:-moz-full-screen .widget-content {
+        height: auto !important;
+        min-height: 0 !important;
+        flex: 1 1 0 !important;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
+{% include 'partials/premium_components.html' %}
 <div class="dashboard-container" style="padding-top: 0.25rem;">
     <!-- Filters moved to header_actions -->
 
@@ -127,7 +148,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <!-- Use the new shared renderer -->
-<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=10"></script>
 <script>
     let currentDashboard = null;
     let dashboardVariables = { location: true, deviceType: true, monitorType: false, status: false };

@@ -13,6 +13,8 @@ let allConnections = []; // Store all connections
 let isGroupedView = false; // Toggle for grouped/free view
 let isWirelessView = false; // Toggle for wireless view
 let isConnectMode = false; // Toggle for drag-to-connect mode
+let highlightedTopologyDeviceIds = [];
+let topologyFocusDeviceId = null;
 
 // Location type zones base configuration
 const locationTypeZonesBase = {
@@ -52,11 +54,30 @@ const ZONE_GAP = 30;
 
 // Initialize topology
 document.addEventListener('DOMContentLoaded', () => {
+    applyTopologyIncidentContext();
     initializeNetwork();
     loadTopologyData();
     setupSocketListeners();
     setupThemeListener();
 });
+
+function applyTopologyIncidentContext() {
+    const params = new URLSearchParams(window.location.search);
+    const ids = [];
+    const single = params.get('highlight_device');
+    const multiple = params.get('highlight_devices');
+
+    if (single && !Number.isNaN(Number(single))) ids.push(Number(single));
+    if (multiple) {
+        multiple.split(',').forEach(value => {
+            const num = Number(String(value).trim());
+            if (!Number.isNaN(num)) ids.push(num);
+        });
+    }
+
+    highlightedTopologyDeviceIds = [...new Set(ids)];
+    topologyFocusDeviceId = highlightedTopologyDeviceIds[0] || null;
+}
 
 // Get text color based on current theme
 function getTextColor() {
@@ -618,6 +639,7 @@ function updateTopology(devices, connections) {
     displayDevices.forEach(device => {
         const color = getNodeColor(device.status);
         const iconEmoji = getDeviceIcon(device.device_type);
+        const isHighlighted = highlightedTopologyDeviceIds.includes(device.id);
         const svgSize = isGroupedView ? 80 : 150; // Increased size for Free View
         const iconSvg = getSvgIcon(iconEmoji, color, svgSize);
         const deviceType = device.device_type || 'other';
@@ -646,19 +668,26 @@ function updateTopology(devices, connections) {
                     border: '#ffffff'
                 }
             },
-            size: isGroupedView ? 80 : 170, // Increased to 170 for Free View
+            size: isHighlighted ? (isGroupedView ? 100 : 210) : (isGroupedView ? 80 : 170), // Increased to 170 for Free View
             font: {
                 multi: true,
-                size: isGroupedView ? 80 : 170, // Proportional font size
+                size: isHighlighted ? (isGroupedView ? 100 : 210) : (isGroupedView ? 80 : 170), // Proportional font size
                 face: 'Inter, sans-serif',
                 mod: isGroupedView ? '' : '',
                 vadjust: isGroupedView ? 0 : -5,
                 color: getTextColor(),
                 bold: {
-                    size: isGroupedView ? 90 : 180,
+                    size: isHighlighted ? (isGroupedView ? 110 : 220) : (isGroupedView ? 90 : 180),
                     vadjust: 0
                 }
-            }
+            },
+            shadow: isHighlighted ? {
+                enabled: true,
+                color: 'rgba(64, 145, 108, 0.45)',
+                size: 30,
+                x: 0,
+                y: 0
+            } : undefined
         };
 
         // Calculate fixed position if grouped view is enabled
@@ -801,6 +830,36 @@ function updateTopology(devices, connections) {
         });
         network.stabilize();
     }
+
+    applyTopologyFocus(displayDevices);
+}
+
+function applyTopologyFocus(displayDevices) {
+    if (!network || !highlightedTopologyDeviceIds.length) return;
+
+    const visibleIds = highlightedTopologyDeviceIds.filter(id => displayDevices.some(d => d.id === id));
+    if (!visibleIds.length) return;
+
+    network.selectNodes(visibleIds);
+
+    const focusId = visibleIds.includes(topologyFocusDeviceId) ? topologyFocusDeviceId : visibleIds[0];
+    if (focusId) {
+        network.focus(focusId, {
+            scale: isGroupedView ? 0.9 : 1.1,
+            animation: {
+                duration: 600,
+                easingFunction: 'easeInOutQuad'
+            }
+        });
+    } else {
+        network.fit({
+            nodes: visibleIds,
+            animation: {
+                duration: 600,
+                easingFunction: 'easeInOutQuad'
+            }
+        });
+    }
 }
 
 // Get location type label
@@ -938,6 +997,7 @@ function updateNodeStatus(device) {
         const iconEmoji = getDeviceIcon(device.device_type);
         const iconSvg = getSvgIcon(iconEmoji, color);
         const deviceType = device.device_type || 'other';
+        const isHighlighted = highlightedTopologyDeviceIds.includes(device.id);
 
         nodes.update({
             id: device.id,
@@ -945,6 +1005,14 @@ function updateNodeStatus(device) {
             title: `${iconEmoji} ${device.name}\n${device.ip_address}\nType: ${deviceType}\nStatus: ${device.status}\n${device.response_time !== null && device.response_time !== undefined ? `Response: ${device.response_time}ms` : ''}`,
             shape: 'image',
             image: iconSvg,
+            size: isHighlighted ? (isGroupedView ? 100 : 210) : (isGroupedView ? 80 : 170),
+            shadow: isHighlighted ? {
+                enabled: true,
+                color: 'rgba(64, 145, 108, 0.45)',
+                size: 30,
+                x: 0,
+                y: 0
+            } : undefined,
             color: {
                 background: color,
                 border: color,

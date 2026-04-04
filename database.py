@@ -3,6 +3,9 @@ Database management for Network Monitor
 Supports PostgreSQL (primary) and SQLite (fallback)
 """
 import sqlite3
+import hashlib
+import json
+import math
 from datetime import datetime, timedelta
 from config import Config
 
@@ -121,6 +124,11 @@ class Database:
                 result[k] = v.isoformat()
             else:
                 result[k] = v
+        if 'plugin_config_json' in result:
+            try:
+                result['plugin_config'] = json.loads(result['plugin_config_json']) if result['plugin_config_json'] else {}
+            except Exception:
+                result['plugin_config'] = {}
         return result
     
     def _rows_to_dicts(self, rows):
@@ -192,6 +200,7 @@ class Database:
                 ssh_port INTEGER DEFAULT 22,
                 wmi_username TEXT,
                 wmi_password TEXT,
+                plugin_config_json TEXT,
                 cpu_usage REAL,
                 ram_usage REAL,
                 disk_usage REAL,
@@ -289,6 +298,7 @@ class Database:
             ('ssh_port', 'INTEGER DEFAULT 22'),
             ('wmi_username', 'TEXT'),
             ('wmi_password', 'TEXT'),
+            ('plugin_config_json', 'TEXT'),
             ('expected_ports', 'TEXT'),
             ('cpu_usage', 'REAL'),
             ('ram_usage', 'REAL'),
@@ -376,7 +386,7 @@ class Database:
                 FOREIGN KEY (device_id) REFERENCES devices(id)
             )
         ''')
-        
+
         # Maintenance windows table
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS maintenance_windows (
@@ -410,6 +420,131 @@ class Database:
             )
         ''')
 
+        # Incident workflow state table
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS incident_states (
+                id {pk},
+                incident_id TEXT UNIQUE NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                note TEXT,
+                owner_user_id INTEGER,
+                owner_username TEXT,
+                acknowledged_by_user_id INTEGER,
+                acknowledged_by_username TEXT,
+                acknowledged_at TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (owner_user_id) REFERENCES users(id),
+                FOREIGN KEY (acknowledged_by_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS incident_activity (
+                id {pk},
+                incident_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT,
+                note TEXT,
+                actor_user_id INTEGER,
+                actor_username TEXT,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (actor_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS persistent_incidents (
+                id {pk},
+                incident_id TEXT UNIQUE NOT NULL,
+                started_at TIMESTAMP,
+                latest_at TIMESTAMP,
+                severity TEXT,
+                alert_count INTEGER DEFAULT 0,
+                device_count INTEGER DEFAULT 0,
+                root_cause_device_id INTEGER,
+                root_cause_device_name TEXT,
+                workflow_status TEXT,
+                workflow_owner_username TEXT,
+                is_active {bool_type} DEFAULT {bool_default_true},
+                payload_json TEXT,
+                last_materialized_at TIMESTAMP DEFAULT {timestamp_default},
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                updated_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (root_cause_device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS anomaly_snapshots (
+                id {pk},
+                anomaly_key TEXT UNIQUE NOT NULL,
+                device_id INTEGER,
+                device_name TEXT,
+                anomaly_type TEXT NOT NULL,
+                metric_name TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                score REAL,
+                summary TEXT,
+                details_json TEXT,
+                detected_at TIMESTAMP DEFAULT {timestamp_default},
+                last_seen_at TIMESTAMP DEFAULT {timestamp_default},
+                is_active {bool_type} DEFAULT {bool_default_true},
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                updated_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS anomaly_states (
+                id {pk},
+                anomaly_key TEXT UNIQUE NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                note TEXT,
+                owner_user_id INTEGER,
+                owner_username TEXT,
+                acknowledged_by_user_id INTEGER,
+                acknowledged_by_username TEXT,
+                acknowledged_at TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (owner_user_id) REFERENCES users(id),
+                FOREIGN KEY (acknowledged_by_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS anomaly_activity (
+                id {pk},
+                anomaly_key TEXT NOT NULL,
+                action TEXT NOT NULL,
+                old_status TEXT,
+                new_status TEXT,
+                note TEXT,
+                actor_user_id INTEGER,
+                actor_username TEXT,
+                created_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (actor_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS anomaly_incident_links (
+                id {pk},
+                anomaly_key TEXT UNIQUE NOT NULL,
+                incident_id TEXT NOT NULL,
+                note TEXT,
+                linked_by_user_id INTEGER,
+                linked_by_username TEXT,
+                linked_at TIMESTAMP DEFAULT {timestamp_default},
+                updated_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (linked_by_user_id) REFERENCES users(id)
+            )
+        ''')
+
+        # Commit baseline schema before PostgreSQL migration blocks that may rollback.
+        conn.commit()
+
         # Migration: Add telegram_chat_id to users table
         try:
             if self.db_type == 'postgresql':
@@ -418,6 +553,36 @@ class Database:
                 conn.commit()
             else:
                 cursor.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+
+        # Migration: Add incident owner columns
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute("ALTER TABLE incident_states ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id)")
+                cursor.execute("ALTER TABLE incident_states ADD COLUMN IF NOT EXISTS owner_username TEXT")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE incident_states ADD COLUMN owner_user_id INTEGER")
+                cursor.execute("ALTER TABLE incident_states ADD COLUMN owner_username TEXT")
+                conn.commit()
+        except Exception:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+
+        # Migration: Add anomaly owner columns
+        try:
+            if self.db_type == 'postgresql':
+                conn.rollback()
+                cursor.execute("ALTER TABLE anomaly_states ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id)")
+                cursor.execute("ALTER TABLE anomaly_states ADD COLUMN IF NOT EXISTS owner_username TEXT")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE anomaly_states ADD COLUMN owner_user_id INTEGER")
+                cursor.execute("ALTER TABLE anomaly_states ADD COLUMN owner_username TEXT")
                 conn.commit()
         except Exception:
             if self.db_type == 'postgresql':
@@ -783,6 +948,13 @@ class Database:
         # alert_history indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ah_device_event ON alert_history(device_id, event_type, created_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_ah_created_at ON alert_history(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_incident_states_status ON incident_states(status, updated_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_incident_activity_incident ON incident_activity(incident_id, created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_persistent_incidents_active ON persistent_incidents(is_active, latest_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_anomaly_snapshots_active ON anomaly_snapshots(is_active, detected_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_anomaly_states_status ON anomaly_states(status, updated_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_anomaly_activity_key ON anomaly_activity(anomaly_key, created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_anomaly_incident_links_incident ON anomaly_incident_links(incident_id, updated_at)')
         
         # devices indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(device_type)')
@@ -813,7 +985,8 @@ class Database:
                    tcp_port=80, dns_query_domain='google.com', location_type='on-premise',
                    latitude=None, longitude=None, is_enabled=True, parent_device_id=None,
                    ssh_username=None, ssh_password=None, ssh_port=22,
-                   wmi_username=None, wmi_password=None, expected_ports=None):
+                   wmi_username=None, wmi_password=None, expected_ports=None,
+                   plugin_config_json=None):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -835,8 +1008,8 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password, expected_ports)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       wmi_username, wmi_password, expected_ports, plugin_config_json)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
@@ -848,7 +1021,7 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, is_enabled, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password, expected_ports))
+                      wmi_username, wmi_password, expected_ports, plugin_config_json))
                 device_id = cursor.fetchone()['id']
             else:
                 status_init = 'disabled' if not is_enabled else 'unknown'
@@ -862,8 +1035,8 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password, expected_ports)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       wmi_username, wmi_password, expected_ports, plugin_config_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -874,7 +1047,7 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, 1 if is_enabled else 0, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password, expected_ports))
+                      wmi_username, wmi_password, expected_ports, plugin_config_json))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -919,7 +1092,8 @@ class Database:
                      parent_device_id='__NOT_SET__',
                      ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
                      ssh_port='__NOT_SET__',
-                     wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__'):
+                     wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__',
+                     plugin_config_json='__NOT_SET__'):
         """Update device information"""
         # Strip whitespace from IP address and name
         if ip_address:
@@ -1011,6 +1185,9 @@ class Database:
             if expected_ports != '__NOT_SET__':
                 updates.append(f'expected_ports = {ph}')
                 params.append(expected_ports)
+            if plugin_config_json != '__NOT_SET__':
+                updates.append(f'plugin_config_json = {ph}')
+                params.append(plugin_config_json)
             
             if is_enabled is not None:
                 updates.append(f'is_enabled = {ph}')
@@ -1844,6 +2021,1304 @@ class Database:
         history = self._rows_to_dicts(cursor.fetchall())
         self.release_connection(conn)
         return history
+
+    def get_alert_incidents(self, limit=200, window_minutes=10, dedupe_minutes=2):
+        """
+        Correlate recent alert history into incident groups.
+
+        MVP correlation rules:
+        - Deduplicate multi-channel alert sends for the same device/event in a short window
+        - Group alerts that happen close in time and are related by:
+          - same device
+          - direct parent/child dependency
+          - topology connection
+        """
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+
+            cursor.execute(f'''
+                SELECT ah.*, d.name as device_name, d.ip_address, d.location, d.device_type,
+                       d.parent_device_id
+                FROM alert_history ah
+                LEFT JOIN devices d ON ah.device_id = d.id
+                WHERE ah.status = 'sent'
+                ORDER BY ah.created_at DESC
+                LIMIT {ph}
+            ''', (limit,))
+            raw_alerts = self._rows_to_dicts(cursor.fetchall())
+
+            if not raw_alerts:
+                return []
+
+            cursor.execute('SELECT id, name, parent_device_id, location, device_type FROM devices')
+            devices = self._rows_to_dicts(cursor.fetchall())
+            device_map = {d['id']: d for d in devices if d.get('id') is not None}
+
+            cursor.execute('SELECT device_id, connected_to FROM topology')
+            topology_rows = self._rows_to_dicts(cursor.fetchall())
+
+            graph = {}
+
+            def _link(a, b):
+                if not a or not b:
+                    return
+                graph.setdefault(a, set()).add(b)
+                graph.setdefault(b, set()).add(a)
+
+            for d in devices:
+                parent_id = d.get('parent_device_id')
+                if parent_id:
+                    _link(d.get('id'), parent_id)
+
+            for row in topology_rows:
+                _link(row.get('device_id'), row.get('connected_to'))
+
+            def _parse_dt(value):
+                if not value:
+                    return None
+                try:
+                    return datetime.fromisoformat(str(value))
+                except Exception:
+                    return None
+
+            dedupe_delta = timedelta(minutes=max(1, dedupe_minutes))
+            incident_delta = timedelta(minutes=max(1, window_minutes))
+
+            # Work oldest -> newest so grouping is stable.
+            alerts = list(reversed(raw_alerts))
+            unique_events = []
+
+            for alert in alerts:
+                alert_dt = _parse_dt(alert.get('created_at'))
+                if alert_dt is None:
+                    continue
+
+                duplicate = False
+                for existing in reversed(unique_events):
+                    if existing.get('device_id') != alert.get('device_id'):
+                        continue
+                    if existing.get('event_type') != alert.get('event_type'):
+                        continue
+
+                    existing_dt = existing.get('_dt')
+                    if existing_dt is None:
+                        continue
+
+                    if abs(alert_dt - existing_dt) <= dedupe_delta:
+                        channels = existing.setdefault('channels', [])
+                        if alert.get('channel') and alert.get('channel') not in channels:
+                            channels.append(alert.get('channel'))
+                        duplicate = True
+                        break
+
+                if duplicate:
+                    continue
+
+                copied = dict(alert)
+                copied['_dt'] = alert_dt
+                copied['channels'] = [alert.get('channel')] if alert.get('channel') else []
+                unique_events.append(copied)
+
+            incidents = []
+
+            def _is_related(device_a, device_b):
+                if not device_a or not device_b:
+                    return False
+                if device_a == device_b:
+                    return True
+                neighbors = graph.get(device_a, set())
+                if device_b in neighbors:
+                    return True
+                reverse_neighbors = graph.get(device_b, set())
+                if device_a in reverse_neighbors:
+                    return True
+                return False
+
+            for event in unique_events:
+                event_dt = event.get('_dt')
+                event_device = event.get('device_id')
+                matched = None
+
+                for incident in reversed(incidents):
+                    if event_dt - incident['_latest_dt'] > incident_delta:
+                        continue
+
+                    related = False
+                    for member in incident['alerts']:
+                        if _is_related(event_device, member.get('device_id')):
+                            related = True
+                            break
+
+                    if related:
+                        matched = incident
+                        break
+
+                if matched is None:
+                    matched = {
+                        'id': f"incident-{len(incidents) + 1}",
+                        'started_at': event.get('created_at'),
+                        'latest_at': event.get('created_at'),
+                        '_latest_dt': event_dt,
+                        'devices': set(),
+                        'channels': set(),
+                        'event_types': set(),
+                        'alerts': [],
+                    }
+                    incidents.append(matched)
+
+                matched['alerts'].append({
+                    'device_id': event.get('device_id'),
+                    'device_name': event.get('device_name'),
+                    'ip_address': event.get('ip_address'),
+                    'location': event.get('location'),
+                    'device_type': event.get('device_type'),
+                    'event_type': event.get('event_type'),
+                    'message': event.get('message'),
+                    'created_at': event.get('created_at'),
+                    'channels': event.get('channels', []),
+                })
+                if event_dt > matched['_latest_dt']:
+                    matched['_latest_dt'] = event_dt
+                    matched['latest_at'] = event.get('created_at')
+                if event.get('device_id'):
+                    matched['devices'].add(event.get('device_id'))
+                for channel in event.get('channels', []):
+                    matched['channels'].add(channel)
+                if event.get('event_type'):
+                    matched['event_types'].add(event.get('event_type'))
+
+            formatted = []
+            for index, incident in enumerate(reversed(incidents), start=1):
+                device_ids = sorted([d for d in incident['devices'] if d is not None])
+                root_cause = None
+
+                for device_id in device_ids:
+                    device = device_map.get(device_id) or {}
+                    if device.get('parent_device_id') in device_ids:
+                        continue
+                    root_cause = {
+                        'device_id': device_id,
+                        'device_name': device.get('name'),
+                    }
+                    break
+
+                if root_cause is None and incident['alerts']:
+                    first = incident['alerts'][0]
+                    root_cause = {
+                        'device_id': first.get('device_id'),
+                        'device_name': first.get('device_name'),
+                    }
+
+                severity = 'warning'
+                if any(a.get('event_type') == 'down' for a in incident['alerts']):
+                    severity = 'critical'
+                elif any(a.get('event_type') == 'ssl_expiry' for a in incident['alerts']):
+                    severity = 'warning'
+                elif any(a.get('event_type') == 'recovery' for a in incident['alerts']):
+                    severity = 'info'
+
+                stable_source = '|'.join([
+                    str(incident['started_at'] or ''),
+                    ','.join(str(d) for d in device_ids),
+                    ','.join(sorted(incident['event_types'])),
+                    str((root_cause or {}).get('device_id') or ''),
+                ])
+                incident_id = f"inc-{hashlib.sha1(stable_source.encode('utf-8')).hexdigest()[:16]}"
+
+                state = self.get_incident_state(incident_id)
+                activity = self.get_incident_activity(incident_id, limit=10)
+
+                formatted.append({
+                    'id': incident_id,
+                    'sequence': index,
+                    'started_at': incident['started_at'],
+                    'latest_at': incident['latest_at'],
+                    'severity': severity,
+                    'alert_count': len(incident['alerts']),
+                    'device_count': len(device_ids),
+                    'device_ids': device_ids,
+                    'channels': sorted(incident['channels']),
+                    'event_types': sorted(incident['event_types']),
+                    'root_cause_candidate': root_cause,
+                    'summary': f"{len(incident['alerts'])} alert(s) across {len(device_ids)} device(s)",
+                    'workflow_status': (state or {}).get('status', 'open'),
+                    'workflow_note': (state or {}).get('note'),
+                    'workflow_updated_at': (state or {}).get('updated_at'),
+                    'workflow_acknowledged_at': (state or {}).get('acknowledged_at'),
+                    'workflow_acknowledged_by': (state or {}).get('acknowledged_by_username'),
+                    'workflow_owner_user_id': (state or {}).get('owner_user_id'),
+                    'workflow_owner_username': (state or {}).get('owner_username'),
+                    'activity': activity,
+                    'alerts': list(reversed(incident['alerts'])),
+                })
+
+            return formatted
+        finally:
+            self.release_connection(conn)
+
+    def get_incident_state(self, incident_id):
+        """Get persisted workflow state for a correlated incident."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM incident_states WHERE incident_id = {self._ph()}',
+                (incident_id,)
+            )
+            row = cursor.fetchone()
+            return self._row_to_dict(row)
+        finally:
+            self.release_connection(conn)
+
+    def update_incident_state(self, incident_id, status, user_id=None, username=None, note=None):
+        """Create or update workflow state for a correlated incident."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+
+            existing = self.get_incident_state(incident_id)
+            old_status = (existing or {}).get('status')
+            if existing:
+                cursor.execute(f'''
+                    UPDATE incident_states
+                    SET status = {self._ph()},
+                        note = {self._ph()},
+                        acknowledged_by_user_id = {self._ph()},
+                        acknowledged_by_username = {self._ph()},
+                        acknowledged_at = {self._ph()},
+                        updated_at = {self._ph()}
+                    WHERE incident_id = {self._ph()}
+                ''', (
+                    status,
+                    note,
+                    user_id,
+                    username,
+                    now,
+                    now,
+                    incident_id,
+                ))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO incident_states (
+                        incident_id, status, note, acknowledged_by_user_id,
+                        acknowledged_by_username, acknowledged_at, updated_at
+                    )
+                    VALUES ({self._ph(7)})
+                ''', (
+                    incident_id,
+                    status,
+                    note,
+                    user_id,
+                    username,
+                    now,
+                    now,
+                ))
+
+            self.add_incident_activity(
+                incident_id=incident_id,
+                action='status_change',
+                old_status=old_status,
+                new_status=status,
+                note=note,
+                actor_user_id=user_id,
+                actor_username=username,
+                conn=conn,
+                cursor=cursor,
+            )
+
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def update_incident_owner(self, incident_id, owner_user_id=None, owner_username=None,
+                              actor_user_id=None, actor_username=None, note=None):
+        """Assign or reassign an owner for a correlated incident."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+            existing = self.get_incident_state(incident_id) or {}
+            old_owner = existing.get('owner_username')
+
+            if existing:
+                cursor.execute(f'''
+                    UPDATE incident_states
+                    SET owner_user_id = {self._ph()},
+                        owner_username = {self._ph()},
+                        updated_at = {self._ph()}
+                    WHERE incident_id = {self._ph()}
+                ''', (
+                    owner_user_id,
+                    owner_username,
+                    now,
+                    incident_id,
+                ))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO incident_states (
+                        incident_id, status, note, owner_user_id, owner_username,
+                        acknowledged_by_user_id, acknowledged_by_username, acknowledged_at, updated_at
+                    )
+                    VALUES ({self._ph(9)})
+                ''', (
+                    incident_id,
+                    'open',
+                    None,
+                    owner_user_id,
+                    owner_username,
+                    None,
+                    None,
+                    None,
+                    now,
+                ))
+
+            self.add_incident_activity(
+                incident_id=incident_id,
+                action='owner_change',
+                old_status=old_owner,
+                new_status=owner_username or 'unassigned',
+                note=note,
+                actor_user_id=actor_user_id,
+                actor_username=actor_username,
+                conn=conn,
+                cursor=cursor,
+            )
+
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def add_incident_activity(self, incident_id, action, old_status=None, new_status=None,
+                              note=None, actor_user_id=None, actor_username=None,
+                              conn=None, cursor=None):
+        """Append an activity log entry for an incident."""
+        own_conn = conn is None or cursor is None
+        if own_conn:
+            conn = self.get_connection()
+            cursor = self._cursor(conn)
+        try:
+            now = datetime.now().isoformat()
+            cursor.execute(f'''
+                INSERT INTO incident_activity (
+                    incident_id, action, old_status, new_status, note,
+                    actor_user_id, actor_username, created_at
+                )
+                VALUES ({self._ph(8)})
+            ''', (
+                incident_id,
+                action,
+                old_status,
+                new_status,
+                note,
+                actor_user_id,
+                actor_username,
+                now,
+            ))
+            if own_conn:
+                conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if own_conn:
+                return {'success': False, 'error': str(e)}
+            raise
+        finally:
+            if own_conn:
+                self.release_connection(conn)
+
+    def get_incident_activity(self, incident_id, limit=20):
+        """Get recent activity log entries for an incident."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'''
+                SELECT * FROM incident_activity
+                WHERE incident_id = {self._ph()}
+                ORDER BY created_at DESC
+                LIMIT {self._ph()}
+            ''', (incident_id, limit))
+            return self._rows_to_dicts(cursor.fetchall())
+        finally:
+            self.release_connection(conn)
+
+    def sync_persistent_incidents(self, limit=500, window_minutes=10, dedupe_minutes=2):
+        """
+        Materialize current correlated incidents into a persistent table.
+
+        This keeps a durable incident snapshot for reporting, analytics, and
+        future lifecycle extensions while correlation is still computed live.
+        """
+        incidents = self.get_alert_incidents(
+            limit=limit,
+            window_minutes=window_minutes,
+            dedupe_minutes=dedupe_minutes,
+        )
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+            ph = self._ph()
+
+            # Mark everything inactive first; current incidents will be reactivated below.
+            if self.db_type == 'postgresql':
+                cursor.execute('UPDATE persistent_incidents SET is_active = FALSE, updated_at = %s', (now,))
+            else:
+                cursor.execute('UPDATE persistent_incidents SET is_active = 0, updated_at = ?', (now,))
+
+            for incident in incidents:
+                root = incident.get('root_cause_candidate') or {}
+                payload_json = json.dumps(incident, ensure_ascii=False)
+                active_flag = True if self.db_type == 'postgresql' else 1
+
+                if self.db_type == 'postgresql':
+                    cursor.execute(f'''
+                        INSERT INTO persistent_incidents (
+                            incident_id, started_at, latest_at, severity, alert_count, device_count,
+                            root_cause_device_id, root_cause_device_name, workflow_status,
+                            workflow_owner_username, is_active, payload_json,
+                            last_materialized_at, created_at, updated_at
+                        )
+                        VALUES ({self._ph(15)})
+                        ON CONFLICT (incident_id) DO UPDATE SET
+                            started_at = EXCLUDED.started_at,
+                            latest_at = EXCLUDED.latest_at,
+                            severity = EXCLUDED.severity,
+                            alert_count = EXCLUDED.alert_count,
+                            device_count = EXCLUDED.device_count,
+                            root_cause_device_id = EXCLUDED.root_cause_device_id,
+                            root_cause_device_name = EXCLUDED.root_cause_device_name,
+                            workflow_status = EXCLUDED.workflow_status,
+                            workflow_owner_username = EXCLUDED.workflow_owner_username,
+                            is_active = EXCLUDED.is_active,
+                            payload_json = EXCLUDED.payload_json,
+                            last_materialized_at = EXCLUDED.last_materialized_at,
+                            updated_at = EXCLUDED.updated_at
+                    ''', (
+                        incident.get('id'),
+                        incident.get('started_at'),
+                        incident.get('latest_at'),
+                        incident.get('severity'),
+                        incident.get('alert_count', 0),
+                        incident.get('device_count', 0),
+                        root.get('device_id'),
+                        root.get('device_name'),
+                        incident.get('workflow_status'),
+                        incident.get('workflow_owner_username'),
+                        active_flag,
+                        payload_json,
+                        now,
+                        now,
+                        now,
+                    ))
+                else:
+                    cursor.execute(f'''
+                        INSERT INTO persistent_incidents (
+                            incident_id, started_at, latest_at, severity, alert_count, device_count,
+                            root_cause_device_id, root_cause_device_name, workflow_status,
+                            workflow_owner_username, is_active, payload_json,
+                            last_materialized_at, created_at, updated_at
+                        )
+                        VALUES ({self._ph(15)})
+                        ON CONFLICT(incident_id) DO UPDATE SET
+                            started_at = excluded.started_at,
+                            latest_at = excluded.latest_at,
+                            severity = excluded.severity,
+                            alert_count = excluded.alert_count,
+                            device_count = excluded.device_count,
+                            root_cause_device_id = excluded.root_cause_device_id,
+                            root_cause_device_name = excluded.root_cause_device_name,
+                            workflow_status = excluded.workflow_status,
+                            workflow_owner_username = excluded.workflow_owner_username,
+                            is_active = excluded.is_active,
+                            payload_json = excluded.payload_json,
+                            last_materialized_at = excluded.last_materialized_at,
+                            updated_at = excluded.updated_at
+                    ''', (
+                        incident.get('id'),
+                        incident.get('started_at'),
+                        incident.get('latest_at'),
+                        incident.get('severity'),
+                        incident.get('alert_count', 0),
+                        incident.get('device_count', 0),
+                        root.get('device_id'),
+                        root.get('device_name'),
+                        incident.get('workflow_status'),
+                        incident.get('workflow_owner_username'),
+                        active_flag,
+                        payload_json,
+                        now,
+                        now,
+                        now,
+                    ))
+
+            conn.commit()
+            return {
+                'success': True,
+                'materialized': len(incidents),
+                'window_minutes': window_minutes,
+                'dedupe_minutes': dedupe_minutes,
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def get_persistent_incidents(self, active_only=True, limit=100):
+        """Read back materialized incident snapshots."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            query = 'SELECT * FROM persistent_incidents'
+            params = []
+            if active_only:
+                query += f' WHERE is_active = {self._ph()}'
+                params.append(True if self.db_type == 'postgresql' else 1)
+            query += f' ORDER BY latest_at DESC LIMIT {self._ph()}'
+            params.append(limit)
+            cursor.execute(query, params)
+            rows = self._rows_to_dicts(cursor.fetchall())
+            for row in rows:
+                if row.get('payload_json'):
+                    try:
+                        row['payload'] = json.loads(row['payload_json'])
+                    except Exception:
+                        row['payload'] = None
+            return rows
+        finally:
+            self.release_connection(conn)
+
+    def _calc_mean_std(self, values):
+        values = [float(v) for v in values if v is not None]
+        if not values:
+            return 0.0, 0.0
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / len(values)
+        return mean, math.sqrt(variance)
+
+    def _attach_anomaly_workflow(self, anomalies, activity_limit=10):
+        """Attach persisted workflow state and recent activity to anomalies."""
+        if not anomalies:
+            return anomalies
+
+        for anomaly in anomalies:
+            anomaly_key = anomaly.get('anomaly_key')
+            state = self.get_anomaly_state(anomaly_key) if anomaly_key else None
+            activity = self.get_anomaly_activity(anomaly_key, limit=activity_limit) if anomaly_key else []
+            linked_incident = self.get_anomaly_incident_link(anomaly_key) if anomaly_key else None
+            anomaly['workflow_status'] = (state or {}).get('status', 'open')
+            anomaly['workflow_note'] = (state or {}).get('note')
+            anomaly['workflow_updated_at'] = (state or {}).get('updated_at')
+            anomaly['workflow_acknowledged_at'] = (state or {}).get('acknowledged_at')
+            anomaly['workflow_acknowledged_by'] = (state or {}).get('acknowledged_by_username')
+            anomaly['workflow_owner_user_id'] = (state or {}).get('owner_user_id')
+            anomaly['workflow_owner_username'] = (state or {}).get('owner_username')
+            anomaly['activity'] = activity
+            anomaly['linked_incident'] = linked_incident
+        return self._attach_anomaly_incident_suggestions(anomalies)
+
+    def _attach_anomaly_incident_suggestions(self, anomalies, incident_limit=200):
+        """Attach likely related incidents to anomalies using device, location, and time proximity."""
+        if not anomalies:
+            return anomalies
+
+        incidents = self.get_persistent_incidents(active_only=True, limit=incident_limit)
+        if not incidents:
+            for anomaly in anomalies:
+                anomaly['related_incidents'] = []
+                anomaly['related_incident_count'] = 0
+                anomaly['primary_incident_suggestion'] = None
+            return anomalies
+
+        def _parse_dt(value):
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value
+            text = str(value).strip()
+            if not text:
+                return None
+            try:
+                return datetime.fromisoformat(text.replace('Z', '+00:00'))
+            except Exception:
+                return None
+
+        for anomaly in anomalies:
+            anomaly_device_id = anomaly.get('device_id')
+            anomaly_location = (anomaly.get('location') or '').strip().lower()
+            anomaly_time = _parse_dt(anomaly.get('last_seen_at') or anomaly.get('detected_at'))
+            linked_incident = anomaly.get('linked_incident') or {}
+            matches = []
+
+            for incident in incidents:
+                payload = incident.get('payload') or {}
+                incident_device_ids = set(payload.get('device_ids') or [])
+                incident_locations = {
+                    str(alert.get('location')).strip().lower()
+                    for alert in (payload.get('alerts') or [])
+                    if alert.get('location')
+                }
+                score = 0
+                reasons = []
+
+                if anomaly_device_id and anomaly_device_id in incident_device_ids:
+                    score += 5
+                    reasons.append('same device')
+                elif anomaly_device_id and incident.get('root_cause_device_id') == anomaly_device_id:
+                    score += 4
+                    reasons.append('same root cause device')
+
+                if anomaly_location and anomaly_location in incident_locations:
+                    score += 2
+                    reasons.append('same location')
+
+                incident_latest = _parse_dt(incident.get('latest_at'))
+                if anomaly_time and incident_latest:
+                    minutes_apart = abs((anomaly_time - incident_latest).total_seconds()) / 60.0
+                    if minutes_apart <= 15:
+                        score += 3
+                        reasons.append('within 15 minutes')
+                    elif minutes_apart <= 60:
+                        score += 2
+                        reasons.append('within 1 hour')
+                    elif minutes_apart <= 180:
+                        score += 1
+                        reasons.append('within 3 hours')
+
+                if score <= 0:
+                    continue
+
+                matches.append({
+                    'incident_id': incident.get('incident_id'),
+                    'severity': incident.get('severity'),
+                    'workflow_status': incident.get('workflow_status'),
+                    'summary': (payload or {}).get('summary') or f"{incident.get('alert_count', 0)} alert(s)",
+                    'latest_at': incident.get('latest_at'),
+                    'started_at': incident.get('started_at'),
+                    'score': score,
+                    'reasons': reasons,
+                    'root_cause_device_id': incident.get('root_cause_device_id'),
+                    'root_cause_device_name': incident.get('root_cause_device_name'),
+                    'device_ids': payload.get('device_ids') or [],
+                    'is_linked': linked_incident.get('incident_id') == incident.get('incident_id'),
+                })
+
+            matches = sorted(matches, key=lambda item: (-(item.get('score') or 0), item.get('latest_at') or ''))
+            matches = matches[:3]
+            anomaly['related_incidents'] = matches
+            anomaly['related_incident_count'] = len(matches)
+            anomaly['primary_incident_suggestion'] = matches[0] if matches else None
+        return anomalies
+
+    def detect_anomalies(self, recent_minutes=30, baseline_hours=24, min_points=5):
+        """
+        Detect anomalies from response time, bandwidth utilization, and system metrics.
+
+        MVP rules:
+        - Compare recent window averages against a rolling baseline
+        - Flag when z-score is large or value is materially above baseline
+        """
+        devices = self.get_all_devices()
+        if not devices:
+            return []
+
+        device_map = {d['id']: d for d in devices}
+        recent_cutoff = (datetime.now() - timedelta(minutes=recent_minutes)).isoformat()
+        baseline_cutoff = (datetime.now() - timedelta(hours=baseline_hours)).isoformat()
+
+        anomalies = []
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+
+            # Response time anomalies
+            cursor.execute(f'''
+                SELECT device_id, response_time, checked_at
+                FROM status_history
+                WHERE checked_at >= {ph}
+                  AND response_time IS NOT NULL
+                  AND status IN ('up', 'slow')
+                ORDER BY checked_at ASC
+            ''', (baseline_cutoff,))
+            rows = self._rows_to_dicts(cursor.fetchall())
+            response_by_device = {}
+            for row in rows:
+                response_by_device.setdefault(row['device_id'], []).append(row)
+
+            for device_id, samples in response_by_device.items():
+                baseline = [r['response_time'] for r in samples if r['checked_at'] < recent_cutoff]
+                recent = [r['response_time'] for r in samples if r['checked_at'] >= recent_cutoff]
+                if len(baseline) < min_points or len(recent) < 2:
+                    continue
+                mean, std = self._calc_mean_std(baseline)
+                recent_avg = sum(recent) / len(recent)
+                score = (recent_avg - mean) / std if std > 0 else (recent_avg / mean if mean > 0 else 0)
+                if (std > 0 and score >= 2.5) or (std == 0 and mean > 0 and recent_avg >= mean * 1.75 and recent_avg - mean >= 50):
+                    device = device_map.get(device_id, {})
+                    anomalies.append({
+                        'anomaly_key': f"anomaly-rt-{device_id}",
+                        'device_id': device_id,
+                        'device_name': device.get('name'),
+                        'anomaly_type': 'response_time',
+                        'metric_name': 'avg_response_time',
+                        'severity': 'critical' if score >= 4 else 'warning',
+                        'score': round(float(score), 2),
+                        'summary': f"Response time elevated for {device.get('name', device_id)}",
+                        'details': {
+                            'baseline_mean': round(mean, 2),
+                            'baseline_stddev': round(std, 2),
+                            'recent_average': round(recent_avg, 2),
+                            'recent_samples': len(recent),
+                            'baseline_samples': len(baseline),
+                        },
+                    })
+
+            # Bandwidth anomalies (utilization)
+            cursor.execute(f'''
+                SELECT device_id, util_in, util_out, sampled_at
+                FROM bandwidth_history
+                WHERE sampled_at >= {ph}
+            ''', (baseline_cutoff,))
+            rows = self._rows_to_dicts(cursor.fetchall())
+            bandwidth_by_device = {}
+            for row in rows:
+                util = max(row.get('util_in') or 0, row.get('util_out') or 0)
+                bandwidth_by_device.setdefault(row['device_id'], []).append({
+                    'value': util,
+                    'sampled_at': row['sampled_at'],
+                })
+
+            for device_id, samples in bandwidth_by_device.items():
+                baseline = [r['value'] for r in samples if r['sampled_at'] < recent_cutoff]
+                recent = [r['value'] for r in samples if r['sampled_at'] >= recent_cutoff]
+                if len(baseline) < min_points or len(recent) < 2:
+                    continue
+                mean, std = self._calc_mean_std(baseline)
+                recent_avg = sum(recent) / len(recent)
+                score = (recent_avg - mean) / std if std > 0 else (recent_avg / mean if mean > 0 else 0)
+                if recent_avg >= 70 and ((std > 0 and score >= 2.5) or (std == 0 and mean > 0 and recent_avg >= mean * 1.5)):
+                    device = device_map.get(device_id, {})
+                    anomalies.append({
+                        'anomaly_key': f"anomaly-bw-{device_id}",
+                        'device_id': device_id,
+                        'device_name': device.get('name'),
+                        'anomaly_type': 'bandwidth',
+                        'metric_name': 'utilization',
+                        'severity': 'critical' if recent_avg >= 85 else 'warning',
+                        'score': round(float(score), 2),
+                        'summary': f"Bandwidth utilization spike on {device.get('name', device_id)}",
+                        'details': {
+                            'baseline_mean': round(mean, 2),
+                            'baseline_stddev': round(std, 2),
+                            'recent_average': round(recent_avg, 2),
+                            'recent_samples': len(recent),
+                            'baseline_samples': len(baseline),
+                        },
+                    })
+
+            # System metric anomalies (CPU/RAM/Disk)
+            cursor.execute(f'''
+                SELECT device_id, metric_type, value, timestamp
+                FROM system_metrics_history
+                WHERE timestamp >= {ph}
+                  AND metric_type IN ('cpu', 'ram', 'disk')
+            ''', (baseline_cutoff,))
+            rows = self._rows_to_dicts(cursor.fetchall())
+            metric_by_device = {}
+            for row in rows:
+                metric_by_device.setdefault((row['device_id'], row['metric_type']), []).append(row)
+
+            for (device_id, metric_type), samples in metric_by_device.items():
+                baseline = [r['value'] for r in samples if r['timestamp'] < recent_cutoff]
+                recent = [r['value'] for r in samples if r['timestamp'] >= recent_cutoff]
+                if len(baseline) < min_points or len(recent) < 2:
+                    continue
+                mean, std = self._calc_mean_std(baseline)
+                recent_avg = sum(recent) / len(recent)
+                score = (recent_avg - mean) / std if std > 0 else (recent_avg / mean if mean > 0 else 0)
+                hard_threshold = 85 if metric_type in ('cpu', 'ram') else 90
+                if recent_avg >= hard_threshold and ((std > 0 and score >= 2.0) or (std == 0 and mean > 0 and recent_avg >= mean * 1.3)):
+                    device = device_map.get(device_id, {})
+                    anomalies.append({
+                        'anomaly_key': f"anomaly-{metric_type}-{device_id}",
+                        'device_id': device_id,
+                        'device_name': device.get('name'),
+                        'anomaly_type': 'system_metric',
+                        'metric_name': metric_type,
+                        'severity': 'critical' if recent_avg >= 95 else 'warning',
+                        'score': round(float(score), 2),
+                        'summary': f"{metric_type.upper()} anomaly on {device.get('name', device_id)}",
+                        'details': {
+                            'baseline_mean': round(mean, 2),
+                            'baseline_stddev': round(std, 2),
+                            'recent_average': round(recent_avg, 2),
+                            'recent_samples': len(recent),
+                            'baseline_samples': len(baseline),
+                        },
+                    })
+
+            anomalies.sort(key=lambda a: (0 if a['severity'] == 'critical' else 1, -(a.get('score') or 0)))
+            return self._attach_anomaly_workflow(anomalies)
+        finally:
+            self.release_connection(conn)
+
+    def sync_anomaly_snapshots(self, recent_minutes=30, baseline_hours=24, min_points=5):
+        """Materialize current anomaly results into a persistent snapshot table."""
+        anomalies = self.detect_anomalies(
+            recent_minutes=recent_minutes,
+            baseline_hours=baseline_hours,
+            min_points=min_points,
+        )
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+            active_flag = True if self.db_type == 'postgresql' else 1
+            inactive_flag = False if self.db_type == 'postgresql' else 0
+
+            cursor.execute(f'UPDATE anomaly_snapshots SET is_active = {self._ph()}, updated_at = {self._ph()}', (inactive_flag, now))
+
+            for anomaly in anomalies:
+                details_json = json.dumps(anomaly.get('details') or {}, ensure_ascii=False)
+                if self.db_type == 'postgresql':
+                    cursor.execute(f'''
+                        INSERT INTO anomaly_snapshots (
+                            anomaly_key, device_id, device_name, anomaly_type, metric_name,
+                            severity, score, summary, details_json, detected_at,
+                            last_seen_at, is_active, created_at, updated_at
+                        )
+                        VALUES ({self._ph(14)})
+                        ON CONFLICT (anomaly_key) DO UPDATE SET
+                            device_id = EXCLUDED.device_id,
+                            device_name = EXCLUDED.device_name,
+                            anomaly_type = EXCLUDED.anomaly_type,
+                            metric_name = EXCLUDED.metric_name,
+                            severity = EXCLUDED.severity,
+                            score = EXCLUDED.score,
+                            summary = EXCLUDED.summary,
+                            details_json = EXCLUDED.details_json,
+                            last_seen_at = EXCLUDED.last_seen_at,
+                            is_active = EXCLUDED.is_active,
+                            updated_at = EXCLUDED.updated_at
+                    ''', (
+                        anomaly['anomaly_key'],
+                        anomaly.get('device_id'),
+                        anomaly.get('device_name'),
+                        anomaly.get('anomaly_type'),
+                        anomaly.get('metric_name'),
+                        anomaly.get('severity'),
+                        anomaly.get('score'),
+                        anomaly.get('summary'),
+                        details_json,
+                        now,
+                        now,
+                        active_flag,
+                        now,
+                        now,
+                    ))
+                else:
+                    cursor.execute(f'''
+                        INSERT INTO anomaly_snapshots (
+                            anomaly_key, device_id, device_name, anomaly_type, metric_name,
+                            severity, score, summary, details_json, detected_at,
+                            last_seen_at, is_active, created_at, updated_at
+                        )
+                        VALUES ({self._ph(14)})
+                        ON CONFLICT(anomaly_key) DO UPDATE SET
+                            device_id = excluded.device_id,
+                            device_name = excluded.device_name,
+                            anomaly_type = excluded.anomaly_type,
+                            metric_name = excluded.metric_name,
+                            severity = excluded.severity,
+                            score = excluded.score,
+                            summary = excluded.summary,
+                            details_json = excluded.details_json,
+                            last_seen_at = excluded.last_seen_at,
+                            is_active = excluded.is_active,
+                            updated_at = excluded.updated_at
+                    ''', (
+                        anomaly['anomaly_key'],
+                        anomaly.get('device_id'),
+                        anomaly.get('device_name'),
+                        anomaly.get('anomaly_type'),
+                        anomaly.get('metric_name'),
+                        anomaly.get('severity'),
+                        anomaly.get('score'),
+                        anomaly.get('summary'),
+                        details_json,
+                        now,
+                        now,
+                        active_flag,
+                        now,
+                        now,
+                    ))
+
+            conn.commit()
+            return {'success': True, 'count': len(anomalies)}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def get_anomaly_snapshots(self, active_only=True, limit=100):
+        """Get materialized anomaly snapshots."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            query = 'SELECT * FROM anomaly_snapshots'
+            params = []
+            if active_only:
+                query += f' WHERE is_active = {self._ph()}'
+                params.append(True if self.db_type == 'postgresql' else 1)
+            if self.db_type == 'postgresql':
+                query += f' ORDER BY severity DESC, score DESC NULLS LAST, detected_at DESC LIMIT {self._ph()}'
+            else:
+                query += f' ORDER BY severity DESC, score DESC, detected_at DESC LIMIT {self._ph()}'
+            params.append(limit)
+            cursor.execute(query, params)
+            rows = self._rows_to_dicts(cursor.fetchall())
+            for row in rows:
+                if row.get('details_json'):
+                    try:
+                        row['details'] = json.loads(row['details_json'])
+                    except Exception:
+                        row['details'] = None
+            return self._attach_anomaly_workflow(rows)
+        finally:
+            self.release_connection(conn)
+
+    def get_anomaly_state(self, anomaly_key):
+        """Get persisted workflow state for an anomaly."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM anomaly_states WHERE anomaly_key = {self._ph()}',
+                (anomaly_key,)
+            )
+            row = cursor.fetchone()
+            return self._row_to_dict(row)
+        finally:
+            self.release_connection(conn)
+
+    def get_persistent_incident_by_id(self, incident_id):
+        """Get one materialized incident snapshot by incident id."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM persistent_incidents WHERE incident_id = {self._ph()}',
+                (incident_id,)
+            )
+            row = self._row_to_dict(cursor.fetchone())
+            if row and row.get('payload_json'):
+                try:
+                    row['payload'] = json.loads(row['payload_json'])
+                except Exception:
+                    row['payload'] = None
+            return row
+        finally:
+            self.release_connection(conn)
+
+    def get_anomaly_incident_link(self, anomaly_key):
+        """Get a persisted anomaly -> incident link."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(
+                f'SELECT * FROM anomaly_incident_links WHERE anomaly_key = {self._ph()}',
+                (anomaly_key,)
+            )
+            row = self._row_to_dict(cursor.fetchone())
+            if not row:
+                return None
+            incident = self.get_persistent_incident_by_id(row.get('incident_id'))
+            row['incident'] = incident
+            return row
+        finally:
+            self.release_connection(conn)
+
+    def link_anomaly_to_incident(self, anomaly_key, incident_id, actor_user_id=None, actor_username=None, note=None):
+        """Link an anomaly to a materialized incident."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+            existing = self.get_anomaly_incident_link(anomaly_key)
+            old_incident_id = (existing or {}).get('incident_id')
+
+            if self.get_persistent_incident_by_id(incident_id) is None:
+                return {'success': False, 'error': 'Incident not found'}
+
+            if existing:
+                cursor.execute(f'''
+                    UPDATE anomaly_incident_links
+                    SET incident_id = {self._ph()},
+                        note = {self._ph()},
+                        linked_by_user_id = {self._ph()},
+                        linked_by_username = {self._ph()},
+                        updated_at = {self._ph()}
+                    WHERE anomaly_key = {self._ph()}
+                ''', (
+                    incident_id,
+                    note,
+                    actor_user_id,
+                    actor_username,
+                    now,
+                    anomaly_key,
+                ))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO anomaly_incident_links (
+                        anomaly_key, incident_id, note, linked_by_user_id,
+                        linked_by_username, linked_at, updated_at
+                    )
+                    VALUES ({self._ph(7)})
+                ''', (
+                    anomaly_key,
+                    incident_id,
+                    note,
+                    actor_user_id,
+                    actor_username,
+                    now,
+                    now,
+                ))
+
+            self.add_anomaly_activity(
+                anomaly_key=anomaly_key,
+                action='incident_link',
+                old_status=old_incident_id,
+                new_status=incident_id,
+                note=note,
+                actor_user_id=actor_user_id,
+                actor_username=actor_username,
+                conn=conn,
+                cursor=cursor,
+            )
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def unlink_anomaly_from_incident(self, anomaly_key, actor_user_id=None, actor_username=None, note=None):
+        """Remove a persisted anomaly -> incident link."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            existing = self.get_anomaly_incident_link(anomaly_key)
+            if not existing:
+                return {'success': False, 'error': 'Link not found'}
+
+            cursor.execute(
+                f'DELETE FROM anomaly_incident_links WHERE anomaly_key = {self._ph()}',
+                (anomaly_key,)
+            )
+            self.add_anomaly_activity(
+                anomaly_key=anomaly_key,
+                action='incident_unlink',
+                old_status=existing.get('incident_id'),
+                new_status=None,
+                note=note,
+                actor_user_id=actor_user_id,
+                actor_username=actor_username,
+                conn=conn,
+                cursor=cursor,
+            )
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def update_anomaly_state(self, anomaly_key, status, user_id=None, username=None, note=None):
+        """Create or update workflow state for an anomaly."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+
+            existing = self.get_anomaly_state(anomaly_key)
+            old_status = (existing or {}).get('status')
+            if existing:
+                cursor.execute(f'''
+                    UPDATE anomaly_states
+                    SET status = {self._ph()},
+                        note = {self._ph()},
+                        acknowledged_by_user_id = {self._ph()},
+                        acknowledged_by_username = {self._ph()},
+                        acknowledged_at = {self._ph()},
+                        updated_at = {self._ph()}
+                    WHERE anomaly_key = {self._ph()}
+                ''', (
+                    status,
+                    note,
+                    user_id,
+                    username,
+                    now,
+                    now,
+                    anomaly_key,
+                ))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO anomaly_states (
+                        anomaly_key, status, note, acknowledged_by_user_id,
+                        acknowledged_by_username, acknowledged_at, updated_at
+                    )
+                    VALUES ({self._ph(7)})
+                ''', (
+                    anomaly_key,
+                    status,
+                    note,
+                    user_id,
+                    username,
+                    now,
+                    now,
+                ))
+
+            self.add_anomaly_activity(
+                anomaly_key=anomaly_key,
+                action='status_change',
+                old_status=old_status,
+                new_status=status,
+                note=note,
+                actor_user_id=user_id,
+                actor_username=username,
+                conn=conn,
+                cursor=cursor,
+            )
+
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def update_anomaly_owner(self, anomaly_key, owner_user_id=None, owner_username=None,
+                             actor_user_id=None, actor_username=None, note=None):
+        """Assign or reassign an owner for an anomaly."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            now = datetime.now().isoformat()
+            existing = self.get_anomaly_state(anomaly_key) or {}
+            old_owner = existing.get('owner_username')
+
+            if existing:
+                cursor.execute(f'''
+                    UPDATE anomaly_states
+                    SET owner_user_id = {self._ph()},
+                        owner_username = {self._ph()},
+                        updated_at = {self._ph()}
+                    WHERE anomaly_key = {self._ph()}
+                ''', (
+                    owner_user_id,
+                    owner_username,
+                    now,
+                    anomaly_key,
+                ))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO anomaly_states (
+                        anomaly_key, status, note, owner_user_id, owner_username,
+                        acknowledged_by_user_id, acknowledged_by_username, acknowledged_at, updated_at
+                    )
+                    VALUES ({self._ph(9)})
+                ''', (
+                    anomaly_key,
+                    'open',
+                    None,
+                    owner_user_id,
+                    owner_username,
+                    None,
+                    None,
+                    None,
+                    now,
+                ))
+
+            self.add_anomaly_activity(
+                anomaly_key=anomaly_key,
+                action='owner_change',
+                old_status=old_owner,
+                new_status=owner_username or 'unassigned',
+                note=note,
+                actor_user_id=actor_user_id,
+                actor_username=actor_username,
+                conn=conn,
+                cursor=cursor,
+            )
+
+            conn.commit()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        finally:
+            self.release_connection(conn)
+
+    def add_anomaly_activity(self, anomaly_key, action, old_status=None, new_status=None,
+                             note=None, actor_user_id=None, actor_username=None,
+                             conn=None, cursor=None):
+        """Append an activity log entry for an anomaly."""
+        own_conn = conn is None or cursor is None
+        if own_conn:
+            conn = self.get_connection()
+            cursor = self._cursor(conn)
+        try:
+            now = datetime.now().isoformat()
+            cursor.execute(f'''
+                INSERT INTO anomaly_activity (
+                    anomaly_key, action, old_status, new_status, note,
+                    actor_user_id, actor_username, created_at
+                )
+                VALUES ({self._ph(8)})
+            ''', (
+                anomaly_key,
+                action,
+                old_status,
+                new_status,
+                note,
+                actor_user_id,
+                actor_username,
+                now,
+            ))
+            if own_conn:
+                conn.commit()
+            return {'success': True}
+        except Exception as e:
+            if own_conn:
+                return {'success': False, 'error': str(e)}
+            raise
+        finally:
+            if own_conn:
+                self.release_connection(conn)
+
+    def get_anomaly_activity(self, anomaly_key, limit=20):
+        """Get recent activity log entries for an anomaly."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cursor.execute(f'''
+                SELECT * FROM anomaly_activity
+                WHERE anomaly_key = {self._ph()}
+                ORDER BY created_at DESC
+                LIMIT {self._ph()}
+            ''', (anomaly_key, limit))
+            return self._rows_to_dicts(cursor.fetchall())
+        finally:
+            self.release_connection(conn)
     
     def get_failure_count(self, device_id):
         """Get current consecutive failure count for a device"""

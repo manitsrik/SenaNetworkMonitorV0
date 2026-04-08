@@ -641,7 +641,7 @@ function updateTopology(devices, connections) {
         const iconEmoji = getDeviceIcon(device.device_type);
         const isHighlighted = highlightedTopologyDeviceIds.includes(device.id);
         const svgSize = isGroupedView ? 80 : 150; // Increased size for Free View
-        const iconSvg = getSvgIcon(iconEmoji, color, svgSize);
+        const iconSvg = getSvgIcon(iconEmoji, color, svgSize, device.device_type);
         const deviceType = device.device_type || 'other';
         const locType = device.location_type || 'on-premise';
         const locTypeLabel = getLocationTypeLabel(locType);
@@ -928,7 +928,10 @@ function getNodeColor(status) {
 }
 
 // Generate SVG icon
-function getSvgIcon(emoji, color, size = 100) {
+function getSvgIcon(emoji, color, size = 100, deviceType = 'other') {
+    if ((deviceType || '').toLowerCase() === 'internet') {
+        return '/static/icons/internet_globe.svg?v=1';
+    }
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 28 28">
         <circle cx="14" cy="14" r="12" fill="${color}" stroke="#ffffff" stroke-width="2" />
@@ -945,6 +948,7 @@ function getDeviceIcon(deviceType) {
         'firewall': '🛡️',
         'server': '🖥️',
         'router': '🌐',
+        'internet': '☁️',
         'wireless': '📶',
         'website': '🌐',
         'vmware': '🖴',
@@ -995,7 +999,7 @@ function updateNodeStatus(device) {
     if (node) {
         const color = getNodeColor(device.status);
         const iconEmoji = getDeviceIcon(device.device_type);
-        const iconSvg = getSvgIcon(iconEmoji, color);
+        const iconSvg = getSvgIcon(iconEmoji, color, 100, device.device_type);
         const deviceType = device.device_type || 'other';
         const isHighlighted = highlightedTopologyDeviceIds.includes(device.id);
 

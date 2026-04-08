@@ -481,7 +481,7 @@ function updatePreview() {
             renderPremiumDOMNode(device);
         } else {
             // Standard Mode
-            const svgIcon = getSvgIcon(icon, color, 40);
+            const svgIcon = getSvgIcon(icon, color, 40, device.device_type);
             previewNodes.add({
                 id: device.id,
                 label: `${icon} ${device.name}`,
@@ -512,7 +512,7 @@ function updatePreview() {
             edges: {
                 color: { color: 'rgba(56, 189, 248, 0.4)', highlight: '#38bdf8' },
                 width: 2,
-                smooth: { type: 'curvedCW', roundness: 0.2 }
+                smooth: false
             }
         });
     } else {
@@ -912,6 +912,7 @@ function getDeviceIcon(deviceType) {
         'firewall': '🛡️',
         'server': '🖥️',
         'router': '🌐',
+        'internet': '☁️',
         'wireless': '📶',
         'website': '🌐',
         'vmware': '🖴',
@@ -926,7 +927,10 @@ function getDeviceIcon(deviceType) {
     return icons[type] || icons['other'];
 }
 
-function getSvgIcon(emoji, color, size = 100) {
+function getSvgIcon(emoji, color, size = 100, deviceType = 'other') {
+    if ((deviceType || '').toLowerCase() === 'internet') {
+        return '/static/icons/internet_globe.svg?v=1';
+    }
     const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 28 28">
         <circle cx="14" cy="14" r="12" fill="${color}" stroke="#ffffff" stroke-width="2" />
@@ -952,13 +956,16 @@ function renderPremiumDOMNode(device) {
 
     const type = (device.device_type || 'server').toLowerCase();
     const isServer = type === 'server' || type === 'vmware';
+    const isInternet = type === 'internet';
     const isSwitch = type === 'switch';
+    const isFirewall = type === 'firewall';
     const isWireless = type === 'wireless' || type === 'wifi';
 
     // Choose Template
     let templateId = 'floating-node-template';
+    if (isInternet) templateId = 'internet-node-template';
     if (isServer) templateId = 'wide-server-template';
-    if (isSwitch) templateId = 'rackmount-hardware-template';
+    if (isSwitch || isFirewall) templateId = 'rackmount-hardware-template';
     if (isWireless) templateId = 'wireless-ap-template';
 
     const templateNode = document.getElementById(templateId);
@@ -978,6 +985,12 @@ function renderPremiumDOMNode(device) {
     const icon = iconMap[type] || 'fa-microchip';
     const glowClass = `glow-${type}`;
 
+    let imageUrl = '';
+    if (isInternet) imageUrl = '/static/icons/internet_globe.svg?v=1';
+    else if (isSwitch) imageUrl = '/static/icons/premium_switch.png?v=2';
+    else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';
+    else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
+
     // Fill Template
     let html = template
         .replace(/{id}/g, device.id)
@@ -987,16 +1000,8 @@ function renderPremiumDOMNode(device) {
         .replace(/{status}/g, device.status || 'unknown')
         .replace(/{type-label}/g, device.device_type || 'N/A')
         .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
-        .replace(/{glow-class}/g, glowClass);
-
-    // Switch/Hardware Image path
-    if (isSwitch) {
-        // Use the generated switch icon
-        html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png?v=2');
-    }
-    if (isWireless) {
-        html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
-    }
+        .replace(/{glow-class}/g, glowClass)
+        .replace(/{image_url}/g, imageUrl);
 
     // Dynamic metrics for visual flair
     if (isServer) {

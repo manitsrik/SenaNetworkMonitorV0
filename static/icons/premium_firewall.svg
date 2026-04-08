@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 220" role="img" aria-label="Premium firewall device">
+  <defs>
+    <linearGradient id="body" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#f7f7f5"/>
+      <stop offset="0.55" stop-color="#e7e5df"/>
+      <stop offset="1" stop-color="#d4d0c7"/>
+    </linearGradient>
+    <linearGradient id="bezel" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#454b55"/>
+      <stop offset="1" stop-color="#1f2937"/>
+    </linearGradient>
+    <linearGradient id="port" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-15%" width="110%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#020617" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="8" y="18" width="944" height="184" rx="16" fill="url(#body)" stroke="#bcb7ad" stroke-width="2"/>
+    <rect x="18" y="28" width="924" height="164" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.45"/>
+  </g>
+
+  <g transform="translate(38 48)">
+    <rect x="0" y="0" width="168" height="102" rx="8" fill="#efede7"/>
+    <rect x="0" y="0" width="168" height="102" rx="8" fill="none" stroke="#cfc9bf"/>
+    <rect x="18" y="8" width="4" height="26" rx="2" fill="#7cb342"/>
+    <rect x="28" y="8" width="4" height="26" rx="2" fill="#8bc34a"/>
+    <text x="42" y="24" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" fill="#2d3748">FORTINET</text>
+    <text x="42" y="44" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#6b7280">FortiGate 400F</text>
+    <g transform="translate(10 60)" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#475569">
+      <text x="0" y="0">STATUS</text>
+      <text x="0" y="16">HA</text>
+      <text x="0" y="32">ALARM</text>
+      <text x="0" y="48">POWER</text>
+    </g>
+    <circle cx="58" cy="60" r="4" fill="#22c55e"/>
+    <circle cx="58" cy="76" r="4" fill="#94a3b8"/>
+    <circle cx="58" cy="92" r="4" fill="#f59e0b"/>
+    <circle cx="58" cy="108" r="4" fill="#22c55e"/>
+    <g transform="translate(102 54)">
+      <rect x="0" y="0" width="28" height="34" rx="3" fill="url(#bezel)"/>
+      <rect x="34" y="0" width="28" height="34" rx="3" fill="url(#bezel)"/>
+      <rect x="7" y="8" width="14" height="18" rx="2" fill="#cbd5e1"/>
+      <rect x="41" y="8" width="14" height="18" rx="2" fill="#cbd5e1"/>
+    </g>
+  </g>
+
+  <g transform="translate(234 44)">
+    <g fill="url(#port)">
+      <rect x="0" y="8" width="220" height="112" rx="8"/>
+      <rect x="238" y="8" width="220" height="112" rx="8"/>
+    </g>
+    <g fill="#d1d5db">
+      <text x="8" y="0" font-family="Arial, Helvetica, sans-serif" font-size="12">PORTS</text>
+      <text x="248" y="0" font-family="Arial, Helvetica, sans-serif" font-size="12">DMZ</text>
+    </g>
+    <g fill="#111827">
+      <g transform="translate(18 22)">
+        <rect x="0" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="42" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="84" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="126" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="168" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="0" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="42" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="84" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="126" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="168" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+      </g>
+      <g transform="translate(256 22)">
+        <rect x="0" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="42" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="84" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="126" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="168" y="0" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="0" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="42" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="84" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="126" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+        <rect x="168" y="42" width="34" height="30" rx="3" fill="#0b1220" stroke="#475569"/>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(716 44)">
+    <text x="6" y="0" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748b">SFP+</text>
+    <g transform="translate(0 8)">
+      <rect x="0" y="0" width="86" height="112" rx="8" fill="url(#bezel)"/>
+      <rect x="100" y="0" width="86" height="112" rx="8" fill="url(#bezel)"/>
+      <rect x="200" y="0" width="86" height="112" rx="8" fill="url(#bezel)"/>
+      <g fill="#cbd5e1">
+        <rect x="14" y="16" width="24" height="34" rx="2"/>
+        <rect x="48" y="16" width="24" height="34" rx="2"/>
+        <rect x="114" y="16" width="24" height="34" rx="2"/>
+        <rect x="148" y="16" width="24" height="34" rx="2"/>
+        <rect x="214" y="16" width="24" height="34" rx="2"/>
+        <rect x="248" y="16" width="24" height="34" rx="2"/>
+      </g>
+      <g fill="#64748b">
+        <rect x="16" y="62" width="20" height="8" rx="2"/>
+        <rect x="50" y="62" width="20" height="8" rx="2"/>
+        <rect x="116" y="62" width="20" height="8" rx="2"/>
+        <rect x="150" y="62" width="20" height="8" rx="2"/>
+        <rect x="216" y="62" width="20" height="8" rx="2"/>
+        <rect x="250" y="62" width="20" height="8" rx="2"/>
+      </g>
+    </g>
+  </g>
+</svg>

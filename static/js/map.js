@@ -7,6 +7,7 @@ function getDeviceIcon(status, deviceType) {
     let faIcon = 'fa-server';
     switch (deviceType?.toLowerCase()) {
         case 'router': faIcon = 'fa-route'; break;
+        case 'internet': faIcon = 'fa-cloud'; break;
         case 'switch': faIcon = 'fa-ethernet'; break;
         case 'firewall': faIcon = 'fa-shield-halved'; break;
         case 'wireless': faIcon = 'fa-wifi'; break;

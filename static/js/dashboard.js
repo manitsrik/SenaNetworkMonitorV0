@@ -26,6 +26,7 @@ const typeMetadata = {
     'firewall': { icon: '🛡️', name: 'Firewalls', color: '#ef4444' },
     'server': { icon: '🖥️', name: 'Servers', color: '#6366f1' },
     'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
+    'internet': { icon: '☁️', name: 'Internet', color: '#38bdf8' },
     'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
     'website': { icon: '🌍', name: 'Websites', color: '#8b5cf6' },
     'vmware': { icon: '🖥️', name: 'VMware', color: '#22c55e' },

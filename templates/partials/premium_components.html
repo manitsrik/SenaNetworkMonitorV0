@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=7.9">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=8.0">
 <style id="premium-fix-styles">
     /* FORCE LABELS INSIDE CARDS - HIGH SPECIFICITY FALLBACK */
     #dom-overlay-container .floating-label,
@@ -64,6 +64,30 @@
         backdrop-filter: none !important;
         border-radius: 0 !important;
     }
+
+    #dom-overlay-container .internet-node .floating-label,
+    .premium-widget-overlay .internet-node .floating-label {
+        bottom: 0 !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        backdrop-filter: none !important;
+        border-radius: 0 !important;
+        color: #1e293b !important;
+        font-size: 8.2px !important;
+        font-weight: 900 !important;
+        letter-spacing: 0.28px !important;
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.92) !important;
+    }
+
+    [data-theme="dark"] #dom-overlay-container .internet-node .floating-label,
+    [data-theme="dark"] .premium-widget-overlay .internet-node .floating-label {
+        color: #e2e8f0 !important;
+        text-shadow: 0 1px 2px rgba(15, 23, 42, 0.9) !important;
+    }
 </style>
 
 <!-- ==============================================
@@ -79,6 +103,21 @@
         <div class="floating-label">{name}</div>
         <!-- Connection Status -->
         <div class="floating-status status-{status}"></div>
+    </div>
+</template>
+
+<template id="internet-node-template">
+    <div class="floating-node glow-internet internet-node" id="device-{id}" data-id="{id}">
+        <img src="{image_url}" class="floating-device-image" draggable="false">
+        <div class="floating-label">{name}</div>
+        <div class="floating-status status-{status}"></div>
+        <div class="hardware-hover-card">
+            <div><strong>{name}</strong></div>
+            <div>{ip}</div>
+            <div>Type: {type-label}</div>
+            <div>Status: {status}</div>
+            <div>Response: {response-label}</div>
+        </div>
     </div>
 </template>
 
@@ -205,7 +244,7 @@ function showPremiumDeviceDetails(device) {
     // Icon Mapping
     const type = (device.device_type || 'server').toLowerCase();
     const icons = {
-        'router': '🌐', 'switch': '🔀', 'server': '🖥️', 'firewall': '🛡️',
+        'router': '🌐', 'internet': '☁️', 'switch': '🔀', 'server': '🖥️', 'firewall': '🛡️',
         'wireless': '📶', 'website': '🌐', 'vmware': '🖴', 'ippbx': '☎️',
         'cctv': '📹', 'vpnrouter': '🔒', 'dns': '🔍', 'other': '⚙️'
     };

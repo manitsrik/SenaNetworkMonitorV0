@@ -36,6 +36,7 @@ const locationTypeLabels = {
 // Device type metadata for better naming and icons
 const deviceTypeMetadata = {
     'router': { name: 'Router', icon: '🌐' },
+    'internet': { name: 'Internet', icon: '☁️' },
     'switch': { name: 'Switch', icon: '🔀' },
     'server': { name: 'Server', icon: '🖥️' },
     'firewall': { name: 'Firewall', icon: '🛡️' },

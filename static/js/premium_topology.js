@@ -16,7 +16,7 @@ const TIER_MAPPING = {
 };
 
 const ICON_MAPPING = {
-    'internet': 'fa-globe', 'cloud': 'fa-cloud',
+    'internet': 'fa-cloud', 'cloud': 'fa-cloud',
     'firewall': 'fa-shield-halved', 'router': 'fa-route',
     'switch': 'fa-network-wired', 'wifi': 'fa-wifi', 'wireless': 'fa-wifi',
     'database': 'fa-database', 'web': 'fa-server',
@@ -84,10 +84,16 @@ function createDeviceCardDom(dv) {
     const tier = getTier(dv.device_type);
     const isServer = (tier === 'servers');
     const type = (dv.device_type || '').toLowerCase();
+    const isInternet = type === 'internet' || type === 'cloud';
+    const isFirewall = type === 'firewall';
     const isWireless = type === 'wireless' || type === 'wifi';
     
     // Choose Template
-    const tmplId = isWireless ? 'wireless-ap-template' : (isServer ? 'wide-server-template' : 'floating-node-template');
+    const tmplId = isInternet
+        ? 'internet-node-template'
+        : isWireless
+        ? 'wireless-ap-template'
+        : (isServer || isFirewall ? 'rackmount-hardware-template' : 'floating-node-template');
     const tmpl = document.getElementById(tmplId).innerHTML;
     
     let cpu = dv.cpu_usage || 0;
@@ -95,19 +101,21 @@ function createDeviceCardDom(dv) {
         cpu = 0; 
     }
 
+    let imageUrl = '';
+    if (isInternet) imageUrl = '/static/icons/internet_globe.svg?v=1';
+    else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';
+    else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
+
     let html = tmpl
         .replace(/{id}/g, dv.id)
         .replace(/{status}/g, dv.status || 'unknown')
         .replace(/{icon}/g, getIcon(dv.device_type))
         .replace(/{glow-class}/g, GLOW_MAPPING[tier])
+        .replace(/{image_url}/g, imageUrl)
         .replace(/{name}/g, dv.name)
         .replace(/{ip}/g, dv.ip_address || '0.0.0.0')
         .replace(/{cpu}/g, cpu)
         .replace(/{cpu-color}/g, getBarColor(cpu));
-
-    if (isWireless) {
-        html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
-    }
         
     const div = document.createElement('div');
     div.innerHTML = html.trim();

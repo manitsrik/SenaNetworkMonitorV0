@@ -11,6 +11,7 @@ window.DashboardRenderer = {
         'firewall': { icon: '🛡️', name: 'Firewalls', color: '#ef4444' },
         'server': { icon: '🖥️', name: 'Servers', color: '#6366f1' },
         'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
+        'internet': { icon: '☁️', name: 'Internet', color: '#38bdf8' },
         'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
         'website': { icon: '🌐', name: 'Websites', color: '#8b5cf6' },
         'vmware': { icon: '🖴', name: 'VMware', color: '#22c55e' },
@@ -545,8 +546,9 @@ window.DashboardRenderer = {
 
     getPremiumWidgetTemplateId: function (device) {
         const type = (device.device_type || 'server').toLowerCase();
+        if (type === 'internet') return 'internet-node-template';
         if (type === 'server' || type === 'vmware') return 'wide-server-template';
-        if (type === 'switch') return 'rackmount-hardware-template';
+        if (type === 'switch' || type === 'firewall') return 'rackmount-hardware-template';
         if (type === 'wireless' || type === 'wifi') return 'wireless-ap-template';
         return 'floating-node-template';
     },
@@ -578,6 +580,12 @@ window.DashboardRenderer = {
             'vmware': 'fa-database'
         };
 
+        let imageUrl = '';
+        if (type === 'internet') imageUrl = '/static/icons/internet_globe.svg?v=1';
+        else if (type === 'switch') imageUrl = '/static/icons/premium_switch.png?v=2';
+        else if (type === 'firewall') imageUrl = '/static/icons/premium_firewall.svg?v=1';
+        else if (type === 'wireless' || type === 'wifi') imageUrl = '/static/icons/premium_wireless.svg?v=2';
+
         let html = templateNode.innerHTML
             .replace(/{id}/g, `${index}-${device.id}`)
             .replace(/{name}/g, device.name || 'Unknown')
@@ -586,14 +594,8 @@ window.DashboardRenderer = {
             .replace(/{status}/g, device.status || 'unknown')
             .replace(/{type-label}/g, device.device_type || 'N/A')
             .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
-            .replace(/{glow-class}/g, `glow-${type}`);
-
-        if (type === 'switch') {
-            html = html.replace(/{image_url}/g, '/static/icons/premium_switch.png?v=2');
-        }
-        if (type === 'wireless' || type === 'wifi') {
-            html = html.replace(/{image_url}/g, '/static/icons/premium_wireless.svg?v=2');
-        }
+            .replace(/{glow-class}/g, `glow-${type}`)
+            .replace(/{image_url}/g, imageUrl);
         if (type === 'server' || type === 'vmware') {
             const cpu = device.response_time != null ? Math.min(99, Math.max(5, Math.round(device.response_time % 100))) : 15;
             const cpuColor = cpu > 80 ? 'critical' : (cpu > 50 ? 'warning' : 'healthy');
@@ -708,7 +710,7 @@ window.DashboardRenderer = {
                 to: conn.connected_to,
                 color: { color: edgeColor, highlight: '#38bdf8' },
                 width: 3,
-                smooth: { type: 'curvedCW', roundness: 0.2 },
+                smooth: false,
                 shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 5, x: 2, y: 2 }
             };
         }));
@@ -727,7 +729,7 @@ window.DashboardRenderer = {
             edges: {
                 color: { color: 'rgba(56, 189, 248, 0.5)', highlight: '#38bdf8' },
                 width: 3,
-                smooth: { type: 'curvedCW', roundness: 0.2 },
+                smooth: false,
                 shadow: { enabled: true, color: 'rgba(0,0,0,0.3)', size: 5, x: 2, y: 2 }
             }
         });
@@ -2005,6 +2007,9 @@ window.DashboardRenderer = {
 
 
     getNodeSvgUrl: function (type, status) {
+        if ((type || '').toLowerCase() === 'internet') {
+            return '/static/icons/internet_globe.svg?v=1';
+        }
         const meta = this.typeMetadata[type || 'other'] || this.typeMetadata['other'];
         const icon = meta.icon;
 

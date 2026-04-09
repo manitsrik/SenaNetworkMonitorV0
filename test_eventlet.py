@@ -1,5 +1,5 @@
-import eventlet
-eventlet.monkey_patch(all=True)
+import async_runtime
+async_runtime.monkey_patch(all=True)
 
 import time
 import requests
@@ -42,10 +42,10 @@ def test_snmp():
 def background_yield():
     for _ in range(5):
         print("Background greenlet running...")
-        eventlet.sleep(0.5)
+        async_runtime.sleep(0.5)
 
 if __name__ == '__main__':
-    eventlet.spawn(background_yield)
+    async_runtime.spawn(background_yield)
     test_requests()
     test_snmp()
-    eventlet.sleep(3)
+    async_runtime.sleep(3)

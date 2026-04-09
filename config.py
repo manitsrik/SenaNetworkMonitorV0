@@ -60,7 +60,7 @@ class Config:
     MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 12)  # parallel workers
     
     # WebSocket settings
-    SOCKETIO_ASYNC_MODE = 'threading'
+    SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'
     SOCKETIO_CORS_ALLOWED_ORIGINS = "*"
     
     

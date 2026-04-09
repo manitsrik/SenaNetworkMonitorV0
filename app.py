@@ -2,15 +2,15 @@
 Network Monitor - Main Application
 Slim entry point: initializes Flask, registers Blueprints, starts services
 """
-import eventlet
-eventlet.monkey_patch(all=True)
+import async_runtime
+async_runtime.monkey_patch(all=True)
 
 import asyncio
 import sys
 if sys.platform == 'win32':
     # Force SelectorEventLoop so asyncio uses select(), which eventlet monkey-patches.
     # This prevents PySNMP (which uses asyncio) from deadlocking the server on Windows.
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    async_runtime.configure_asyncio_policy()
 
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
@@ -39,7 +39,7 @@ CORS(app)
 
 # Initialize SocketIO
 socketio = SocketIO(app, cors_allowed_origins=Config.SOCKETIO_CORS_ALLOWED_ORIGINS,
-                   async_mode='eventlet')
+                   async_mode=Config.SOCKETIO_ASYNC_MODE)
 
 # Initialize Babel
 from flask_babel import Babel, gettext as _
@@ -419,7 +419,7 @@ if __name__ == '__main__':
     print(f"Monitoring interval: {Config.PING_INTERVAL} seconds")
     print(f"Monitor workers: {Config.MONITOR_MAX_WORKERS}")
     print(f"Database: {Config.DB_TYPE}")
-    print(f"WSGI: eventlet (production)")
+    print(f"WSGI: {async_runtime.RUNTIME_LABEL}")
     print("=" * 60)
     
     socketio.run(app, debug=Config.DEBUG, host=Config.SERVER_HOST,

@@ -6,7 +6,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from datetime import datetime
 import traceback
-import eventlet
+import async_runtime
 
 
 class TaskScheduler:
@@ -62,8 +62,8 @@ class TaskScheduler:
     
     def start(self):
         """Start the scheduler in a dedicated greenlet"""
-        eventlet.spawn(self.scheduler.start)
-        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks (eventlet context)")
+        async_runtime.spawn(self.scheduler.start)
+        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks ({async_runtime.RUNTIME_LABEL})")
     
     def shutdown(self):
         """Shutdown the scheduler"""
@@ -168,8 +168,7 @@ class TaskScheduler:
             # monitor_job has a 30s interval, give it 120s max. Others 300s.
             timeout_sec = 300 if job_id == 'monitor_job' else 300
             
-            import eventlet.timeout
-            timer = eventlet.timeout.Timeout(timeout_sec)
+            timer = async_runtime.Timeout(timeout_sec)
             
             history_id = db.log_job_start(job_id, job_name)
             try:
@@ -184,7 +183,7 @@ class TaskScheduler:
                     summary = str(result)[:200]
                 
                 db.log_job_complete(history_id, summary)
-            except eventlet.timeout.Timeout:
+            except async_runtime.TimeoutError:
                 db.log_job_error(history_id, f"Job timed out after {timeout_sec}s")
                 print(f"[TaskScheduler] Job {job_id} TIMED OUT after {timeout_sec}s")
             except Exception as e:

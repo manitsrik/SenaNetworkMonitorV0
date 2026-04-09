@@ -8,7 +8,7 @@ non-blocking scanning that keeps Flask responsive.
 """
 import socket
 import ipaddress
-import eventlet
+import async_runtime
 from datetime import datetime
 from pythonping import ping
 
@@ -74,7 +74,7 @@ class DeviceDiscovery:
         """Try a single TCP connect. Returns True if port is open."""
         t = timeout or self.timeout
         try:
-            with eventlet.Timeout(t, False):
+            with async_runtime.Timeout(t, False):
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(t)
                 result = sock.connect_ex((ip_str, port))
@@ -113,7 +113,7 @@ class DeviceDiscovery:
     def resolve_hostname(self, ip):
         """Reverse DNS lookup for an IP with timeout guard."""
         try:
-            with eventlet.Timeout(1, False):
+            with async_runtime.Timeout(1, False):
                 hostname, _, _ = socket.gethostbyaddr(str(ip))
                 return hostname
         except Exception:
@@ -198,7 +198,7 @@ class DeviceDiscovery:
             self._scan_progress += 1
             
             # Yield to event loop so Flask can serve requests
-            eventlet.sleep(0)
+            async_runtime.sleep(0)
             
             if not is_alive or self._cancel_requested:
                 return None
@@ -247,7 +247,7 @@ class DeviceDiscovery:
         self._scan_results = []
         
         try:
-            pool = eventlet.GreenPool(self.max_workers)
+            pool = async_runtime.GreenPool(self.max_workers)
             for result in pool.imap(self._scan_single_host, hosts_to_scan):
                 if result:
                     self._scan_results.append(result)

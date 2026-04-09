@@ -2,8 +2,8 @@
 Network Monitor — Production Server Entry Point
 Uses eventlet for production-grade WebSocket + WSGI support on Windows
 """
-import eventlet
-eventlet.monkey_patch()
+import async_runtime
+async_runtime.monkey_patch()
 
 import logging
 import sys
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     logger.info(f"Database: {Config.DB_TYPE}")
     logger.info(f"Monitor workers: {Config.MONITOR_MAX_WORKERS}")
     logger.info(f"Pool: min={Config.PG_POOL_MIN}, max={Config.PG_POOL_MAX}")
-    logger.info(f"WSGI: eventlet (production)")
+    logger.info(f"WSGI: {async_runtime.RUNTIME_LABEL}")
     logger.info(f"Started at: {datetime.now().isoformat()}")
     logger.info("=" * 60)
     

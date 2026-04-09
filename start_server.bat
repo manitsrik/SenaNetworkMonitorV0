@@ -5,6 +5,9 @@ REM Uses eventlet for production-grade WebSocket + WSGI
 REM ============================================================================
 
 cd /d "%~dp0"
+chcp 65001 >nul
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 echo [%date% %time%] Starting Network Monitor Server (Production)... >> server.log
 
 REM Activate virtual environment and start production server

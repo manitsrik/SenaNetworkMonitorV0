@@ -3,8 +3,7 @@ Network Monitoring Service
 Handles ping, HTTP, and SNMP monitoring with status updates
 """
 from pythonping import ping
-import eventlet
-from eventlet import tpool
+import async_runtime
 from datetime import datetime, timezone
 # from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import Config
@@ -127,7 +126,7 @@ class NetworkMonitor:
             # Measure connection time
             start_time = time.time()
             
-            # Call natively - socket is patched by eventlet
+            # Call natively - socket is patched by the cooperative runtime
             result = sock.connect_ex((ip_address, int(port)))
             
             response_time = (time.time() - start_time) * 1000  # Convert to ms
@@ -683,7 +682,7 @@ class NetworkMonitor:
                 return future.result(timeout=12)
             
             try:
-                response_time, snmp_data = tpool.execute(_wait_for_result)
+                response_time, snmp_data = async_runtime.tpool_execute(_wait_for_result)
             except Exception as e:
                 print(f"[ERROR] SNMP worker thread call failed for {ip_address}: {e}")
                 return {
@@ -776,7 +775,7 @@ class NetworkMonitor:
                 return False
 
         try:
-            success = tpool.execute(_ssh_task)
+            success = async_runtime.tpool_execute(_ssh_task)
             response_time = (time.time() - start_time) * 1000
             
             if success:
@@ -859,7 +858,7 @@ class NetworkMonitor:
                 print(f"[SSH Ports] Error connecting to {ip_address}: {e}")
                 return False
 
-        success = tpool.execute(_ssh_task)
+        success = async_runtime.tpool_execute(_ssh_task)
         if success:
             return {'success': True, 'ports': ports}
         return {'success': False, 'error': 'Connection failed or timeout'}
@@ -919,7 +918,7 @@ class NetworkMonitor:
                 print(f"[WinRM Ports] Error connecting to {ip_address}: {e}")
                 return False
 
-        success = tpool.execute(_winrm_task)
+        success = async_runtime.tpool_execute(_winrm_task)
         if success:
             return {'success': True, 'ports': ports}
         return {'success': False, 'error': 'Connection failed or timeout'}
@@ -974,7 +973,7 @@ class NetworkMonitor:
                 return False
 
         try:
-            success = tpool.execute(_winrm_task)
+            success = async_runtime.tpool_execute(_winrm_task)
             response_time = (time.time() - start_time) * 1000
             
             if success:
@@ -1289,7 +1288,7 @@ class NetworkMonitor:
             return results
         
         # Use GreenPool for cooperative multitasking (standard for Eventlet)
-        pool = eventlet.GreenPool(size=self.max_workers)
+        pool = async_runtime.GreenPool(size=self.max_workers)
         
         # Use imap to run checks and collect results as they complete
         for result in pool.imap(self._safe_check_device, devices):
@@ -1457,7 +1456,7 @@ class NetworkMonitor:
                 future = asyncio.run_coroutine_threadsafe(coro, self._loop)
                 return future.result(timeout=15)
                 
-            return tpool.execute(_wait_for_snmp_interfaces)
+            return async_runtime.tpool_execute(_wait_for_snmp_interfaces)
         except Exception as e:
             print(f"SNMP Interface Error for {ip_address}: {e}")
             return []
@@ -1560,7 +1559,7 @@ class NetworkMonitor:
                 future = asyncio.run_coroutine_threadsafe(coro, self._loop)
                 return future.result(timeout=20)
                 
-            return tpool.execute(_wait_for_custom_oids)
+            return async_runtime.tpool_execute(_wait_for_custom_oids)
         except Exception as e:
             print(f"Custom OID Query Error: {e}")
             return [{'id': item['id'], 'oid': item['oid'], 'name': item['name'],
@@ -1688,7 +1687,7 @@ class NetworkMonitor:
                 return future.result(timeout=25)
             
             try:
-                samples = tpool.execute(_wait_for_bandwidth)
+                samples = async_runtime.tpool_execute(_wait_for_bandwidth)
             except Exception as e:
                 print(f"[ERROR] Bandwidth worker thread call failed for {ip_address}: {e}")
                 return
@@ -1749,7 +1748,7 @@ class NetworkMonitor:
         print(f"[BW] Polling {len(snmp_devices)} SNMP device(s)...")
         
         # Use GreenPool for cooperative multitasking
-        pool = eventlet.GreenPool(size=min(10, len(snmp_devices)))
+        pool = async_runtime.GreenPool(size=min(10, len(snmp_devices)))
         
         # Run polls and wait for all to complete
         for _ in pool.imap(self.poll_bandwidth, snmp_devices):

@@ -129,7 +129,7 @@ def bandwidth_current():
 @login_required
 def trigger_poll():
     """Manually trigger a bandwidth poll for one device (non-blocking)"""
-    import eventlet
+    import async_runtime
     data = request.json or {}
     device_id = data.get('device_id')
     
@@ -153,7 +153,7 @@ def trigger_poll():
         except Exception as e:
             print(f"[BW] Manual poll error for {device.get('name')}: {e}")
 
-    eventlet.spawn(_do_poll)
+    async_runtime.spawn(_do_poll)
     return jsonify({
         'success': True,
         'message': f"Poll started for {device['name']}. Refresh in a few seconds to see data."
@@ -191,7 +191,7 @@ def bandwidth_debug(device_id):
     Returns in <15s. Navigate to: /api/bandwidth/debug/<device_id>
     """
     import asyncio
-    import eventlet.tpool
+    import async_runtime
 
     db = _get_db()
     device = db.get_device(device_id)
@@ -256,7 +256,7 @@ def bandwidth_debug(device_id):
             loop.close()
 
     try:
-        errInd, errStat, rows = eventlet.tpool.execute(_snmp_test)
+        errInd, errStat, rows = async_runtime.tpool_execute(_snmp_test)
         result['if1_raw'] = {'error_indication': errInd, 'error_status': errStat, 'varbinds': rows}
         if errInd:
             result['errors'].append(f'SNMP error: {errInd}')

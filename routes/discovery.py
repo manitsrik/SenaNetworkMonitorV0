@@ -1,7 +1,7 @@
 """
 Network discovery API routes
 """
-import eventlet
+import async_runtime
 from flask import Blueprint, jsonify, request, render_template, current_app
 from .auth import login_required, operator_required
 
@@ -50,7 +50,7 @@ def start_scan():
         except Exception:
             discovery._is_scanning = False
 
-    eventlet.spawn(_run_scan)
+    async_runtime.spawn(_run_scan)
     
     return jsonify({'success': True, 'started': True, 'message': 'Scan started in background. Poll /api/discovery/status for progress.'})
 
@@ -90,7 +90,7 @@ def force_reset_scan():
     discovery = _get_discovery()
     discovery.cancel_scan()
     # Give workers a moment to notice the cancel flag
-    eventlet.sleep(0.5)
+    async_runtime.sleep(0.5)
     # Force clear state in case workers are stuck
     discovery._is_scanning = False
     discovery._cancel_requested = False

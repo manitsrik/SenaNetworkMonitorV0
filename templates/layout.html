@@ -38,6 +38,256 @@
             color: var(--primary);
             transform: scale(1.2);
         }
+        .assistant-fab {
+            position: fixed;
+            right: 22px;
+            bottom: 22px;
+            width: 58px;
+            height: 58px;
+            border-radius: 999px;
+            border: none;
+            background: linear-gradient(135deg, #0f766e, #0891b2);
+            color: #fff;
+            box-shadow: 0 16px 32px rgba(8, 145, 178, 0.28);
+            z-index: 1600;
+            cursor: pointer;
+        }
+        .assistant-panel {
+            position: fixed;
+            right: 22px;
+            bottom: 92px;
+            width: min(420px, calc(100vw - 24px));
+            max-height: min(72vh, 760px);
+            display: none;
+            flex-direction: column;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+            z-index: 1600;
+            overflow: hidden;
+        }
+        .assistant-panel.open {
+            display: flex;
+        }
+        .assistant-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 0.95rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(8, 145, 178, 0.08));
+        }
+        .assistant-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+        .assistant-title {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .assistant-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+        .assistant-messages {
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            background: linear-gradient(180deg, rgba(8, 145, 178, 0.03), transparent 30%);
+        }
+        .assistant-message {
+            padding: 0.8rem 0.9rem;
+            border-radius: 14px;
+            white-space: pre-wrap;
+            line-height: 1.45;
+            font-size: 0.92rem;
+        }
+        .assistant-message.user {
+            background: var(--primary);
+            color: #fff;
+            align-self: flex-end;
+            max-width: 86%;
+        }
+        .assistant-message.bot {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            align-self: flex-start;
+            max-width: 92%;
+        }
+        .assistant-meta {
+            margin-top: 0.55rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .assistant-links,
+        .assistant-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.65rem;
+        }
+        .assistant-device-card {
+            margin-top: 0.7rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            border-radius: 14px;
+            padding: 0.75rem;
+        }
+        .assistant-device-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.65rem;
+        }
+        .assistant-device-name {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .assistant-device-badge {
+            border-radius: 999px;
+            padding: 0.2rem 0.55rem;
+            font-size: 0.72rem;
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--text-primary);
+            border: 1px solid rgba(15, 118, 110, 0.18);
+        }
+        .assistant-device-badge.up {
+            background: rgba(15, 118, 110, 0.14);
+            border-color: rgba(15, 118, 110, 0.3);
+            color: #0f766e;
+        }
+        .assistant-device-badge.down {
+            background: rgba(220, 38, 38, 0.12);
+            border-color: rgba(220, 38, 38, 0.24);
+            color: #b91c1c;
+        }
+        .assistant-device-badge.slow {
+            background: rgba(217, 119, 6, 0.12);
+            border-color: rgba(217, 119, 6, 0.24);
+            color: #b45309;
+        }
+        .assistant-device-badge.unknown,
+        .assistant-device-badge.disabled {
+            background: rgba(100, 116, 139, 0.12);
+            border-color: rgba(100, 116, 139, 0.22);
+            color: #475569;
+        }
+        .assistant-device-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem 0.75rem;
+        }
+        .assistant-device-item {
+            min-width: 0;
+        }
+        .assistant-device-label {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+        }
+        .assistant-device-value {
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            word-break: break-word;
+        }
+        .assistant-device-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+            margin-top: 0.75rem;
+        }
+        .assistant-device-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border-radius: 999px;
+            padding: 0.34rem 0.7rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.76rem;
+        }
+        .assistant-link-chip,
+        .assistant-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            border-radius: 999px;
+            padding: 0.38rem 0.75rem;
+            font-size: 0.78rem;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .assistant-link-chip {
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+        }
+        .assistant-action-btn {
+            border: 1px solid rgba(15, 118, 110, 0.24);
+            background: rgba(15, 118, 110, 0.12);
+            color: var(--text-primary);
+        }
+        .assistant-quick-replies {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            padding: 0 1rem 0.9rem 1rem;
+            border-top: 1px solid rgba(0,0,0,0);
+        }
+        .assistant-chip {
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .assistant-form {
+            display: flex;
+            gap: 0.6rem;
+            padding: 1rem;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+        .assistant-input {
+            flex: 1;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border-radius: 12px;
+            padding: 0.8rem 0.9rem;
+        }
+        .assistant-send {
+            border: none;
+            border-radius: 12px;
+            background: var(--primary);
+            color: #fff;
+            padding: 0 1rem;
+            font-weight: 600;
+        }
+        @media (max-width: 768px) {
+            .assistant-panel {
+                right: 12px;
+                left: 12px;
+                width: auto;
+                bottom: 84px;
+                max-height: 70vh;
+            }
+            .assistant-fab {
+                right: 12px;
+                bottom: 12px;
+            }
+        }
     </style>
     {% block head %}{% endblock %}
 </head>
@@ -239,6 +489,35 @@
         </div>
     </div>
 
+    <button id="assistant-fab" class="assistant-fab" type="button" title="Ask NW Monitor">
+        <i class="fa-solid fa-comment-dots"></i>
+    </button>
+
+    <section id="assistant-panel" class="assistant-panel" aria-label="Ask NW Monitor">
+        <div class="assistant-header">
+            <div>
+                <div class="assistant-title">Ask NW Monitor</div>
+                <div class="assistant-subtitle">Read-only assistant for devices, alerts, incidents, anomalies, bandwidth, and SLA</div>
+            </div>
+            <div class="assistant-header-actions">
+                <button id="assistant-reset" class="btn btn-xs btn-secondary" type="button">ล้างบริบท</button>
+                <button id="assistant-close" class="btn btn-xs btn-secondary" type="button">Close</button>
+            </div>
+        </div>
+        <div id="assistant-messages" class="assistant-messages">
+            <div class="assistant-message bot">
+                Ask about live monitoring data, for example: system summary, down devices, incidents, anomalies, or bandwidth hotspots.
+                <div class="assistant-meta">Data comes from the current application database.</div>
+            </div>
+        </div>
+        <div id="assistant-quick-replies" class="assistant-quick-replies"></div>
+        <form id="assistant-form" class="assistant-form">
+            <input id="assistant-input" class="assistant-input" type="text" maxlength="500"
+                placeholder="Ask about devices, alerts, incidents, bandwidth, or SLA">
+            <button class="assistant-send" type="submit">Send</button>
+        </form>
+    </section>
+
     <!-- Scripts -->
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='js/theme.js') }}?v=2.0"></script>
@@ -359,6 +638,220 @@
                     });
                 })
                 .catch(error => console.error('Error fetching sub-topologies for sidebar:', error));
+        });
+
+        const assistantState = {
+            quickReplies: [
+                'สรุประบบตอนนี้',
+                'มีอุปกรณ์ down อะไรบ้าง',
+                'มี incident เปิดค้างกี่รายการ',
+                'top bandwidth ตอนนี้',
+                'มี anomaly อะไรบ้าง'
+            ]
+        };
+
+        function escapeAssistantHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderAssistantQuickReplies(items) {
+            const container = document.getElementById('assistant-quick-replies');
+            if (!container) return;
+
+            const replies = (items && items.length ? items : assistantState.quickReplies).slice(0, 6);
+            container.innerHTML = replies.map(item => `
+                <button type="button" class="assistant-chip" onclick="sendAssistantPrompt('${escapeAssistantHtml(item)}')">${escapeAssistantHtml(item)}</button>
+            `).join('');
+        }
+
+        function renderAssistantLinks(links) {
+            if (!links || !links.length) return '';
+            return `<div class="assistant-links">${links.map(link => `
+                <a class="assistant-link-chip" href="${escapeAssistantHtml(link.url || '#')}" ${String(link.url || '').startsWith('/api/') ? 'target="_blank"' : ''}>
+                    <i class="fa-solid fa-up-right-from-square"></i>${escapeAssistantHtml(link.label || 'Open')}
+                </a>
+            `).join('')}</div>`;
+        }
+
+        function renderAssistantActions(actions) {
+            if (!actions || !actions.length) return '';
+            return `<div class="assistant-actions">${actions.map(action => `
+                <button type="button" class="assistant-action-btn" onclick="runAssistantAction('${encodeURIComponent(JSON.stringify(action))}')">
+                    <i class="fa-solid fa-bolt"></i>${escapeAssistantHtml(action.label || 'Run')}
+                </button>
+            `).join('')}</div>`;
+        }
+
+        function renderAssistantDeviceCard(device) {
+            if (!device || !device.name) return '';
+            const statusCode = String(device.status_code || 'unknown').toLowerCase();
+            const statusIcon = {
+                up: 'fa-circle-check',
+                down: 'fa-circle-xmark',
+                slow: 'fa-gauge-high',
+                unknown: 'fa-circle-question',
+                disabled: 'fa-ban'
+            }[statusCode] || 'fa-circle-question';
+            const fields = [
+                ['IP', device.ip_address],
+                ['Type', device.device_type],
+                ['Monitor', device.monitor_type],
+                ['Location', device.location],
+                ['Site', device.site],
+                ['Vendor', device.vendor],
+                ['Model', device.model],
+                ['Serial', device.serial],
+                ['Response', device.response_time],
+                ['Last Check', device.last_check]
+            ].filter(([, value]) => value);
+            const links = Array.isArray(device.links) ? device.links : [];
+
+            return `
+                <div class="assistant-device-card">
+                    <div class="assistant-device-card-header">
+                        <div class="assistant-device-name">${escapeAssistantHtml(device.name)}</div>
+                        <div class="assistant-device-badge ${escapeAssistantHtml(statusCode)}">
+                            <i class="fa-solid ${escapeAssistantHtml(statusIcon)}"></i>
+                            ${escapeAssistantHtml(device.status || '')}
+                        </div>
+                    </div>
+                    <div class="assistant-device-grid">
+                        ${fields.map(([label, value]) => `
+                            <div class="assistant-device-item">
+                                <div class="assistant-device-label">${escapeAssistantHtml(label)}</div>
+                                <div class="assistant-device-value">${escapeAssistantHtml(value)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${links.length ? `<div class="assistant-device-links">${links.map(link => `
+                        <a class="assistant-device-link" href="${escapeAssistantHtml(link.url || '#')}" ${String(link.url || '').startsWith('/api/') ? 'target="_blank"' : ''}>
+                            <i class="fa-solid fa-arrow-up-right-from-square"></i>${escapeAssistantHtml(link.label || 'Open')}
+                        </a>
+                    `).join('')}</div>` : ''}
+                </div>
+            `;
+        }
+
+        function appendAssistantMessage(role, content, meta, extra = {}) {
+            const messages = document.getElementById('assistant-messages');
+            if (!messages) return;
+
+            const wrap = document.createElement('div');
+            wrap.className = `assistant-message ${role}`;
+
+            const metaHtml = meta ? `<div class="assistant-meta">${meta}</div>` : '';
+            wrap.innerHTML = `${escapeAssistantHtml(content)}${metaHtml}${renderAssistantDeviceCard(extra.deviceDetails)}${renderAssistantLinks(extra.links)}${renderAssistantActions(extra.actions)}`;
+            messages.appendChild(wrap);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function toggleAssistantPanel(forceOpen) {
+            const panel = document.getElementById('assistant-panel');
+            if (!panel) return;
+            if (typeof forceOpen === 'boolean') {
+                panel.classList.toggle('open', forceOpen);
+            } else {
+                panel.classList.toggle('open');
+            }
+            if (panel.classList.contains('open')) {
+                document.getElementById('assistant-input')?.focus();
+            }
+        }
+
+        async function sendAssistantPrompt(message) {
+            const input = document.getElementById('assistant-input');
+            const text = (message || input?.value || '').trim();
+            if (!text) return;
+
+            toggleAssistantPanel(true);
+            appendAssistantMessage('user', text);
+            if (input) input.value = '';
+
+            try {
+                const response = await fetch('/api/assistant/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.success === false) {
+                    throw new Error(payload.error || 'Assistant request failed');
+                }
+
+                const meta = [
+                    payload.intent ? `intent: ${escapeAssistantHtml(payload.intent)}` : '',
+                    payload.timestamp ? `data at ${escapeAssistantHtml(payload.timestamp)}` : '',
+                    payload.sources && payload.sources.length ? `sources: ${escapeAssistantHtml(payload.sources.join(', '))}` : ''
+                ].filter(Boolean).join(' · ');
+
+                appendAssistantMessage('bot', payload.answer || 'No answer returned.', meta, {
+                    actions: payload.actions || [],
+                    links: payload.links || [],
+                    deviceDetails: payload.device_details || null
+                });
+                renderAssistantQuickReplies(payload.quick_replies || []);
+            } catch (error) {
+                appendAssistantMessage('bot', `Assistant error: ${error.message}`, 'request failed');
+            }
+        }
+
+        async function resetAssistantContext() {
+            try {
+                const response = await fetch('/api/assistant/context/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.success === false) {
+                    throw new Error(payload.error || 'Assistant context reset failed');
+                }
+                appendAssistantMessage('bot', 'ล้างบริบทการคุยแล้ว เริ่มถามใหม่ได้เลย', 'context cleared');
+                renderAssistantQuickReplies(assistantState.quickReplies);
+            } catch (error) {
+                appendAssistantMessage('bot', `Reset error: ${error.message}`, 'reset failed');
+            }
+        }
+
+        async function runAssistantAction(encodedAction) {
+            let action = null;
+            try {
+                action = JSON.parse(decodeURIComponent(encodedAction || ''));
+            } catch (error) {
+                appendAssistantMessage('bot', 'Action payload could not be parsed.', 'action failed');
+                return;
+            }
+            if (!action || !action.id) return;
+            appendAssistantMessage('user', `Run action: ${action.label || action.id}`);
+            try {
+                const response = await fetch('/api/assistant/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action_id: action.id, payload: action.payload || {} })
+                });
+                const payload = await response.json();
+                if (!response.ok || payload.success === false) {
+                    throw new Error(payload.error || 'Assistant action failed');
+                }
+                appendAssistantMessage('bot', payload.message || 'Action completed.', payload.timestamp ? `data at ${escapeAssistantHtml(payload.timestamp)}` : 'action completed');
+            } catch (error) {
+                appendAssistantMessage('bot', `Action error: ${error.message}`, 'action failed');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            renderAssistantQuickReplies(assistantState.quickReplies);
+            document.getElementById('assistant-fab')?.addEventListener('click', () => toggleAssistantPanel());
+            document.getElementById('assistant-close')?.addEventListener('click', () => toggleAssistantPanel(false));
+            document.getElementById('assistant-reset')?.addEventListener('click', () => resetAssistantContext());
+            document.getElementById('assistant-form')?.addEventListener('submit', function (event) {
+                event.preventDefault();
+                sendAssistantPrompt();
+            });
         });
     </script>
     </script>

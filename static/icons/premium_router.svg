@@ -1,0 +1,354 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 220" role="img" aria-label="Premium router device">
+  <defs>
+    <!-- Dark chassis body gradient (Cisco ISR style) -->
+    <linearGradient id="rtrBody" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2a2d33"/>
+      <stop offset="0.4" stop-color="#1e2128"/>
+      <stop offset="1" stop-color="#15171c"/>
+    </linearGradient>
+    <!-- Top bevel highlight -->
+    <linearGradient id="rtrBevel" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#3d4250"/>
+      <stop offset="1" stop-color="#22252c"/>
+    </linearGradient>
+    <!-- Rack ear gradient -->
+    <linearGradient id="rtrEar" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#33373f"/>
+      <stop offset="1" stop-color="#1a1d22"/>
+    </linearGradient>
+    <!-- Port panel (darker inset) -->
+    <linearGradient id="rtrPort" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#0c0e12"/>
+      <stop offset="1" stop-color="#141720"/>
+    </linearGradient>
+    <!-- Ventilation grille gradient -->
+    <linearGradient id="rtrVent" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#1a1d24"/>
+      <stop offset="1" stop-color="#0f1115"/>
+    </linearGradient>
+    <!-- Port bezel gradient -->
+    <linearGradient id="rtrBezel" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#454b55"/>
+      <stop offset="1" stop-color="#1f2937"/>
+    </linearGradient>
+    <!-- USB port gradient -->
+    <linearGradient id="rtrUsb" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <filter id="rtrShadow" x="-5%" y="-15%" width="110%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#020617" flood-opacity="0.45"/>
+    </filter>
+    <!-- Inner glow for top edge -->
+    <linearGradient id="rtrTopEdge" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#3a3f4a"/>
+      <stop offset="0.5" stop-color="#4a5060"/>
+      <stop offset="1" stop-color="#3a3f4a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- === MAIN CHASSIS === -->
+  <g filter="url(#rtrShadow)">
+    <!-- Outer chassis body -->
+    <rect x="40" y="18" width="880" height="184" rx="6" fill="url(#rtrBody)" stroke="#3a3f48" stroke-width="1.5"/>
+    <!-- Top edge highlight line -->
+    <line x1="46" y1="19" x2="914" y2="19" stroke="url(#rtrTopEdge)" stroke-width="1" stroke-opacity="0.5"/>
+    <!-- Inner bezel -->
+    <rect x="46" y="24" width="868" height="172" rx="4" fill="none" stroke="#2d3135" stroke-width="1"/>
+  </g>
+
+  <!-- === LEFT RACK EAR === -->
+  <g>
+    <rect x="8" y="14" width="36" height="192" rx="4" fill="url(#rtrEar)" stroke="#3a3f48" stroke-width="1"/>
+    <!-- Screw holes -->
+    <circle cx="26" cy="34" r="6" fill="#0c0e12" stroke="#4a5060" stroke-width="1"/>
+    <circle cx="26" cy="34" r="2.5" fill="#2a2d33"/>
+    <circle cx="26" cy="186" r="6" fill="#0c0e12" stroke="#4a5060" stroke-width="1"/>
+    <circle cx="26" cy="186" r="2.5" fill="#2a2d33"/>
+    <!-- Handle indent -->
+    <rect x="14" y="60" width="6" height="100" rx="3" fill="#0c0e12" stroke="#2a2d33" stroke-width="0.5"/>
+  </g>
+
+  <!-- === RIGHT RACK EAR === -->
+  <g>
+    <rect x="916" y="14" width="36" height="192" rx="4" fill="url(#rtrEar)" stroke="#3a3f48" stroke-width="1"/>
+    <!-- Screw holes -->
+    <circle cx="934" cy="34" r="6" fill="#0c0e12" stroke="#4a5060" stroke-width="1"/>
+    <circle cx="934" cy="34" r="2.5" fill="#2a2d33"/>
+    <circle cx="934" cy="186" r="6" fill="#0c0e12" stroke="#4a5060" stroke-width="1"/>
+    <circle cx="934" cy="186" r="2.5" fill="#2a2d33"/>
+    <!-- Handle indent -->
+    <rect x="940" y="60" width="6" height="100" rx="3" fill="#0c0e12" stroke="#2a2d33" stroke-width="0.5"/>
+  </g>
+
+  <!-- === BRAND / LOGO AREA (Top-left) === -->
+  <g transform="translate(60 32)">
+    <!-- Cisco-style logo bars -->
+    <g fill="#00bceb">
+      <rect x="0" y="6" width="2.5" height="16" rx="1"/>
+      <rect x="5" y="2" width="2.5" height="20" rx="1"/>
+      <rect x="10" y="8" width="2.5" height="14" rx="1"/>
+      <rect x="15" y="2" width="2.5" height="20" rx="1"/>
+      <rect x="20" y="6" width="2.5" height="16" rx="1"/>
+    </g>
+    <text x="0" y="40" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#9ca3af" letter-spacing="1">CISCO</text>
+  </g>
+
+  <!-- === STATUS LED PANEL (Left side) === -->
+  <g transform="translate(62 86)">
+    <!-- LED labels and indicators -->
+    <g font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280">
+      <circle cx="0" cy="4" r="3.5" fill="#22c55e"/>
+      <circle cx="0" cy="4" r="5" fill="none" stroke="#22c55e" stroke-opacity="0.3" stroke-width="1"/>
+      <text x="10" y="7">PWR</text>
+
+      <circle cx="0" cy="22" r="3.5" fill="#22c55e"/>
+      <circle cx="0" cy="22" r="5" fill="none" stroke="#22c55e" stroke-opacity="0.3" stroke-width="1"/>
+      <text x="10" y="25">STAT</text>
+
+      <circle cx="0" cy="40" r="3.5" fill="#3b82f6"/>
+      <circle cx="0" cy="40" r="5" fill="none" stroke="#3b82f6" stroke-opacity="0.3" stroke-width="1"/>
+      <text x="10" y="43">SYS</text>
+
+      <circle cx="0" cy="58" r="3.5" fill="#f59e0b"/>
+      <circle cx="0" cy="58" r="5" fill="none" stroke="#f59e0b" stroke-opacity="0.3" stroke-width="1"/>
+      <text x="10" y="61">ACT</text>
+    </g>
+    <!-- RESET label -->
+    <text x="-4" y="82" font-family="Arial, Helvetica, sans-serif" font-size="8" fill="#475569">RESET</text>
+    <circle cx="28" cy="78" r="3" fill="#0c0e12" stroke="#475569" stroke-width="0.5"/>
+  </g>
+
+  <!-- === USB PORT (Left area) === -->
+  <g transform="translate(112 110)">
+    <rect x="0" y="0" width="30" height="16" rx="2" fill="url(#rtrUsb)" stroke="#1e40af" stroke-width="0.8"/>
+    <rect x="4" y="4" width="22" height="8" rx="1" fill="#3b82f6"/>
+    <rect x="7" y="6" width="6" height="4" rx="1" fill="#93c5fd"/>
+    <!-- USB symbol -->
+    <text x="2" y="30" font-family="Arial, Helvetica, sans-serif" font-size="8" fill="#4b5563">USB</text>
+  </g>
+
+  <!-- === VENTILATION GRILLE === -->
+  <g transform="translate(156 40)">
+    <rect x="0" y="0" width="140" height="140" rx="6" fill="url(#rtrVent)" stroke="#2a2d33" stroke-width="1"/>
+    <!-- Honeycomb-style ventilation pattern -->
+    <g fill="none" stroke="#2a2d33" stroke-width="0.6" opacity="0.9">
+      <!-- Vertical lines for mesh effect -->
+      <line x1="10" y1="6" x2="10" y2="134"/>
+      <line x1="16" y1="6" x2="16" y2="134"/>
+      <line x1="22" y1="6" x2="22" y2="134"/>
+      <line x1="28" y1="6" x2="28" y2="134"/>
+      <line x1="34" y1="6" x2="34" y2="134"/>
+      <line x1="40" y1="6" x2="40" y2="134"/>
+      <line x1="46" y1="6" x2="46" y2="134"/>
+      <line x1="52" y1="6" x2="52" y2="134"/>
+      <line x1="58" y1="6" x2="58" y2="134"/>
+      <line x1="64" y1="6" x2="64" y2="134"/>
+      <line x1="70" y1="6" x2="70" y2="134"/>
+      <line x1="76" y1="6" x2="76" y2="134"/>
+      <line x1="82" y1="6" x2="82" y2="134"/>
+      <line x1="88" y1="6" x2="88" y2="134"/>
+      <line x1="94" y1="6" x2="94" y2="134"/>
+      <line x1="100" y1="6" x2="100" y2="134"/>
+      <line x1="106" y1="6" x2="106" y2="134"/>
+      <line x1="112" y1="6" x2="112" y2="134"/>
+      <line x1="118" y1="6" x2="118" y2="134"/>
+      <line x1="124" y1="6" x2="124" y2="134"/>
+      <line x1="130" y1="6" x2="130" y2="134"/>
+    </g>
+    <!-- Horizontal mesh lines (sparser) -->
+    <g fill="none" stroke="#222630" stroke-width="0.4" opacity="0.5">
+      <line x1="6" y1="10" x2="134" y2="10"/>
+      <line x1="6" y1="20" x2="134" y2="20"/>
+      <line x1="6" y1="30" x2="134" y2="30"/>
+      <line x1="6" y1="40" x2="134" y2="40"/>
+      <line x1="6" y1="50" x2="134" y2="50"/>
+      <line x1="6" y1="60" x2="134" y2="60"/>
+      <line x1="6" y1="70" x2="134" y2="70"/>
+      <line x1="6" y1="80" x2="134" y2="80"/>
+      <line x1="6" y1="90" x2="134" y2="90"/>
+      <line x1="6" y1="100" x2="134" y2="100"/>
+      <line x1="6" y1="110" x2="134" y2="110"/>
+      <line x1="6" y1="120" x2="134" y2="120"/>
+      <line x1="6" y1="130" x2="134" y2="130"/>
+    </g>
+  </g>
+
+  <!-- === MODEL NAME (Top-right) === -->
+  <g transform="translate(820 36)">
+    <text x="0" y="0" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#6b7280" text-anchor="start">Cisco ISR 4331</text>
+  </g>
+
+  <!-- === UPPER PORT ROW (GE 0/0, GE 0/1, CONSOLE, USB) === -->
+  <g transform="translate(340 34)">
+    <!-- GE 0/0 -->
+    <g>
+      <text x="14" y="0" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280" text-anchor="middle">GE 0/0</text>
+      <rect x="0" y="6" width="28" height="24" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+      <rect x="5" y="10" width="18" height="16" rx="1" fill="#1a1f2e"/>
+      <!-- RJ45 inner -->
+      <rect x="8" y="13" width="12" height="8" rx="1" fill="#cbd5e1"/>
+      <rect x="10" y="22" width="8" height="3" rx="0.5" fill="#94a3b8"/>
+      <!-- Link LED -->
+      <circle cx="6" cy="34" r="2" fill="#22c55e"/>
+      <circle cx="22" cy="34" r="2" fill="#f59e0b"/>
+    </g>
+
+    <!-- GE 0/1 -->
+    <g transform="translate(46 0)">
+      <text x="14" y="0" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280" text-anchor="middle">GE 0/1</text>
+      <rect x="0" y="6" width="28" height="24" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+      <rect x="5" y="10" width="18" height="16" rx="1" fill="#1a1f2e"/>
+      <rect x="8" y="13" width="12" height="8" rx="1" fill="#cbd5e1"/>
+      <rect x="10" y="22" width="8" height="3" rx="0.5" fill="#94a3b8"/>
+      <circle cx="6" cy="34" r="2" fill="#22c55e"/>
+      <circle cx="22" cy="34" r="2" fill="#f59e0b"/>
+    </g>
+
+    <!-- CONSOLE -->
+    <g transform="translate(108 0)">
+      <text x="14" y="0" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280" text-anchor="middle">CONSOLE</text>
+      <rect x="0" y="6" width="28" height="24" rx="2" fill="#0b1220" stroke="#2563eb" stroke-width="0.8"/>
+      <rect x="5" y="10" width="18" height="16" rx="1" fill="#1a1f2e"/>
+      <rect x="8" y="13" width="12" height="8" rx="1" fill="#93c5fd"/>
+      <rect x="10" y="22" width="8" height="3" rx="0.5" fill="#60a5fa"/>
+    </g>
+
+    <!-- USB 2 (mini) -->
+    <g transform="translate(154 0)">
+      <text x="10" y="0" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280" text-anchor="middle">USB</text>
+      <rect x="0" y="6" width="20" height="18" rx="2" fill="url(#rtrUsb)" stroke="#1e40af" stroke-width="0.8"/>
+      <rect x="4" y="10" width="12" height="10" rx="1" fill="#3b82f6"/>
+    </g>
+  </g>
+
+  <!-- === LOWER PORT ROW (GE 0/2 ~ GE 0/7) === -->
+  <g transform="translate(320 108)">
+    <!-- Row label -->
+    <g font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#6b7280">
+      <!-- GE 0/2 -->
+      <g>
+        <text x="16" y="0" text-anchor="middle">GE 0/2</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <!-- Activity LEDs -->
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#f59e0b"/>
+      </g>
+
+      <!-- GE 0/3 -->
+      <g transform="translate(48 0)">
+        <text x="16" y="0" text-anchor="middle">GE 0/3</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#f59e0b"/>
+      </g>
+
+      <!-- GE 0/4 -->
+      <g transform="translate(96 0)">
+        <text x="16" y="0" text-anchor="middle">GE 0/4</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#f59e0b"/>
+      </g>
+
+      <!-- GE 0/5 -->
+      <g transform="translate(144 0)">
+        <text x="16" y="0" text-anchor="middle">GE 0/5</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#94a3b8"/>
+      </g>
+
+      <!-- GE 0/6 -->
+      <g transform="translate(192 0)">
+        <text x="16" y="0" text-anchor="middle">GE 0/6</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#94a3b8"/>
+      </g>
+
+      <!-- GE 0/7 -->
+      <g transform="translate(240 0)">
+        <text x="16" y="0" text-anchor="middle">GE 0/7</text>
+        <rect x="0" y="6" width="32" height="28" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.8"/>
+        <rect x="5" y="10" width="22" height="20" rx="1.5" fill="#1a1f2e"/>
+        <rect x="8" y="13" width="16" height="10" rx="1" fill="#cbd5e1"/>
+        <rect x="10" y="24" width="12" height="4" rx="0.5" fill="#94a3b8"/>
+        <circle cx="8" cy="40" r="2.5" fill="#22c55e"/>
+        <circle cx="8" cy="40" r="4" fill="none" stroke="#22c55e" stroke-opacity="0.25" stroke-width="0.8"/>
+        <circle cx="24" cy="40" r="2.5" fill="#94a3b8"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- === SFP PORTS (Right side) === -->
+  <g transform="translate(760 90)">
+    <text x="40" y="0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" text-anchor="middle">SFP 0/0</text>
+    <text x="110" y="0" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#6b7280" text-anchor="middle">SFP 0/1</text>
+
+    <!-- SFP 0/0 module -->
+    <g transform="translate(0 6)">
+      <rect x="0" y="0" width="80" height="68" rx="4" fill="url(#rtrBezel)" stroke="#4a5060" stroke-width="0.8"/>
+      <!-- Dual SFP slots -->
+      <rect x="10" y="10" width="26" height="22" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.5"/>
+      <rect x="44" y="10" width="26" height="22" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.5"/>
+      <!-- SFP module inserts -->
+      <rect x="14" y="14" width="18" height="14" rx="1" fill="#cbd5e1"/>
+      <rect x="48" y="14" width="18" height="14" rx="1" fill="#cbd5e1"/>
+      <!-- Pull tabs -->
+      <rect x="18" y="38" width="10" height="6" rx="1" fill="#64748b"/>
+      <rect x="52" y="38" width="10" height="6" rx="1" fill="#64748b"/>
+      <!-- Speed indicators -->
+      <rect x="14" y="50" width="18" height="4" rx="1" fill="#1e293b"/>
+      <rect x="48" y="50" width="18" height="4" rx="1" fill="#1e293b"/>
+      <!-- Link LEDs -->
+      <circle cx="10" cy="62" r="2" fill="#22c55e"/>
+      <circle cx="22" cy="62" r="2" fill="#f59e0b"/>
+      <circle cx="58" cy="62" r="2" fill="#94a3b8"/>
+      <circle cx="70" cy="62" r="2" fill="#94a3b8"/>
+    </g>
+
+    <!-- SFP 0/1 module -->
+    <g transform="translate(70 6)">
+      <rect x="0" y="0" width="80" height="68" rx="4" fill="url(#rtrBezel)" stroke="#4a5060" stroke-width="0.8"/>
+      <rect x="10" y="10" width="26" height="22" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.5"/>
+      <rect x="44" y="10" width="26" height="22" rx="2" fill="#0b1220" stroke="#475569" stroke-width="0.5"/>
+      <rect x="14" y="14" width="18" height="14" rx="1" fill="#cbd5e1"/>
+      <rect x="48" y="14" width="18" height="14" rx="1" fill="#cbd5e1"/>
+      <rect x="18" y="38" width="10" height="6" rx="1" fill="#64748b"/>
+      <rect x="52" y="38" width="10" height="6" rx="1" fill="#64748b"/>
+      <rect x="14" y="50" width="18" height="4" rx="1" fill="#1e293b"/>
+      <rect x="48" y="50" width="18" height="4" rx="1" fill="#1e293b"/>
+      <circle cx="10" cy="62" r="2" fill="#94a3b8"/>
+      <circle cx="22" cy="62" r="2" fill="#94a3b8"/>
+      <circle cx="58" cy="62" r="2" fill="#94a3b8"/>
+      <circle cx="70" cy="62" r="2" fill="#94a3b8"/>
+    </g>
+  </g>
+
+  <!-- === BOTTOM CHASSIS STRIP (2U divider) === -->
+  <g>
+    <line x1="44" y1="192" x2="916" y2="192" stroke="#3a3f48" stroke-width="0.8"/>
+    <rect x="44" y="193" width="872" height="6" rx="1" fill="#1a1d22" stroke="#2a2d33" stroke-width="0.5"/>
+  </g>
+</svg>

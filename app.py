@@ -15,6 +15,7 @@ if sys.platform == 'win32':
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+import logging
 from database import Database
 from monitor import NetworkMonitor
 from alerter import Alerter
@@ -35,11 +36,18 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
-CORS(app)
+app.config['SESSION_COOKIE_HTTPONLY'] = Config.SESSION_COOKIE_HTTPONLY
+app.config['SESSION_COOKIE_SAMESITE'] = Config.SESSION_COOKIE_SAMESITE
+app.config['SESSION_COOKIE_SECURE'] = Config.SESSION_COOKIE_SECURE
+
+if Config.CORS_ALLOWED_ORIGINS:
+    CORS(app, resources={r"/api/*": {"origins": Config.CORS_ALLOWED_ORIGINS}})
 
 # Initialize SocketIO
-socketio = SocketIO(app, cors_allowed_origins=Config.SOCKETIO_CORS_ALLOWED_ORIGINS,
-                   async_mode=Config.SOCKETIO_ASYNC_MODE)
+socketio_kwargs = {'async_mode': Config.SOCKETIO_ASYNC_MODE}
+if Config.SOCKETIO_CORS_ALLOWED_ORIGINS:
+    socketio_kwargs['cors_allowed_origins'] = Config.SOCKETIO_CORS_ALLOWED_ORIGINS
+socketio = SocketIO(app, **socketio_kwargs)
 
 # Initialize Babel
 from flask_babel import Babel, gettext as _
@@ -52,6 +60,10 @@ def get_locale():
 babel = Babel(app, locale_selector=get_locale)
 app.config['BABEL_DEFAULT_LOCALE'] = 'en'
 app.config['BABEL_TRANSLATION_DIRECTORIES'] = 'translations'
+
+logger = logging.getLogger(__name__)
+for warning in Config.validate_runtime():
+    logger.warning('Configuration warning: %s', warning)
 
 # Initialize core services
 db = Database()
@@ -87,13 +99,14 @@ from routes import ALL_BLUEPRINTS
 for bp in ALL_BLUEPRINTS:
     app.register_blueprint(bp)
 
-# Swagger API Documentation UI
-from flask_swagger_ui import get_swaggerui_blueprint
-SWAGGER_URL = '/api/docs'
-API_SPEC_URL = '/static/swagger/openapi.yaml'
-swagger_bp = get_swaggerui_blueprint(SWAGGER_URL, API_SPEC_URL,
-    config={'app_name': 'NW Monitor API', 'layout': 'BaseLayout'})
-app.register_blueprint(swagger_bp, url_prefix=SWAGGER_URL)
+if Config.ENABLE_SWAGGER_UI:
+    # Swagger API Documentation UI
+    from flask_swagger_ui import get_swaggerui_blueprint
+    SWAGGER_URL = '/api/docs'
+    API_SPEC_URL = '/static/swagger/openapi.yaml'
+    swagger_bp = get_swaggerui_blueprint(SWAGGER_URL, API_SPEC_URL,
+        config={'app_name': 'NW Monitor API', 'layout': 'BaseLayout'})
+    app.register_blueprint(swagger_bp, url_prefix=SWAGGER_URL)
 
 @app.route('/sw.js')
 def serve_sw():
@@ -105,10 +118,14 @@ def serve_manifest():
     from flask import send_from_directory
     return send_from_directory('static', 'manifest.json', mimetype='application/json')
 
-@app.route('/PLUGIN_DEVELOPMENT.md')
-def serve_plugin_development_guide():
-    from flask import send_from_directory
-    return send_from_directory('.', 'PLUGIN_DEVELOPMENT.md', mimetype='text/markdown')
+if Config.EXPOSE_INTERNAL_DOCS:
+    from routes.auth import admin_required
+
+    @app.route('/PLUGIN_DEVELOPMENT.md')
+    @admin_required
+    def serve_plugin_development_guide():
+        from flask import send_from_directory
+        return send_from_directory('.', 'PLUGIN_DEVELOPMENT.md', mimetype='text/markdown')
 
 # ============================================================================
 # Task Scheduler & Service Manager

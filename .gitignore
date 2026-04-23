@@ -25,7 +25,9 @@ __pycache__/
 
 # Logs
 *.log
+server_log.txt
 plugin_logs/
+logs/
 
 # OS
 .DS_Store
@@ -34,3 +36,11 @@ Thumbs.db
 # Byte-compiled / optimized
 *.pyc
 *.pyo
+*.db-shm
+*.db-wal
+
+# Generated uploads
+static/uploads/
+
+# Local database backups
+backups/*.dump

@@ -19,6 +19,7 @@ from .ldap import ldap_bp
 from .sso import sso_bp
 from .assignments import assignments_bp
 from .plugins import plugins_bp
+from .assistant import assistant_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -39,5 +40,6 @@ ALL_BLUEPRINTS = [
     sso_bp,
     assignments_bp,
     plugins_bp,
+    assistant_bp,
 ]
 

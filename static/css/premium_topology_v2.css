@@ -72,15 +72,17 @@
 }
 
 .internet-node {
-    width: 104px;
-    height: 96px;
+    width: 142px;
+    height: 142px;
 }
 
 .internet-node .floating-device-image {
-    width: 76px;
-    height: 88px;
-    transform: translateY(-4px);
-    filter: drop-shadow(0 8px 14px rgba(59, 130, 246, 0.28));
+    width: 120px;
+    height: auto;
+    max-height: 114px;
+    object-fit: contain;
+    transform: translateY(-8px);
+    filter: drop-shadow(0 9px 15px rgba(59, 130, 246, 0.2));
 }
 
 .internet-node .floating-platform {
@@ -88,7 +90,7 @@
 }
 
 .internet-node .floating-label {
-    bottom: 0 !important;
+    bottom: 12px !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -105,10 +107,21 @@
 }
 
 .internet-node .floating-status {
-    top: 18px;
-    right: 10px;
-    width: 10px;
-    height: 10px;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    transform: translate(-50%, -50%);
+    width: 12px;
+    height: 12px;
+    z-index: 4;
+}
+
+.internet-node .floating-status::before {
+    box-shadow: 0 0 12px currentColor, 0 0 4px rgba(255,255,255,0.5);
+}
+
+.internet-node .floating-status::after {
+    /* Pulse ring – same as switch/firewall */
 }
 
 .internet-node .hardware-hover-card {
@@ -447,8 +460,8 @@
 }
 
 .rackmount-node .floating-status {
-    top: 22px;
-    right: 10px;
+    top: 14px;
+    right: 6px;
     width: 12px;
     height: 12px;
     z-index: 4;
@@ -496,6 +509,53 @@
 }
 
 [data-theme="dark"] .rackmount-node.glow-firewall .hardware-title {
+    color: #e2e8f0 !important;
+    text-shadow: 0 1px 2px rgba(15, 23, 42, 0.92) !important;
+}
+
+/* Router-specific overrides */
+.rackmount-node.glow-router {
+    width: 188px;
+    height: 60px;
+}
+
+.rackmount-node.glow-router .hardware-image {
+    width: 184px;
+    height: 30px;
+    margin-top: 10px;
+    object-position: center;
+    filter: drop-shadow(0 10px 16px rgba(15, 23, 42, 0.28));
+}
+
+.rackmount-node.glow-router .hardware-title {
+    top: auto !important;
+    bottom: 10px !important;
+    left: 0 !important;
+    right: 0 !important;
+    color: #334155 !important;
+    font-size: 8.2px !important;
+    font-weight: 900 !important;
+    letter-spacing: 0.28px !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.95) !important;
+}
+
+.rackmount-node.glow-router .hardware-ip {
+    display: none !important;
+}
+
+.rackmount-node.glow-router .floating-status {
+    top: 19px;
+    right: 28px;
+    width: 12px;
+    height: 12px;
+}
+
+[data-theme="light"] .rackmount-node.glow-router .hardware-title {
+    color: #1e293b !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.98) !important;
+}
+
+[data-theme="dark"] .rackmount-node.glow-router .hardware-title {
     color: #e2e8f0 !important;
     text-shadow: 0 1px 2px rgba(15, 23, 42, 0.92) !important;
 }

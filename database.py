@@ -141,7 +141,30 @@ class Database:
         if count == 1:
             return ph
         return ', '.join([ph] * count)
-    
+
+    def _safe_rollback(self, conn):
+        """Rollback only when the current connection is still usable."""
+        if conn is None:
+            return
+        try:
+            if self.db_type == 'postgresql' and getattr(conn, 'closed', 0):
+                return
+            conn.rollback()
+        except Exception:
+            pass
+
+    def _add_column_if_missing(self, conn, cursor, table_name, col_name, col_type):
+        """Run idempotent ADD COLUMN migrations without crashing on closed connections."""
+        try:
+            if self.db_type == 'postgresql':
+                self._safe_rollback(conn)
+                cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
+                conn.commit()
+            else:
+                cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}')
+        except Exception:
+            self._safe_rollback(conn)
+
     def init_db(self):
         """Initialize database tables"""
         conn = self.get_connection()
@@ -217,17 +240,7 @@ class Database:
             ('snmp_v3_priv_password', 'TEXT'),
         ]
         for col_name, col_type in snmp_v3_columns:
-            try:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-                    conn.commit()
-                else:
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-            except Exception:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                # Column already exists — ignore
+            self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
         
         # Migration: Add latitude and longitude columns to existing devices table
         location_columns = [
@@ -235,17 +248,7 @@ class Database:
             ('longitude', 'REAL'),
         ]
         for col_name, col_type in location_columns:
-            try:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-                    conn.commit()
-                else:
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-            except Exception:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                # Column already exists — ignore
+            self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
 
         # Migration: Add escalation columns
         escalation_columns = [
@@ -253,43 +256,19 @@ class Database:
             ('escalation_level', 'INTEGER DEFAULT 0'),
         ]
         for col_name, col_type in escalation_columns:
-            try:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-                    conn.commit()
-                else:
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-            except Exception:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-        # Column already exists — ignore
+            self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
         
         # Migration: Add is_enabled column to existing devices table
-        try:
-            if self.db_type == 'postgresql':
-                conn.rollback()
-                cursor.execute(f'ALTER TABLE devices ADD COLUMN is_enabled {bool_type} DEFAULT {bool_default_true}')
-                conn.commit()
-            else:
-                cursor.execute(f'ALTER TABLE devices ADD COLUMN is_enabled {bool_type} DEFAULT {bool_default_true}')
-        except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
-            # Column already exists — ignore
+        self._add_column_if_missing(conn, cursor, 'devices', 'is_enabled', f'{bool_type} DEFAULT {bool_default_true}')
         
         # Migration: Add parent_device_id column for Alert Dependencies
-        try:
-            if self.db_type == 'postgresql':
-                conn.rollback()
-                cursor.execute('ALTER TABLE devices ADD COLUMN parent_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL')
-                conn.commit()
-            else:
-                cursor.execute('ALTER TABLE devices ADD COLUMN parent_device_id INTEGER REFERENCES devices(id) ON DELETE SET NULL')
-        except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
-            # Column already exists — ignore
+        self._add_column_if_missing(
+            conn,
+            cursor,
+            'devices',
+            'parent_device_id',
+            'INTEGER REFERENCES devices(id) ON DELETE SET NULL'
+        )
         
         # Migration: Add SSH/WMI and Metrics columns
         metrics_columns = [
@@ -310,17 +289,7 @@ class Database:
             ('last_metrics_time', 'TIMESTAMP'),
         ]
         for col_name, col_type in metrics_columns:
-            try:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-                    conn.commit()
-                else:
-                    cursor.execute(f'ALTER TABLE devices ADD COLUMN {col_name} {col_type}')
-            except Exception:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
-                # Column already exists — ignore
+            self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
         
         # Default Alert Escalation Settings Let's ensure these exist 
         default_escalation_settings = {
@@ -548,20 +517,19 @@ class Database:
         # Migration: Add telegram_chat_id to users table
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT")
                 conn.commit()
             else:
                 cursor.execute("ALTER TABLE users ADD COLUMN telegram_chat_id TEXT")
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
 
         # Migration: Add incident owner columns
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute("ALTER TABLE incident_states ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id)")
                 cursor.execute("ALTER TABLE incident_states ADD COLUMN IF NOT EXISTS owner_username TEXT")
                 conn.commit()
@@ -570,13 +538,12 @@ class Database:
                 cursor.execute("ALTER TABLE incident_states ADD COLUMN owner_username TEXT")
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
 
         # Migration: Add anomaly owner columns
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute("ALTER TABLE anomaly_states ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id)")
                 cursor.execute("ALTER TABLE anomaly_states ADD COLUMN IF NOT EXISTS owner_username TEXT")
                 conn.commit()
@@ -585,21 +552,19 @@ class Database:
                 cursor.execute("ALTER TABLE anomaly_states ADD COLUMN owner_username TEXT")
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
 
         # Migration: Add auth_type column to users table
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_type TEXT DEFAULT 'local'")
                 conn.commit()
             else:
                 cursor.execute("ALTER TABLE users ADD COLUMN auth_type TEXT DEFAULT 'local'")
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
             # Column likely exists
 
         # Migration: Add MFA columns to users table
@@ -610,14 +575,13 @@ class Database:
         for col_name, col_type in mfa_columns:
             try:
                 if self.db_type == 'postgresql':
-                    conn.rollback()
-                    cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}')
+                    self._safe_rollback(conn)
+                    cursor.execute(f'ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_type}')
                     conn.commit()
                 else:
                     cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_type}')
             except Exception:
-                if self.db_type == 'postgresql':
-                    conn.rollback()
+                self._safe_rollback(conn)
                 # Column already exists — ignore
 
         # Dashboards table
@@ -639,15 +603,14 @@ class Database:
         # Migration: Add display_order to dashboards if missing
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute('ALTER TABLE dashboards ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0')
                 conn.commit()
             else:
                 cursor.execute('ALTER TABLE dashboards ADD COLUMN display_order INTEGER DEFAULT 0')
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
             # Column likely exists
         
         # Dashboard Templates table
@@ -686,15 +649,14 @@ class Database:
         # Migration: Add theme_mode
         try:
             if self.db_type == 'postgresql':
-                conn.rollback()
+                self._safe_rollback(conn)
                 cursor.execute("ALTER TABLE sub_topologies ADD COLUMN IF NOT EXISTS theme_mode TEXT DEFAULT 'standard'")
                 conn.commit()
             else:
                 cursor.execute("ALTER TABLE sub_topologies ADD COLUMN theme_mode TEXT DEFAULT 'standard'")
                 conn.commit()
         except Exception:
-            if self.db_type == 'postgresql':
-                conn.rollback()
+            self._safe_rollback(conn)
 
         # LDAP settings table
         cursor.execute(f'''
@@ -1052,7 +1014,7 @@ class Database:
             conn.commit()
             return {'success': True, 'id': device_id}
         except (sqlite3.IntegrityError, Exception) as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower() or 'UNIQUE constraint' in str(e):
                 return {'success': False, 'error': 'Device with this IP/URL, monitor type, and device type already exists'}
             return {'success': False, 'error': str(e)}
@@ -1214,7 +1176,7 @@ class Database:
             
             return {'success': True}
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -1275,7 +1237,7 @@ class Database:
                 conn.commit()
             return True
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB ERROR] update_system_metrics: {e}")
             return False
         finally:
@@ -1457,7 +1419,7 @@ class Database:
                 'status': status_update
             }
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -1496,7 +1458,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"Error deleting device {device_id}: {e}")
             return {'success': False, 'error': str(e)}
         finally:
@@ -1593,7 +1555,7 @@ class Database:
                 'new_status': status
             }
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             raise e
         finally:
             self.release_connection(conn)
@@ -1643,7 +1605,7 @@ class Database:
             conn.commit()
             return {'success': True, 'id': connection_id}
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -1669,7 +1631,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -3351,7 +3313,7 @@ class Database:
             r = self._row_to_dict(result)
             return r['failure_count'] if r else 1
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             raise e
         finally:
             self.release_connection(conn)
@@ -3364,7 +3326,7 @@ class Database:
             cursor.execute(f'UPDATE devices SET failure_count = 0 WHERE id = {self._ph()}', (device_id,))
             conn.commit()
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             raise e
         finally:
             self.release_connection(conn)
@@ -3401,7 +3363,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True, 'id': window_id}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
@@ -3710,7 +3672,7 @@ class Database:
             print(f"[DB Cleanup] Deleted {deleted_history} old status records, {deleted_alerts} old alerts, {deleted_bw} old bandwidth samples (retention: {Config.RETENTION_DAYS} days)")
             
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB Cleanup] Error: {e}")
         finally:
             self.release_connection(conn)
@@ -3737,7 +3699,7 @@ class Database:
                   bps_in, bps_out, if_speed, util_in, util_out, now))
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[BW] save_bandwidth_sample error: {e}")
         finally:
             self.release_connection(conn)
@@ -3818,7 +3780,7 @@ class Database:
         
         cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
         cursor.execute(f'''
-            SELECT b.device_id, d.name as device_name, d.ip_address,
+            SELECT b.device_id, d.name as device_name, d.ip_address, d.location, d.device_type,
                    b.if_index, b.if_name,
                    AVG(b.bps_in) as avg_bps_in,
                    AVG(b.bps_out) as avg_bps_out,
@@ -3830,7 +3792,7 @@ class Database:
             FROM bandwidth_history b
             JOIN devices d ON b.device_id = d.id
             WHERE b.sampled_at >= {ph}
-            GROUP BY b.device_id, d.name, d.ip_address, b.if_index, b.if_name, b.if_speed
+            GROUP BY b.device_id, d.name, d.ip_address, d.location, d.device_type, b.if_index, b.if_name, b.if_speed
             ORDER BY (AVG(b.bps_in) + AVG(b.bps_out)) DESC
             LIMIT {ph}
         ''', (cutoff, top_n))
@@ -4107,7 +4069,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
@@ -4125,7 +4087,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
@@ -4159,7 +4121,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
 
@@ -4180,7 +4142,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
 
@@ -4231,7 +4193,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True, 'id': user_id}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
                 return {'success': False, 'error': 'Username already exists'}
@@ -4298,7 +4260,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
     
@@ -4466,7 +4428,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -4501,7 +4463,7 @@ class Database:
             self.release_connection(conn)
             return {'success': True, 'id': template_id}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
 
@@ -4717,10 +4679,10 @@ class Database:
             return {'success': True, 'id': oid_id}
         except Exception as e:
             if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
-                conn.rollback()
+                self._safe_rollback(conn)
                 self.release_connection(conn)
                 return {'success': False, 'error': 'This OID already exists for this device'}
-            conn.rollback()
+            self._safe_rollback(conn)
             self.release_connection(conn)
             return {'success': False, 'error': str(e)}
 
@@ -4751,7 +4713,7 @@ class Database:
             )
             conn.commit()
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             raise e
         finally:
             self.release_connection(conn)
@@ -4791,7 +4753,7 @@ class Database:
             conn.commit()
             return row_id
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB] Failed to log job start: {e}")
             return None
         finally:
@@ -4824,7 +4786,7 @@ class Database:
             ''', (now, now, result_summary, history_id))
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB] Failed to log job complete: {e}")
         finally:
             self.release_connection(conn)
@@ -4858,7 +4820,7 @@ class Database:
                 ''', (now, now, error_message, history_id))
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB] Failed to log job error: {e}")
         finally:
             self.release_connection(conn)
@@ -4925,7 +4887,7 @@ class Database:
             conn.commit()
             return trap_id
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB] Failed to add trap: {e}")
             return None
         finally:
@@ -5058,7 +5020,7 @@ class Database:
             conn.commit()
             return syslog_id
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[DB] Failed to add syslog: {e}")
             return None
         finally:
@@ -5164,7 +5126,7 @@ class Database:
                   target_type, target_id, target_name, details, ip_address))
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             print(f"[AUDIT] Error logging audit event: {e}")
         finally:
             self.release_connection(conn)
@@ -5316,7 +5278,7 @@ class Database:
             conn.commit()
             return {'success': True, 'id': report_id}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -5351,7 +5313,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -5367,7 +5329,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -5388,7 +5350,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)
@@ -5402,7 +5364,7 @@ class Database:
             conn.commit()
             return {'success': True}
         except Exception as e:
-            if conn: conn.rollback()
+            self._safe_rollback(conn)
             return {'success': False, 'error': str(e)}
         finally:
             self.release_connection(conn)

@@ -4,6 +4,20 @@ Configuration settings for Network Monitor
 import os
 
 
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _env_list(name, default=''):
+    value = os.environ.get(name, default)
+    if value is None:
+        return []
+    return [item.strip() for item in str(value).split(',') if item.strip()]
+
+
 def _load_env_file():
     """Load key=value pairs from a local .env file if present."""
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
@@ -31,11 +45,15 @@ class Config:
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
     SECRET_ENCRYPTION_KEY = os.environ.get('SECRET_ENCRYPTION_KEY') or SECRET_KEY
+    TESTING = _env_bool('TESTING', False)
     
     # Server settings
     SERVER_HOST = os.environ.get('SERVER_HOST') or '0.0.0.0'
     SERVER_PORT = int(os.environ.get('SERVER_PORT') or 5000)
-    DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
+    DEBUG = _env_bool('DEBUG', False)
+    STRICT_STARTUP_VALIDATION = _env_bool('STRICT_STARTUP_VALIDATION', False)
+    ENABLE_SWAGGER_UI = _env_bool('ENABLE_SWAGGER_UI', True)
+    EXPOSE_INTERNAL_DOCS = _env_bool('EXPOSE_INTERNAL_DOCS', False)
     
     # Database settings
     DB_TYPE = os.environ.get('DB_TYPE') or 'postgresql'  # 'sqlite' or 'postgresql'
@@ -61,7 +79,14 @@ class Config:
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'
-    SOCKETIO_CORS_ALLOWED_ORIGINS = "*"
+    CORS_ALLOWED_ORIGINS = _env_list('CORS_ALLOWED_ORIGINS', '')
+    SOCKETIO_CORS_ALLOWED_ORIGINS = _env_list(
+        'SOCKETIO_CORS_ALLOWED_ORIGINS',
+        ','.join(CORS_ALLOWED_ORIGINS)
+    )
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.environ.get('SESSION_COOKIE_SAMESITE') or 'Lax'
+    SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', False)
     
     
     # HTTP Monitoring settings
@@ -119,4 +144,33 @@ class Config:
     ALERT_ON_RECOVERY = True
     ALERT_ON_SSL_EXPIRY = True
     SSL_EXPIRY_ALERT_DAYS = 7  # Alert when SSL expires within this many days
+
+    @classmethod
+    def is_production_like(cls):
+        return not cls.DEBUG and not cls.TESTING
+
+    @classmethod
+    def runtime_warnings(cls):
+        warnings = []
+
+        if cls.SECRET_KEY == 'dev-secret-key-change-in-production':
+            warnings.append('SECRET_KEY is using the development default.')
+
+        if cls.SECRET_ENCRYPTION_KEY == cls.SECRET_KEY:
+            warnings.append('SECRET_ENCRYPTION_KEY matches SECRET_KEY; use a separate value.')
+
+        if cls.DB_TYPE == 'postgresql' and cls.PG_PASSWORD == 'netmonitor_password':
+            warnings.append('PG_PASSWORD is using the default placeholder password.')
+
+        if '*' in cls.CORS_ALLOWED_ORIGINS or '*' in cls.SOCKETIO_CORS_ALLOWED_ORIGINS:
+            warnings.append('Wildcard CORS origins are enabled; restrict them for production use.')
+
+        return warnings
+
+    @classmethod
+    def validate_runtime(cls):
+        warnings = cls.runtime_warnings()
+        if cls.STRICT_STARTUP_VALIDATION and cls.is_production_like() and warnings:
+            raise ValueError('Invalid runtime configuration: ' + ' '.join(warnings))
+        return warnings
 

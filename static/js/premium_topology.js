@@ -80,12 +80,46 @@ function getBarColor(val) {
     return 'healthy';
 }
 
+function getPremiumInternetImageUrl() {
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 8 108 92">
+        <defs>
+            <linearGradient id="cloudStroke" x1="16" y1="18" x2="108" y2="82" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#c8f6ff"/>
+                <stop offset="0.25" stop-color="#67d3ff"/>
+                <stop offset="0.62" stop-color="#38bdf8"/>
+                <stop offset="1" stop-color="#2563eb"/>
+            </linearGradient>
+            <linearGradient id="globeStroke" x1="42" y1="34" x2="78" y2="68" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#e0fbff"/>
+                <stop offset="0.24" stop-color="#67e8f9"/>
+                <stop offset="0.68" stop-color="#38bdf8"/>
+                <stop offset="1" stop-color="#2563eb"/>
+            </linearGradient>
+            <filter id="glow" x="-30%" y="-30%" width="160%" height="170%">
+                <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.12"/>
+                <feDropShadow dx="0" dy="4" stdDeviation="3.4" flood-color="#0f172a" flood-opacity="0.12"/>
+            </filter>
+        </defs>
+        <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M30 76h55c8 0 14-5 14-12 0-6-4-11-11-13-2-9-10-15-20-15-7 0-13 3-17 8-2-1-4-1-6-1-8 0-14 5-14 12v2c-5 2-9 7-9 12 0 8 6 14 14 14z" stroke="url(#cloudStroke)" stroke-width="5.8"/>
+            <path d="M33 71h50c6 0 11-4 11-9s-4-9-10-9h-2c-2-8-9-13-17-13-6 0-11 2-15 7-2 0-3-1-5-1-6 0-11 4-11 10v2c-4 2-7 5-7 9 0 5 4 9 9 9z" stroke="#e0f2fe" stroke-opacity="0.42" stroke-width="1.7"/>
+            <circle cx="58" cy="47" r="15.5" stroke="url(#globeStroke)" stroke-width="3.5"/>
+            <ellipse cx="58" cy="47" rx="6.1" ry="15.5" stroke="url(#globeStroke)" stroke-width="2.2"/>
+            <ellipse cx="58" cy="47" rx="12.4" ry="5.3" stroke="url(#globeStroke)" stroke-width="2.2"/>
+            <path d="M43 47h30M58 32v30M48 38c3 2.7 6.4 4.1 10 4.1 3.6 0 7-1.4 10-4.1M48 56c3-2.7 6.4-4.1 10-4.1 3.6 0 7 1.4 10 4.1" stroke="url(#globeStroke)" stroke-width="1.95"/>
+        </g>
+    </svg>`;
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
+}
+
 function createDeviceCardDom(dv) {
     const tier = getTier(dv.device_type);
     const isServer = (tier === 'servers');
     const type = (dv.device_type || '').toLowerCase();
     const isInternet = type === 'internet' || type === 'cloud';
     const isFirewall = type === 'firewall';
+    const isRouter = type === 'router';
     const isWireless = type === 'wireless' || type === 'wifi';
     
     // Choose Template
@@ -93,7 +127,7 @@ function createDeviceCardDom(dv) {
         ? 'internet-node-template'
         : isWireless
         ? 'wireless-ap-template'
-        : (isServer || isFirewall ? 'rackmount-hardware-template' : 'floating-node-template');
+        : (isServer || isFirewall || isRouter ? 'rackmount-hardware-template' : 'floating-node-template');
     const tmpl = document.getElementById(tmplId).innerHTML;
     
     let cpu = dv.cpu_usage || 0;
@@ -102,8 +136,9 @@ function createDeviceCardDom(dv) {
     }
 
     let imageUrl = '';
-    if (isInternet) imageUrl = '/static/icons/internet_globe.svg?v=1';
+    if (isInternet) imageUrl = getPremiumInternetImageUrl();
     else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';
+    else if (isRouter) imageUrl = '/static/icons/premium_router.svg?v=1';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
 
     let html = tmpl

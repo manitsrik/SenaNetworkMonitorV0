@@ -548,7 +548,7 @@ window.DashboardRenderer = {
         const type = (device.device_type || 'server').toLowerCase();
         if (type === 'internet') return 'internet-node-template';
         if (type === 'server' || type === 'vmware') return 'wide-server-template';
-        if (type === 'switch' || type === 'firewall') return 'rackmount-hardware-template';
+        if (type === 'switch' || type === 'firewall' || type === 'router') return 'rackmount-hardware-template';
         if (type === 'wireless' || type === 'wifi') return 'wireless-ap-template';
         return 'floating-node-template';
     },
@@ -581,9 +581,10 @@ window.DashboardRenderer = {
         };
 
         let imageUrl = '';
-        if (type === 'internet') imageUrl = '/static/icons/internet_globe.svg?v=1';
+        if (type === 'internet') imageUrl = this.getPremiumInternetImageUrl();
         else if (type === 'switch') imageUrl = '/static/icons/premium_switch.png?v=2';
         else if (type === 'firewall') imageUrl = '/static/icons/premium_firewall.svg?v=1';
+        else if (type === 'router') imageUrl = '/static/icons/premium_router.svg?v=1';
         else if (type === 'wireless' || type === 'wifi') imageUrl = '/static/icons/premium_wireless.svg?v=2';
 
         let html = templateNode.innerHTML
@@ -603,7 +604,7 @@ window.DashboardRenderer = {
         }
 
         el.innerHTML = html;
-        if (type === 'switch') {
+        if (type === 'switch' || type === 'router') {
             const title = el.querySelector('.hardware-title');
             const ip = el.querySelector('.hardware-ip');
             if (title) {
@@ -2008,7 +2009,47 @@ window.DashboardRenderer = {
 
     getNodeSvgUrl: function (type, status) {
         if ((type || '').toLowerCase() === 'internet') {
-            return '/static/icons/internet_globe.svg?v=1';
+            let color = '#f59e0b';
+            if (status === 'up') color = '#10b981';
+            else if (status === 'down') color = '#ef4444';
+            else if (status !== 'slow') color = '#94a3b8';
+
+            const svgString = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 100 100">
+                    <defs>
+                        <linearGradient id="cloudStroke" x1="12" y1="10" x2="88" y2="68" gradientUnits="userSpaceOnUse">
+                            <stop offset="0" stop-color="#9be7ff"/>
+                            <stop offset="0.28" stop-color="#67d3ff"/>
+                            <stop offset="0.62" stop-color="#2ea8ff"/>
+                            <stop offset="1" stop-color="#2563eb"/>
+                        </linearGradient>
+                        <linearGradient id="cloudFill" x1="26" y1="24" x2="76" y2="64" gradientUnits="userSpaceOnUse">
+                            <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
+                            <stop offset="0.55" stop-color="#dbeafe" stop-opacity="0.14"/>
+                            <stop offset="1" stop-color="#60a5fa" stop-opacity="0.04"/>
+                        </linearGradient>
+                        <linearGradient id="globeStroke" x1="34" y1="28" x2="66" y2="62" gradientUnits="userSpaceOnUse">
+                            <stop offset="0" stop-color="#d8fbff"/>
+                            <stop offset="0.22" stop-color="#67e8f9"/>
+                            <stop offset="0.65" stop-color="#38bdf8"/>
+                            <stop offset="1" stop-color="#2563eb"/>
+                        </linearGradient>
+                        <filter id="iconGlow" x="-30%" y="-30%" width="160%" height="170%">
+                            <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#38bdf8" flood-opacity="0.16"/>
+                            <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.18"/>
+                        </filter>
+                    </defs>
+                    <g filter="url(#iconGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M27 76H20C10 76 3 68 3 59c0-7 4-13 11-16 1-12 11-21 25-21 3 0 5 0 7 1 4-14 17-23 32-23 14 0 26 7 31 17 2 0 3 0 5 0 12 0 22 9 22 20 9 2 16 10 16 18 0 12-9 21-21 21H64" fill="url(#cloudFill)" stroke="url(#cloudStroke)" stroke-width="5.5"/>
+                        <path d="M28 72H21c-8 0-14-6-14-13 0-6 3-11 9-13 1-11 10-18 22-18 3 0 5 0 7 1 4-12 16-20 29-20 11 0 21 5 27 14" stroke="#e0f2fe" stroke-opacity="0.56" stroke-width="1.8"/>
+                        <circle cx="50" cy="48" r="18" fill="rgba(255,255,255,0.08)" stroke="url(#globeStroke)" stroke-width="3.8"/>
+                        <ellipse cx="50" cy="48" rx="7.5" ry="18" stroke="url(#globeStroke)" stroke-width="2.5"/>
+                        <ellipse cx="50" cy="48" rx="14" ry="6.5" stroke="url(#globeStroke)" stroke-width="2.5"/>
+                        <path d="M32 48h36M50 30v36M36 38c4 3 9 5 14 5s10-2 14-5M36 58c4-3 9-5 14-5s10 2 14 5" stroke="url(#globeStroke)" stroke-width="2.4"/>
+                        <circle cx="76" cy="17" r="4.8" fill="${color}" stroke="rgba(255,255,255,0.96)" stroke-width="1.8"/>
+                    </g>
+                </svg>`;
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
         }
         const meta = this.typeMetadata[type || 'other'] || this.typeMetadata['other'];
         const icon = meta.icon;
@@ -2032,6 +2073,39 @@ window.DashboardRenderer = {
         `.trim();
 
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
+    },
+
+    getPremiumInternetImageUrl: function () {
+        const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 8 108 92">
+                <defs>
+                    <linearGradient id="cloudStroke" x1="16" y1="18" x2="108" y2="82" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#c8f6ff"/>
+                        <stop offset="0.25" stop-color="#67d3ff"/>
+                        <stop offset="0.62" stop-color="#38bdf8"/>
+                        <stop offset="1" stop-color="#2563eb"/>
+                    </linearGradient>
+                    <linearGradient id="globeStroke" x1="42" y1="34" x2="78" y2="68" gradientUnits="userSpaceOnUse">
+                        <stop offset="0" stop-color="#e0fbff"/>
+                        <stop offset="0.24" stop-color="#67e8f9"/>
+                        <stop offset="0.68" stop-color="#38bdf8"/>
+                        <stop offset="1" stop-color="#2563eb"/>
+                    </linearGradient>
+                    <filter id="glow" x="-30%" y="-30%" width="160%" height="170%">
+                        <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.12"/>
+                        <feDropShadow dx="0" dy="4" stdDeviation="3.4" flood-color="#0f172a" flood-opacity="0.12"/>
+                    </filter>
+                </defs>
+                <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M30 76h55c8 0 14-5 14-12 0-6-4-11-11-13-2-9-10-15-20-15-7 0-13 3-17 8-2-1-4-1-6-1-8 0-14 5-14 12v2c-5 2-9 7-9 12 0 8 6 14 14 14z" stroke="url(#cloudStroke)" stroke-width="5.8"/>
+                    <path d="M33 71h50c6 0 11-4 11-9s-4-9-10-9h-2c-2-8-9-13-17-13-6 0-11 2-15 7-2 0-3-1-5-1-6 0-11 4-11 10v2c-4 2-7 5-7 9 0 5 4 9 9 9z" stroke="#e0f2fe" stroke-opacity="0.42" stroke-width="1.7"/>
+                    <circle cx="58" cy="47" r="15.5" stroke="url(#globeStroke)" stroke-width="3.5"/>
+                    <ellipse cx="58" cy="47" rx="6.1" ry="15.5" stroke="url(#globeStroke)" stroke-width="2.2"/>
+                    <ellipse cx="58" cy="47" rx="12.4" ry="5.3" stroke="url(#globeStroke)" stroke-width="2.2"/>
+                    <path d="M43 47h30M58 32v30M48 38c3 2.7 6.4 4.1 10 4.1 3.6 0 7-1.4 10-4.1M48 56c3-2.7 6.4-4.1 10-4.1 3.6 0 7 1.4 10 4.1" stroke="url(#globeStroke)" stroke-width="1.95"/>
+                </g>
+            </svg>`;
+        return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
     },
 
     getNodeColor: function (status, responseTime) {

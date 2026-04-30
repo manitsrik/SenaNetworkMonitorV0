@@ -638,6 +638,7 @@ class Database:
                 background_image TEXT,
                 background_zoom INTEGER DEFAULT 100,
                 node_positions TEXT,
+                decorations TEXT,
                 background_opacity INTEGER DEFAULT 100,
                 theme_mode TEXT DEFAULT 'standard',
                 created_at TIMESTAMP DEFAULT {timestamp_default},
@@ -654,6 +655,18 @@ class Database:
                 conn.commit()
             else:
                 cursor.execute("ALTER TABLE sub_topologies ADD COLUMN theme_mode TEXT DEFAULT 'standard'")
+                conn.commit()
+        except Exception:
+            self._safe_rollback(conn)
+
+        # Migration: Add decorations
+        try:
+            if self.db_type == 'postgresql':
+                self._safe_rollback(conn)
+                cursor.execute("ALTER TABLE sub_topologies ADD COLUMN IF NOT EXISTS decorations TEXT")
+                conn.commit()
+            else:
+                cursor.execute("ALTER TABLE sub_topologies ADD COLUMN decorations TEXT")
                 conn.commit()
         except Exception:
             self._safe_rollback(conn)
@@ -4520,23 +4533,24 @@ class Database:
     # Sub-Topology Methods
     # =========================================================================
 
-    def create_sub_topology(self, name, description=None, created_by=None, background_image=None, background_zoom=100, node_positions=None, background_opacity=100, theme_mode='standard'):
+    def create_sub_topology(self, name, description=None, created_by=None, background_image=None, background_zoom=100, node_positions=None, decorations=None, background_opacity=100, theme_mode='standard'):
         """Create a new sub-topology"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
+        decorations_json = json.dumps(decorations) if decorations is not None and not isinstance(decorations, str) else decorations
         
         if self.db_type == 'postgresql':
             cursor.execute('''
-                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, decorations, background_opacity, theme_mode)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode))
+            ''', (name, description, created_by, background_image, background_zoom, node_positions, decorations_json, background_opacity, theme_mode))
             sub_topo_id = cursor.fetchone()['id']
         else:
             cursor.execute('''
-                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (name, description, created_by, background_image, background_zoom, node_positions, background_opacity, theme_mode))
+                INSERT INTO sub_topologies (name, description, created_by, background_image, background_zoom, node_positions, decorations, background_opacity, theme_mode)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (name, description, created_by, background_image, background_zoom, node_positions, decorations_json, background_opacity, theme_mode))
             sub_topo_id = cursor.lastrowid
         conn.commit()
         self.release_connection(conn)
@@ -4582,7 +4596,7 @@ class Database:
         self.release_connection(conn)
         return result
 
-    def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, background_opacity=None, theme_mode=None):
+    def update_sub_topology(self, sub_topo_id, name=None, description=None, device_ids=None, connections=None, background_image=None, background_zoom=None, node_positions=None, decorations=None, background_opacity=None, theme_mode=None):
         """Update a sub-topology"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -4605,6 +4619,9 @@ class Database:
         if node_positions is not None:
             updates.append(f'node_positions = {ph}')
             params.append(node_positions)
+        if decorations is not None:
+            updates.append(f'decorations = {ph}')
+            params.append(json.dumps(decorations) if not isinstance(decorations, str) else decorations)
         if background_opacity is not None:
             updates.append(f'background_opacity = {ph}')
             params.append(background_opacity)

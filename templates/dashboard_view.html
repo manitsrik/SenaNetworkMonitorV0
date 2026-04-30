@@ -148,7 +148,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <!-- Use the new shared renderer -->
-<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=22"></script>
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=29"></script>
 <script>
     let currentDashboard = null;
     let dashboardVariables = { location: true, deviceType: true, monitorType: false, status: false };
@@ -413,7 +413,7 @@
             if (!window.dynamicLoadTried) {
                 window.dynamicLoadTried = true;
                 const script = document.createElement('script');
-                script.src = '/static/js/renderer_lib.js?v=dynamic_view_20260422k';
+                script.src = '/static/js/renderer_lib.js?v=dynamic_view_20260427_vpnrouter_label_2';
                 script.onload = () => {
                     console.log('renderer_lib.js loaded dynamically in view');
                     render();

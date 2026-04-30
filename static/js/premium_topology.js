@@ -10,16 +10,16 @@ const TIER_MAPPING = {
     'internet': 'internet', 'cloud': 'internet',
     'firewall': 'firewall', 'router': 'firewall', 'vpnrouter': 'firewall',
     'switch': 'core', 'wifi': 'core', 'wireless': 'core',
-    'server': 'servers', 'database': 'servers', 'web': 'servers', 
+    'server': 'servers', 'database': 'servers', 'web': 'servers', 'website': 'servers',
     'storage': 'servers', 'linux': 'servers', 'windows': 'servers', 'vmware': 'servers',
     'wmi': 'servers', 'ssh': 'servers'
 };
 
 const ICON_MAPPING = {
     'internet': 'fa-cloud', 'cloud': 'fa-cloud',
-    'firewall': 'fa-shield-halved', 'router': 'fa-route',
+    'firewall': 'fa-shield-halved', 'router': 'fa-route', 'vpnrouter': 'fa-lock',
     'switch': 'fa-network-wired', 'wifi': 'fa-wifi', 'wireless': 'fa-wifi',
-    'database': 'fa-database', 'web': 'fa-server',
+    'database': 'fa-database', 'web': 'fa-globe', 'website': 'fa-globe',
     'storage': 'fa-hard-drive', 'vmware': 'fa-layer-group',
     'server': 'fa-server', 'linux': 'fa-linux', 'windows': 'fa-windows'
 };
@@ -82,33 +82,25 @@ function getBarColor(val) {
 
 function getPremiumInternetImageUrl() {
     const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 8 108 92">
-        <defs>
-            <linearGradient id="cloudStroke" x1="16" y1="18" x2="108" y2="82" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#c8f6ff"/>
-                <stop offset="0.25" stop-color="#67d3ff"/>
-                <stop offset="0.62" stop-color="#38bdf8"/>
-                <stop offset="1" stop-color="#2563eb"/>
-            </linearGradient>
-            <linearGradient id="globeStroke" x1="42" y1="34" x2="78" y2="68" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#e0fbff"/>
-                <stop offset="0.24" stop-color="#67e8f9"/>
-                <stop offset="0.68" stop-color="#38bdf8"/>
-                <stop offset="1" stop-color="#2563eb"/>
-            </linearGradient>
-            <filter id="glow" x="-30%" y="-30%" width="160%" height="170%">
-                <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.12"/>
-                <feDropShadow dx="0" dy="4" stdDeviation="3.4" flood-color="#0f172a" flood-opacity="0.12"/>
-            </filter>
-        </defs>
-        <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M30 76h55c8 0 14-5 14-12 0-6-4-11-11-13-2-9-10-15-20-15-7 0-13 3-17 8-2-1-4-1-6-1-8 0-14 5-14 12v2c-5 2-9 7-9 12 0 8 6 14 14 14z" stroke="url(#cloudStroke)" stroke-width="5.8"/>
-            <path d="M33 71h50c6 0 11-4 11-9s-4-9-10-9h-2c-2-8-9-13-17-13-6 0-11 2-15 7-2 0-3-1-5-1-6 0-11 4-11 10v2c-4 2-7 5-7 9 0 5 4 9 9 9z" stroke="#e0f2fe" stroke-opacity="0.42" stroke-width="1.7"/>
-            <circle cx="58" cy="47" r="15.5" stroke="url(#globeStroke)" stroke-width="3.5"/>
-            <ellipse cx="58" cy="47" rx="6.1" ry="15.5" stroke="url(#globeStroke)" stroke-width="2.2"/>
-            <ellipse cx="58" cy="47" rx="12.4" ry="5.3" stroke="url(#globeStroke)" stroke-width="2.2"/>
-            <path d="M43 47h30M58 32v30M48 38c3 2.7 6.4 4.1 10 4.1 3.6 0 7-1.4 10-4.1M48 56c3-2.7 6.4-4.1 10-4.1 3.6 0 7 1.4 10 4.1" stroke="url(#globeStroke)" stroke-width="1.95"/>
-        </g>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120">
+        <path
+            d="M30 94H146c16 0 30-13 30-29 0-13-9-25-22-28-3-19-20-35-41-35-17 0-31 8-40 23-4-2-7-3-11-3-15 0-28 11-31 26C14 50 8 58 8 68c0 14 10 26 22 26z"
+            fill="#ffffff"
+            stroke="#1f5fbf"
+            stroke-width="4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+        />
+        <text
+            x="90"
+            y="67"
+            fill="#1f5fbf"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="16.5"
+            font-weight="700"
+            letter-spacing="0.7"
+            text-anchor="middle"
+        >INTERNET</text>
     </svg>`;
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
 }
@@ -120,14 +112,17 @@ function createDeviceCardDom(dv) {
     const isInternet = type === 'internet' || type === 'cloud';
     const isFirewall = type === 'firewall';
     const isRouter = type === 'router';
+    const isVpnRouter = type === 'vpnrouter';
+    const isWebsite = type === 'website' || type === 'web';
     const isWireless = type === 'wireless' || type === 'wifi';
+    const isVmware = type === 'vmware';
     
     // Choose Template
     const tmplId = isInternet
         ? 'internet-node-template'
         : isWireless
         ? 'wireless-ap-template'
-        : (isServer || isFirewall || isRouter ? 'rackmount-hardware-template' : 'floating-node-template');
+        : (isServer || isFirewall || isRouter || isVpnRouter ? 'rackmount-hardware-template' : 'floating-node-template');
     const tmpl = document.getElementById(tmplId).innerHTML;
     
     let cpu = dv.cpu_usage || 0;
@@ -137,18 +132,30 @@ function createDeviceCardDom(dv) {
 
     let imageUrl = '';
     if (isInternet) imageUrl = getPremiumInternetImageUrl();
+    else if (isVmware) imageUrl = '/static/icons/premium_vmware.png?v=1';
     else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';
     else if (isRouter) imageUrl = '/static/icons/premium_router.svg?v=1';
+    else if (isVpnRouter) imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
+    else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
+    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=1';
+
+    const glowClass = isWebsite
+        ? 'glow-website'
+        : isVpnRouter
+        ? 'glow-vpnrouter'
+        : GLOW_MAPPING[tier];
 
     let html = tmpl
         .replace(/{id}/g, dv.id)
         .replace(/{status}/g, dv.status || 'unknown')
         .replace(/{icon}/g, getIcon(dv.device_type))
-        .replace(/{glow-class}/g, GLOW_MAPPING[tier])
+        .replace(/{glow-class}/g, glowClass)
         .replace(/{image_url}/g, imageUrl)
         .replace(/{name}/g, dv.name)
         .replace(/{ip}/g, dv.ip_address || '0.0.0.0')
+        .replace(/{type-label}/g, dv.device_type || 'N/A')
+        .replace(/{response-label}/g, dv.response_time != null ? `${dv.response_time}ms` : '--')
         .replace(/{cpu}/g, cpu)
         .replace(/{cpu-color}/g, getBarColor(cpu));
         

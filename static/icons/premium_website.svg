@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 180" role="img" aria-label="Premium website panel">
+  <defs>
+    <linearGradient id="panelFill" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#fbfdff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="panelBar" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="0.5" stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <filter id="shadow" x="-12%" y="-18%" width="124%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#082f49" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="22" width="440" height="132" rx="24" fill="url(#panelFill)" stroke="#93c5fd" stroke-width="4"/>
+    <rect x="40" y="22" width="440" height="30" rx="24" fill="url(#panelBar)"/>
+    <rect x="40" y="38" width="440" height="14" fill="url(#panelBar)"/>
+  </g>
+
+  <g transform="translate(64 37)">
+    <circle cx="0" cy="0" r="5.5" fill="#fb7185"/>
+    <circle cx="20" cy="0" r="5.5" fill="#fbbf24"/>
+    <circle cx="40" cy="0" r="5.5" fill="#22c55e"/>
+  </g>
+
+  <g transform="translate(118 29)">
+    <rect x="0" y="0" width="248" height="17" rx="8.5" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <circle cx="16" cy="8.5" r="5.2" fill="none" stroke="#0284c7" stroke-width="1.6"/>
+    <path d="M12.2 8.5h7.6M16 4.8v7.4M13.4 6.1c.8.7 1.7 1 2.6 1s1.8-.3 2.6-1M13.4 10.9c.8-.7 1.7-1 2.6-1s1.8.3 2.6 1" fill="none" stroke="#0284c7" stroke-width="0.95" stroke-linecap="round"/>
+    <rect x="32" y="3.3" width="58" height="10.4" rx="5.2" fill="#dcfce7"/>
+    <text x="61" y="11.3" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.4" font-weight="700" fill="#15803d">HTTPS</text>
+    <rect x="98" y="3.3" width="132" height="10.4" rx="5.2" fill="#dbeafe"/>
+  </g>
+
+  <g transform="translate(84 72)">
+    <circle cx="38" cy="32" r="27" fill="url(#accent)" opacity="0.12"/>
+    <circle cx="38" cy="32" r="23" fill="none" stroke="url(#accent)" stroke-width="4"/>
+    <ellipse cx="38" cy="32" rx="10" ry="23" fill="none" stroke="#0284c7" stroke-width="2.4"/>
+    <ellipse cx="38" cy="32" rx="21" ry="8.5" fill="none" stroke="#0284c7" stroke-width="2.4"/>
+    <path d="M15 32h46M38 9v46" fill="none" stroke="#0284c7" stroke-width="2.4" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(152 70)">
+    <rect x="0" y="2" width="250" height="18" rx="9" fill="#e0f2fe"/>
+    <rect x="0" y="32" width="214" height="14" rx="7" fill="#dbeafe"/>
+    <rect x="0" y="56" width="186" height="14" rx="7" fill="#bfdbfe"/>
+    <rect x="0" y="84" width="72" height="34" rx="10" fill="#ecfeff" stroke="#99f6e4" stroke-width="2"/>
+    <rect x="88" y="84" width="72" height="34" rx="10" fill="#f0f9ff" stroke="#bae6fd" stroke-width="2"/>
+    <rect x="176" y="84" width="72" height="34" rx="10" fill="#ecfccb" stroke="#bef264" stroke-width="2"/>
+    <rect x="14" y="97" width="44" height="9" rx="4.5" fill="#22c55e" opacity="0.24"/>
+    <rect x="102" y="97" width="44" height="9" rx="4.5" fill="#0ea5e9" opacity="0.24"/>
+    <rect x="190" y="97" width="44" height="9" rx="4.5" fill="#84cc16" opacity="0.24"/>
+  </g>
+
+  <g transform="translate(428 74)">
+    <rect x="0" y="0" width="38" height="16" rx="8" fill="#0f172a" opacity="0.12"/>
+    <circle cx="10" cy="8" r="4.8" fill="#22c55e"/>
+    <circle cx="10" cy="8" r="7" fill="none" stroke="#22c55e" stroke-opacity="0.24"/>
+    <circle cx="28" cy="8" r="4.8" fill="#0ea5e9"/>
+    <circle cx="28" cy="8" r="7" fill="none" stroke="#0ea5e9" stroke-opacity="0.2"/>
+  </g>
+</svg>

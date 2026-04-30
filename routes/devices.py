@@ -4,10 +4,45 @@ Device management API routes
 from flask import Blueprint, jsonify, request, Response, current_app, session
 import csv
 import io
+import os
 from .auth import login_required, operator_required
 from .audit import log_audit
 
 devices_bp = Blueprint('devices', __name__)
+
+
+def _device_notes_dir():
+    """Return the directory used for per-device text notes."""
+    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    notes_dir = os.path.join(app_root, 'device_notes')
+    os.makedirs(notes_dir, exist_ok=True)
+    return notes_dir
+
+
+def _device_note_path(device_id):
+    return os.path.join(_device_notes_dir(), f'{int(device_id)}.txt')
+
+
+def _read_device_note(device_id):
+    try:
+        path = _device_note_path(device_id)
+        if not os.path.exists(path):
+            return ''
+        with open(path, 'r', encoding='utf-8') as handle:
+            return handle.read()
+    except Exception:
+        current_app.logger.exception('Failed to read note for device %s', device_id)
+        return ''
+
+
+def _write_device_note(device_id, note):
+    note_text = str(note or '').replace('\r\n', '\n').replace('\r', '\n')
+    path = _device_note_path(device_id)
+    if note_text.strip():
+        with open(path, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(note_text)
+    elif os.path.exists(path):
+        os.remove(path)
 
 
 def _get_db():
@@ -27,6 +62,9 @@ def _get_plugin_manager():
 def get_devices():
     """Get all devices"""
     devices = _get_db().get_all_devices()
+    for device in devices:
+        if device.get('id') is not None:
+            device['device_note'] = _read_device_note(device['id'])
     return jsonify(devices)
 
 
@@ -87,6 +125,12 @@ def add_device():
     )
     
     if result['success']:
+        try:
+            _write_device_note(result['id'], data.get('device_note', ''))
+        except Exception as e:
+            current_app.logger.exception('Failed to save note for device %s', result['id'])
+            return jsonify({'success': False, 'error': f'Device added but note could not be saved: {e}'}), 500
+
         device = db.get_device(result['id'])
         # Only run initial check if monitoring is enabled
         if device.get('is_enabled'):
@@ -173,6 +217,13 @@ def update_device(device_id):
         plugin_config_json=plugin_config_json,
         **parent_kw
     )
+    if result.get('success') and 'device_note' in data:
+        try:
+            _write_device_note(device_id, data.get('device_note', ''))
+        except Exception as e:
+            current_app.logger.exception('Failed to save note for device %s', device_id)
+            return jsonify({'success': False, 'error': f'Device updated but note could not be saved: {e}'}), 500
+
     log_audit('update', 'device', 'device', device_id, data.get('name'))
     return jsonify(result)
 
@@ -182,6 +233,13 @@ def update_device(device_id):
 def delete_device(device_id):
     """Delete a device"""
     result = _get_db().delete_device(device_id)
+    if result.get('success'):
+        try:
+            path = _device_note_path(device_id)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            current_app.logger.exception('Failed to delete note for device %s', device_id)
     _get_socketio().emit('device_deleted', {'id': device_id}, namespace='/')
     log_audit('delete', 'device', 'device', device_id)
     return jsonify(result)

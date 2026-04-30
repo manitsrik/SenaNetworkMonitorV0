@@ -154,7 +154,7 @@ function renderGrid() {
         if (!window.dynamicLoadTried) {
             window.dynamicLoadTried = true;
             const script = document.createElement('script');
-            script.src = '/static/js/renderer_lib.js?v=dynamic_20260422k';
+            script.src = '/static/js/renderer_lib.js?v=dynamic_20260427_vpnrouter_label_2';
             script.onload = () => {
                 console.log('renderer_lib.js loaded dynamically');
                 renderGrid();

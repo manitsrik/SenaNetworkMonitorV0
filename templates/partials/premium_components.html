@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=8.10">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=8.25">
 <style id="premium-fix-styles">
     /* FORCE LABELS INSIDE CARDS - HIGH SPECIFICITY FALLBACK */
     #dom-overlay-container .floating-label,
@@ -43,9 +43,29 @@
         z-index: 6 !important;
     }
 
+    #dom-overlay-container .rackmount-node.glow-vpnrouter .hardware-title,
+    .premium-widget-overlay .rackmount-node.glow-vpnrouter .hardware-title {
+        bottom: 18px !important;
+    }
+
     #dom-overlay-container .rackmount-node .hardware-ip,
     .premium-widget-overlay .rackmount-node .hardware-ip {
         display: none !important;
+    }
+
+    #dom-overlay-container .rackmount-node.glow-server .hardware-title,
+    #dom-overlay-container .rackmount-node.glow-vmware .hardware-title,
+    .premium-widget-overlay .rackmount-node.glow-server .hardware-title,
+    .premium-widget-overlay .rackmount-node.glow-vmware .hardware-title {
+        bottom: 4px !important;
+    }
+
+    #dom-overlay-container .rackmount-node.glow-server .floating-status,
+    #dom-overlay-container .rackmount-node.glow-vmware .floating-status,
+    .premium-widget-overlay .rackmount-node.glow-server .floating-status,
+    .premium-widget-overlay .rackmount-node.glow-vmware .floating-status {
+        top: 11px !important;
+        right: 18px !important;
     }
 
     #dom-overlay-container .wireless-ap-node .floating-label,
@@ -67,26 +87,29 @@
 
     #dom-overlay-container .internet-node .floating-label,
     .premium-widget-overlay .internet-node .floating-label {
-        bottom: 0 !important;
-        left: 50% !important;
-        transform: translateX(-50%) !important;
+        bottom: 10px !important;
+        left: 0 !important;
+        right: 0 !important;
+        transform: none !important;
+        text-align: center !important;
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
         backdrop-filter: none !important;
         border-radius: 0 !important;
-        color: #1e293b !important;
+        color: #334155 !important;
         font-size: 8.2px !important;
         font-weight: 900 !important;
         letter-spacing: 0.28px !important;
-        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.92) !important;
+        line-height: 1.1 !important;
+        text-shadow: 0 1px 2px rgba(255, 255, 255, 0.95) !important;
     }
 
     [data-theme="dark"] #dom-overlay-container .internet-node .floating-label,
     [data-theme="dark"] .premium-widget-overlay .internet-node .floating-label {
         color: #e2e8f0 !important;
-        text-shadow: 0 1px 2px rgba(15, 23, 42, 0.9) !important;
+        text-shadow: 0 1px 2px rgba(15, 23, 42, 0.92) !important;
     }
 </style>
 
@@ -245,7 +268,7 @@ function showPremiumDeviceDetails(device) {
     const type = (device.device_type || 'server').toLowerCase();
     const icons = {
         'router': '🌐', 'internet': '☁️', 'switch': '🔀', 'server': '🖥️', 'firewall': '🛡️',
-        'wireless': '📶', 'website': '🌐', 'vmware': '🖴', 'ippbx': '☎️',
+        'wireless': '📶', 'website': '🌐', 'web': '🌐', 'vmware': '🖴', 'ippbx': '☎️',
         'cctv': '📹', 'vpnrouter': '🔒', 'dns': '🔍', 'other': '⚙️'
     };
     

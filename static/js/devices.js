@@ -639,6 +639,7 @@ function showAddDeviceModal() {
     document.getElementById('expected-status-code').value = '200';
     // Reset expected ports
     document.getElementById('expected-ports').value = '';
+    document.getElementById('device-note').value = '';
     renderPluginSettingsFields('ping', {});
     // Reset location type to default
     document.getElementById('device-location-type').value = 'on-premise';
@@ -778,6 +779,7 @@ async function editDevice(deviceId) {
             document.getElementById('device-ip').value = device.ip_address;
             document.getElementById('device-type').value = device.device_type || 'server';
             document.getElementById('device-location').value = device.location || '';
+            document.getElementById('device-note').value = device.device_note || '';
             document.getElementById('monitor-type').value = device.monitor_type || 'ping';
             currentPluginConfig = device.plugin_config || {};
 
@@ -881,6 +883,7 @@ async function saveDevice(event) {
             ip_address: getElementValue('device-ip'),
             device_type: getElementValue('device-type', 'other'),
             location: getElementValue('device-location'),
+            device_note: getElementValue('device-note'),
             location_type: getElementValue('device-location-type', 'on-premise'),
             monitor_type: monitorType,
             expected_status_code: 200,

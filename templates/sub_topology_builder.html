@@ -239,6 +239,26 @@
         text-align: center;
     }
 
+    .rack-controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.3rem 0.45rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+    }
+
+    .rack-controls select {
+        min-width: 86px;
+        padding: 0.35rem 0.45rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.8rem;
+    }
+
 
     @media (max-width: 768px) {
         .builder-layout {
@@ -263,6 +283,23 @@
             <option value="standard">Standard Map</option>
             <option value="premium">✨ Premium 3D</option>
         </select>
+        <div class="rack-controls">
+            <select id="rack-u-select" title="Rack size">
+                <option value="1">1U Rack</option>
+                <option value="2">2U Rack</option>
+                <option value="4" selected>4U Rack</option>
+                <option value="6">6U Rack</option>
+                <option value="12">12U Rack</option>
+                <option value="24">24U Rack</option>
+                <option value="42">42U Rack</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" type="button" onclick="addRackDecoration()">
+                Add Rack
+            </button>
+            <button class="btn btn-sm btn-outline-danger" type="button" id="remove-rack-btn" onclick="removeSelectedDecoration()" disabled>
+                Remove Rack
+            </button>
+        </div>
         <button class="btn btn-sm btn-success" onclick="toggleBuilderConnectMode()">
             ➕ Add Connection
         </button>
@@ -352,5 +389,5 @@
 <script>
     const SUB_TOPO_ID = {{ sub_topo_id | default ('null') }};
 </script>
-<script src="{{ url_for('static', filename='js/sub_topology_builder.js') }}?v=5.5"></script>
+<script src="{{ url_for('static', filename='js/sub_topology_builder.js') }}?v=6.3"></script>
 {% endblock %}

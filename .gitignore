@@ -41,6 +41,7 @@ Thumbs.db
 
 # Generated uploads
 static/uploads/
+device_notes/
 
 # Local database backups
 backups/*.dump

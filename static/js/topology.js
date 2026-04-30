@@ -932,38 +932,20 @@ function getSvgIcon(emoji, color, size = 100, deviceType = 'other') {
     if ((deviceType || '').toLowerCase() === 'internet') {
         const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
-            <defs>
-                <linearGradient id="cloudStroke" x1="14" y1="18" x2="84" y2="76" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#b9f2ff"/>
-                    <stop offset="0.28" stop-color="#67d3ff"/>
-                    <stop offset="0.66" stop-color="#38bdf8"/>
-                    <stop offset="1" stop-color="#2563eb"/>
-                </linearGradient>
-                <linearGradient id="cloudFill" x1="24" y1="28" x2="76" y2="74" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
-                    <stop offset="0.58" stop-color="#dbeafe" stop-opacity="0.15"/>
-                    <stop offset="1" stop-color="#60a5fa" stop-opacity="0.05"/>
-                </linearGradient>
-                <linearGradient id="globeStroke" x1="38" y1="34" x2="66" y2="60" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#d8fbff"/>
-                    <stop offset="0.22" stop-color="#67e8f9"/>
-                    <stop offset="0.65" stop-color="#38bdf8"/>
-                    <stop offset="1" stop-color="#2563eb"/>
-                </linearGradient>
-                <filter id="iconGlow" x="-30%" y="-30%" width="160%" height="170%">
-                    <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#38bdf8" flood-opacity="0.16"/>
-                    <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.18"/>
-                </filter>
-            </defs>
-            <g filter="url(#iconGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M24 69h54c7 0 13-5 13-11 0-6-4-10-10-12-2-8-10-14-19-14-7 0-12 3-16 8-2-1-4-1-6-1-8 0-13 5-13 11v2c-5 2-9 6-9 12 0 8 6 13 14 13z" fill="url(#cloudFill)" stroke="url(#cloudStroke)" stroke-width="5"/>
-                <path d="M27 65h49c5 0 9-3 9-8 0-4-3-7-8-8h-2c-2-8-8-12-16-12-5 0-10 2-14 6-1 0-3-1-4-1-6 0-10 4-10 9v2c-4 1-6 4-6 8 0 4 4 8 8 8z" stroke="#e0f2fe" stroke-opacity="0.46" stroke-width="1.5"/>
-                <circle cx="48" cy="45" r="15" fill="rgba(255,255,255,0.05)" stroke="url(#globeStroke)" stroke-width="3.2"/>
-                <ellipse cx="48" cy="45" rx="5.8" ry="15" stroke="url(#globeStroke)" stroke-width="2.05"/>
-                <ellipse cx="48" cy="45" rx="12" ry="5.2" stroke="url(#globeStroke)" stroke-width="2.05"/>
-                <path d="M33 45h30M48 30v30M38 35.5c2.8 2.6 6.2 4 10 4 3.7 0 7.1-1.4 10-4M38 54.5c2.8-2.6 6.2-4 10-4 3.7 0 7.1 1.4 10 4" stroke="url(#globeStroke)" stroke-width="1.85"/>
-                <circle cx="77" cy="23" r="4.6" fill="${color}" stroke="rgba(255,255,255,0.96)" stroke-width="1.8" />
-            </g>
+            <path d="M22 75H84c7 0 12-6 12-13 0-6-4-12-10-14-2-9-11-16-21-16-8 0-16 4-20 11-2-1-4-2-7-2-9 0-16 6-17 14-5 2-9 7-9 13 0 8 6 14 14 14h4z"
+                fill="#ffffff"
+                stroke="#1f5fbf"
+                stroke-width="3.2"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            <text x="52" y="56"
+                fill="#1f5fbf"
+                font-family="Arial, Helvetica, sans-serif"
+                font-size="8.5"
+                font-weight="700"
+                letter-spacing="0.55"
+                text-anchor="middle">INTERNET</text>
+            <circle cx="82" cy="20" r="4" fill="${color}" stroke="#ffffff" stroke-width="1.5" />
         </svg>`;
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     }

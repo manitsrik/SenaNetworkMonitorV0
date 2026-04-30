@@ -7,6 +7,7 @@ let previewNetwork = null;
 let previewNodes = new vis.DataSet([]);
 let previewEdges = new vis.DataSet([]);
 let customConnections = []; // {device_id, connected_to}
+let customDecorations = []; // {id, type, rack_u, x, y}
 let isBuilderConnectMode = false;
 let isDraggingConn = false;
 let dragSourceNodeId = null;
@@ -18,6 +19,8 @@ let backgroundBrightness = 100; // percentage
 let savedNodePositions = {}; // {deviceId: {x, y}}
 let themeMode = 'standard'; // 'standard' or 'premium'
 const previewBgImage = new Image();
+const DECORATION_PREFIX = 'deco:';
+const DECORATION_RACK_PREFIX = `${DECORATION_PREFIX}rack:`;
 
 // ========================================
 // Initialize
@@ -29,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadExistingSubTopology();
     }
     setupThemeListener();
+    updateDecorationButtons();
 });
 
 async function loadAllDevices() {
@@ -76,8 +80,21 @@ async function loadExistingSubTopology() {
             }
         }
 
+        if (data.decorations) {
+            try {
+                customDecorations = typeof data.decorations === 'string'
+                    ? JSON.parse(data.decorations)
+                    : data.decorations;
+            } catch (e) {
+                customDecorations = [];
+            }
+        } else {
+            customDecorations = [];
+        }
+
         renderDeviceList();
         updatePreview();
+        updateDecorationButtons();
 
         // Restore background image if saved
         if (data.background_image) {
@@ -236,6 +253,120 @@ function updateSelectedCount() {
     document.getElementById('selected-count').textContent = selectedDeviceIds.size;
 }
 
+function isDecorationNodeId(nodeId) {
+    return typeof nodeId === 'string' && nodeId.startsWith(DECORATION_PREFIX);
+}
+
+function isRackDecorationId(nodeId) {
+    return typeof nodeId === 'string' && nodeId.startsWith(DECORATION_RACK_PREFIX);
+}
+
+function getRackImageSize(rackU) {
+    return Math.max(90, Math.min(540, 52 + (rackU * 12)));
+}
+
+function getRackImageUrl(rackU) {
+    const unitCount = Math.max(1, parseInt(rackU, 10) || 1);
+    const width = 220;
+    const innerWidth = 132;
+    const height = 36 + (unitCount * 14);
+    const railTop = 18;
+    const railBottom = height - 18;
+    const slotHeight = (railBottom - railTop) / unitCount;
+    const lineSegments = [];
+    const labelSegments = [];
+
+    for (let i = 0; i <= unitCount; i += 1) {
+        const y = railTop + (slotHeight * i);
+        lineSegments.push(`<line x1="54" y1="${y.toFixed(1)}" x2="${width - 54}" y2="${y.toFixed(1)}" stroke="rgba(56, 189, 248, 0.18)" stroke-width="1"/>`);
+    }
+
+    for (let i = 0; i < unitCount; i += 1) {
+        const y = railTop + (slotHeight * i) + (slotHeight / 2) + 3;
+        const label = unitCount - i;
+        labelSegments.push(`<text x="30" y="${y.toFixed(1)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8" fill="#64748b">${label}</text>`);
+        labelSegments.push(`<text x="${width - 30}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8" fill="#64748b">${label}</text>`);
+    }
+
+    const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">
+        <defs>
+            <linearGradient id="rackFrame" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stop-color="#1f2937"/>
+                <stop offset="1" stop-color="#0f172a"/>
+            </linearGradient>
+            <linearGradient id="rackGlow" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0" stop-color="rgba(56, 189, 248, 0.2)"/>
+                <stop offset="1" stop-color="rgba(14, 165, 233, 0.04)"/>
+            </linearGradient>
+        </defs>
+        <rect x="18" y="8" width="${width - 36}" height="${height - 16}" rx="14" fill="url(#rackGlow)" stroke="rgba(56, 189, 248, 0.18)" stroke-width="1.5"/>
+        <rect x="40" y="10" width="18" height="${height - 20}" rx="8" fill="url(#rackFrame)" stroke="#475569" stroke-width="1"/>
+        <rect x="${width - 58}" y="10" width="18" height="${height - 20}" rx="8" fill="url(#rackFrame)" stroke="#475569" stroke-width="1"/>
+        <rect x="58" y="${railTop}" width="${innerWidth}" height="${(railBottom - railTop).toFixed(1)}" rx="8" fill="rgba(15, 23, 42, 0.24)" stroke="rgba(71, 85, 105, 0.5)" stroke-width="1"/>
+        ${lineSegments.join('')}
+        ${labelSegments.join('')}
+        <text x="${width / 2}" y="18" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" font-weight="700" fill="#38bdf8">${unitCount}U RACK</text>
+    </svg>`;
+
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
+}
+
+function getDecorationNodeIds() {
+    return customDecorations.map(item => item.id);
+}
+
+function updateDecorationButtons() {
+    const removeBtn = document.getElementById('remove-rack-btn');
+    if (!removeBtn || !previewNetwork) return;
+
+    const selectedRackIds = previewNetwork.getSelectedNodes().filter(isRackDecorationId);
+    removeBtn.disabled = selectedRackIds.length === 0;
+}
+
+function addRackDecoration() {
+    const rackSelect = document.getElementById('rack-u-select');
+    const rackU = Math.max(1, parseInt(rackSelect ? rackSelect.value : '4', 10) || 4);
+    const rackId = `${DECORATION_RACK_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const center = previewNetwork && typeof previewNetwork.getViewPosition === 'function'
+        ? previewNetwork.getViewPosition()
+        : { x: 0, y: 0 };
+    const offset = customDecorations.length * 36;
+    const x = Math.round((center && Number.isFinite(center.x) ? center.x : 0) + offset);
+    const y = Math.round((center && Number.isFinite(center.y) ? center.y : 0) + offset);
+
+    customDecorations.push({
+        id: rackId,
+        type: 'rack',
+        rack_u: rackU,
+        x,
+        y
+    });
+    savedNodePositions[rackId] = { x, y };
+
+    updatePreview();
+    if (previewNetwork) {
+        previewNetwork.selectNodes([rackId]);
+    }
+    updateDecorationButtons();
+}
+
+function removeSelectedDecoration() {
+    if (!previewNetwork) return;
+
+    const selectedIds = previewNetwork.getSelectedNodes().filter(isDecorationNodeId);
+    if (!selectedIds.length) return;
+
+    const idSet = new Set(selectedIds);
+    customDecorations = customDecorations.filter(item => !idSet.has(item.id));
+    selectedIds.forEach(id => {
+        delete savedNodePositions[id];
+    });
+
+    updatePreview();
+    updateDecorationButtons();
+}
+
 // ========================================
 // Vis.js Preview Network
 // ========================================
@@ -271,6 +402,10 @@ function initPreviewNetwork() {
 
     previewNetwork = new vis.Network(container, { nodes: previewNodes, edges: previewEdges }, options);
 
+    previewNetwork.on('selectNode', updateDecorationButtons);
+    previewNetwork.on('deselectNode', updateDecorationButtons);
+    previewNetwork.on('click', updateDecorationButtons);
+
     // Render background on canvas
     previewNetwork.on('beforeDrawing', (ctx) => {
         // Draw background color (Theme-aware)
@@ -291,6 +426,8 @@ function initPreviewNetwork() {
             ctx.drawImage(previewBgImage, -w / 2, -h / 2, w, h);
             ctx.restore();
         }
+
+        drawPreviewGrid(ctx);
     });
 
     // Setup drag-to-connect
@@ -361,8 +498,8 @@ function syncOverlayNodes() {
 
         // Keep switch cards readable when the preview zooms out.
         const scale = previewNetwork.getScale();
-        const isSwitchNode = !!el.querySelector('.rackmount-node');
-        const effectiveScale = isSwitchNode
+        const isRackStyleNode = !!el.querySelector('.rackmount-node') || !!el.querySelector('.internet-node');
+        const effectiveScale = isRackStyleNode
             ? Math.max(1.08, Math.min(1.55, scale * 1.55))
             : Math.max(0.45, Math.min(1.5, scale));
         el.style.transform = `scale(${effectiveScale})`;
@@ -424,20 +561,49 @@ function updatePreview() {
     previewNodes.clear();
     previewEdges.clear();
 
-    if (selectedDevices.length === 0) {
+    if (selectedDevices.length === 0 && customDecorations.length === 0) {
         const container = document.getElementById('dom-overlay-container');
         if (container) container.innerHTML = '';
+        updateDecorationButtons();
         return;
     }
 
+    const isPremiumMode = (themeMode || '').toLowerCase() === 'premium';
     const count = selectedDevices.length;
     const radius = Math.max(150, count * 30);
     const angleStep = (2 * Math.PI) / count;
+    const positionedDecorations = customDecorations
+        .map(item => savedNodePositions[item.id] || (Number.isFinite(item.x) && Number.isFinite(item.y) ? { x: item.x, y: item.y } : null))
+        .filter(Boolean);
     const devicesWithSavedPositions = selectedDevices.filter(d => savedNodePositions[d.id]);
-    const existingPositions = devicesWithSavedPositions.map(d => savedNodePositions[d.id]);
+    const existingPositions = devicesWithSavedPositions.map(d => savedNodePositions[d.id]).concat(positionedDecorations);
     const devicesWithoutSavedPositions = selectedDevices.filter(d => !savedNodePositions[d.id]);
     const hasExistingLayout = existingPositions.length > 0;
     let newNodeCounter = 0;
+
+    customDecorations.forEach((item, index) => {
+        const savedPos = savedNodePositions[item.id] || {
+            x: Number.isFinite(item.x) ? item.x : index * 40,
+            y: Number.isFinite(item.y) ? item.y : index * 40
+        };
+
+        savedNodePositions[item.id] = savedPos;
+        previewNodes.add({
+            id: item.id,
+            label: isPremiumMode ? null : `${item.rack_u || 1}U Rack`,
+            x: savedPos.x,
+            y: savedPos.y,
+            fixed: { x: false, y: false },
+            shape: 'image',
+            image: getRackImageUrl(item.rack_u || 1),
+            size: getRackImageSize(item.rack_u || 1),
+            font: { color: getTextColor(), size: 11 },
+            title: `Rack ${item.rack_u || 1}U`
+        });
+
+        const el = document.getElementById(`premium-node-${item.id}`);
+        if (el) el.remove();
+    });
 
     selectedDevices.forEach((device, index) => {
         const color = getStatusColor(device.status);
@@ -457,7 +623,6 @@ function updatePreview() {
         const nodeX = savedPos ? savedPos.x : radius * Math.cos(angle);
         const nodeY = savedPos ? savedPos.y : radius * Math.sin(angle);
 
-        const isPremiumMode = (themeMode || '').toLowerCase() === 'premium';
         if (isPremiumMode) {
             // In premium mode, the actual vis.js node is just a transparent hit area
             previewNodes.add({
@@ -536,9 +701,10 @@ function updatePreview() {
     });
 
     // Preserve the existing layout when editing; only brand-new topologies should use circle/physics layout.
-    const allHavePositions = selectedDevices.every(d => savedNodePositions[d.id]);
+    const allLayoutNodeIds = selectedDevices.map(d => d.id).concat(getDecorationNodeIds());
+    const allHavePositions = allLayoutNodeIds.length > 0 && allLayoutNodeIds.every(id => savedNodePositions[id]);
     if (previewNetwork) {
-        if ((allHavePositions || hasExistingLayout) && selectedDevices.length > 0) {
+        if ((allHavePositions || hasExistingLayout) && allLayoutNodeIds.length > 0) {
             // Existing layouts should stay fixed even when new devices are added.
             previewNetwork.setOptions({ physics: { enabled: false } });
             setTimeout(() => {
@@ -554,6 +720,8 @@ function updatePreview() {
             });
         }
     }
+
+    updateDecorationButtons();
 }
 
 function fitPreview() {
@@ -611,7 +779,7 @@ function setupBuilderConnectEvents(container) {
         if (!isBuilderConnectMode) return;
         const pos = previewNetwork.DOMtoCanvas({ x: e.offsetX, y: e.offsetY });
         const nodeId = previewNetwork.getNodeAt({ x: e.offsetX, y: e.offsetY });
-        if (nodeId !== undefined) {
+        if (nodeId !== undefined && !isDecorationNodeId(nodeId)) {
             isDraggingConn = true;
             dragSourceNodeId = nodeId;
             dragMousePos = pos;
@@ -630,7 +798,7 @@ function setupBuilderConnectEvents(container) {
         if (!isDraggingConn) return;
         const targetNodeId = previewNetwork.getNodeAt({ x: e.offsetX, y: e.offsetY });
 
-        if (targetNodeId !== undefined && targetNodeId !== dragSourceNodeId) {
+        if (targetNodeId !== undefined && targetNodeId !== dragSourceNodeId && !isDecorationNodeId(targetNodeId)) {
             // Check if connection already exists
             const exists = customConnections.some(
                 c => (c.device_id === dragSourceNodeId && c.connected_to === targetNodeId) ||
@@ -681,6 +849,13 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isBuilderConnectMode) {
         toggleBuilderConnectMode();
     }
+
+    if ((e.key === 'Delete' || e.key === 'Backspace') && previewNetwork) {
+        const selectedRackIds = previewNetwork.getSelectedNodes().filter(isRackDecorationId);
+        if (selectedRackIds.length) {
+            removeSelectedDecoration();
+        }
+    }
 });
 
 // ========================================
@@ -695,20 +870,29 @@ async function saveSubTopology() {
         return;
     }
 
-    if (selectedDeviceIds.size === 0) {
-        alert('กรุณาเลือกอย่างน้อย 1 อุปกรณ์');
+    if (selectedDeviceIds.size === 0 && customDecorations.length === 0) {
+        alert('Please add at least one device or rack decoration');
         return;
     }
 
     // Capture current node positions from vis.js
     const positions = previewNetwork ? previewNetwork.getPositions() : {};
     const nodePositionsJson = JSON.stringify(positions);
+    const decorationsPayload = customDecorations.map(item => {
+        const pos = positions[item.id] || savedNodePositions[item.id] || {};
+        return {
+            ...item,
+            x: Number.isFinite(pos.x) ? pos.x : (Number.isFinite(item.x) ? item.x : 0),
+            y: Number.isFinite(pos.y) ? pos.y : (Number.isFinite(item.y) ? item.y : 0)
+        };
+    });
 
     const payload = {
         name,
         description: description || null,
         device_ids: Array.from(selectedDeviceIds),
         connections: customConnections,
+        decorations: decorationsPayload,
         background_image: backgroundImageUrl || '',
         background_zoom: backgroundZoom,
         background_opacity: backgroundOpacity,
@@ -859,6 +1043,78 @@ function onBgOpacityChange(val) {
     if (previewNetwork) previewNetwork.redraw();
 }
 
+function drawPreviewGrid(ctx) {
+    if (!previewNetwork) return;
+
+    const container = document.getElementById('preview-network');
+    if (!container) return;
+
+    const topLeft = previewNetwork.DOMtoCanvas({ x: 0, y: 0 });
+    const bottomRight = previewNetwork.DOMtoCanvas({
+        x: container.clientWidth,
+        y: container.clientHeight
+    });
+
+    const minX = Math.min(topLeft.x, bottomRight.x);
+    const maxX = Math.max(topLeft.x, bottomRight.x);
+    const minY = Math.min(topLeft.y, bottomRight.y);
+    const maxY = Math.max(topLeft.y, bottomRight.y);
+    const minorSpacing = 40;
+    const majorSpacing = minorSpacing * 5;
+    const hasBackgroundImage = Boolean(previewBgImage.complete && previewBgImage.src);
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const minorColor = isDark
+        ? `rgba(148, 163, 184, ${hasBackgroundImage ? 0.08 : 0.14})`
+        : `rgba(148, 163, 184, ${hasBackgroundImage ? 0.12 : 0.22})`;
+    const majorColor = isDark
+        ? `rgba(96, 165, 250, ${hasBackgroundImage ? 0.14 : 0.22})`
+        : `rgba(59, 130, 246, ${hasBackgroundImage ? 0.16 : 0.28})`;
+    const originColor = isDark
+        ? 'rgba(56, 189, 248, 0.28)'
+        : 'rgba(37, 99, 235, 0.32)';
+    const scale = previewNetwork.getScale() || 1;
+    const lineWidth = 1 / scale;
+
+    ctx.save();
+    ctx.lineWidth = lineWidth;
+
+    for (let x = Math.floor(minX / minorSpacing) * minorSpacing; x <= maxX; x += minorSpacing) {
+        if (x % majorSpacing === 0) continue;
+        ctx.beginPath();
+        ctx.strokeStyle = minorColor;
+        ctx.moveTo(x, minY);
+        ctx.lineTo(x, maxY);
+        ctx.stroke();
+    }
+
+    for (let y = Math.floor(minY / minorSpacing) * minorSpacing; y <= maxY; y += minorSpacing) {
+        if (y % majorSpacing === 0) continue;
+        ctx.beginPath();
+        ctx.strokeStyle = minorColor;
+        ctx.moveTo(minX, y);
+        ctx.lineTo(maxX, y);
+        ctx.stroke();
+    }
+
+    for (let x = Math.floor(minX / majorSpacing) * majorSpacing; x <= maxX; x += majorSpacing) {
+        ctx.beginPath();
+        ctx.strokeStyle = x === 0 ? originColor : majorColor;
+        ctx.moveTo(x, minY);
+        ctx.lineTo(x, maxY);
+        ctx.stroke();
+    }
+
+    for (let y = Math.floor(minY / majorSpacing) * majorSpacing; y <= maxY; y += majorSpacing) {
+        ctx.beginPath();
+        ctx.strokeStyle = y === 0 ? originColor : majorColor;
+        ctx.moveTo(minX, y);
+        ctx.lineTo(maxX, y);
+        ctx.stroke();
+    }
+
+    ctx.restore();
+}
+
 // ========================================
 // Utility Functions
 // ========================================
@@ -931,38 +1187,20 @@ function getSvgIcon(emoji, color, size = 100, deviceType = 'other') {
     if ((deviceType || '').toLowerCase() === 'internet') {
         const svg = `
         <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
-            <defs>
-                <linearGradient id="cloudStroke" x1="12" y1="10" x2="88" y2="68" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#9be7ff"/>
-                    <stop offset="0.28" stop-color="#67d3ff"/>
-                    <stop offset="0.62" stop-color="#2ea8ff"/>
-                    <stop offset="1" stop-color="#2563eb"/>
-                </linearGradient>
-                <linearGradient id="cloudFill" x1="26" y1="24" x2="76" y2="64" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
-                    <stop offset="0.55" stop-color="#dbeafe" stop-opacity="0.14"/>
-                    <stop offset="1" stop-color="#60a5fa" stop-opacity="0.04"/>
-                </linearGradient>
-                <linearGradient id="globeStroke" x1="34" y1="28" x2="66" y2="62" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stop-color="#d8fbff"/>
-                    <stop offset="0.22" stop-color="#67e8f9"/>
-                    <stop offset="0.65" stop-color="#38bdf8"/>
-                    <stop offset="1" stop-color="#2563eb"/>
-                </linearGradient>
-                <filter id="iconGlow" x="-30%" y="-30%" width="160%" height="170%">
-                    <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#38bdf8" flood-opacity="0.16"/>
-                    <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.18"/>
-                </filter>
-            </defs>
-            <g filter="url(#iconGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M27 76H20C10 76 3 68 3 59c0-7 4-13 11-16 1-12 11-21 25-21 3 0 5 0 7 1 4-14 17-23 32-23 14 0 26 7 31 17 2 0 3 0 5 0 12 0 22 9 22 20 9 2 16 10 16 18 0 12-9 21-21 21H64" fill="url(#cloudFill)" stroke="url(#cloudStroke)" stroke-width="5.5"/>
-                <path d="M28 72H21c-8 0-14-6-14-13 0-6 3-11 9-13 1-11 10-18 22-18 3 0 5 0 7 1 4-12 16-20 29-20 11 0 21 5 27 14" stroke="#e0f2fe" stroke-opacity="0.56" stroke-width="1.8"/>
-                <circle cx="50" cy="48" r="18" fill="rgba(255,255,255,0.08)" stroke="url(#globeStroke)" stroke-width="3.8"/>
-                <ellipse cx="50" cy="48" rx="7.5" ry="18" stroke="url(#globeStroke)" stroke-width="2.5"/>
-                <ellipse cx="50" cy="48" rx="14" ry="6.5" stroke="url(#globeStroke)" stroke-width="2.5"/>
-                <path d="M32 48h36M50 30v36M36 38c4 3 9 5 14 5s10-2 14-5M36 58c4-3 9-5 14-5s10 2 14 5" stroke="url(#globeStroke)" stroke-width="2.4"/>
-                <circle cx="76" cy="17" r="4.8" fill="${color}" stroke="rgba(255,255,255,0.96)" stroke-width="1.8" />
-            </g>
+            <path d="M22 75H84c7 0 12-6 12-13 0-6-4-12-10-14-2-9-11-16-21-16-8 0-16 4-20 11-2-1-4-2-7-2-9 0-16 6-17 14-5 2-9 7-9 13 0 8 6 14 14 14h4z"
+                fill="#ffffff"
+                stroke="#1f5fbf"
+                stroke-width="3.2"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            <text x="52" y="56"
+                fill="#1f5fbf"
+                font-family="Arial, Helvetica, sans-serif"
+                font-size="8.5"
+                font-weight="700"
+                letter-spacing="0.55"
+                text-anchor="middle">INTERNET</text>
+            <circle cx="82" cy="20" r="4" fill="${color}" stroke="#ffffff" stroke-width="1.5" />
         </svg>`;
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
     }
@@ -976,33 +1214,25 @@ function getSvgIcon(emoji, color, size = 100, deviceType = 'other') {
 
 function getPremiumInternetImageUrl() {
     const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 8 108 92">
-        <defs>
-            <linearGradient id="cloudStroke" x1="16" y1="18" x2="108" y2="82" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#c8f6ff"/>
-                <stop offset="0.25" stop-color="#67d3ff"/>
-                <stop offset="0.62" stop-color="#38bdf8"/>
-                <stop offset="1" stop-color="#2563eb"/>
-            </linearGradient>
-            <linearGradient id="globeStroke" x1="42" y1="34" x2="78" y2="68" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#e0fbff"/>
-                <stop offset="0.24" stop-color="#67e8f9"/>
-                <stop offset="0.68" stop-color="#38bdf8"/>
-                <stop offset="1" stop-color="#2563eb"/>
-            </linearGradient>
-            <filter id="glow" x="-30%" y="-30%" width="160%" height="170%">
-                <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.12"/>
-                <feDropShadow dx="0" dy="4" stdDeviation="3.4" flood-color="#0f172a" flood-opacity="0.12"/>
-            </filter>
-        </defs>
-        <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M30 76h55c8 0 14-5 14-12 0-6-4-11-11-13-2-9-10-15-20-15-7 0-13 3-17 8-2-1-4-1-6-1-8 0-14 5-14 12v2c-5 2-9 7-9 12 0 8 6 14 14 14z" stroke="url(#cloudStroke)" stroke-width="5.8"/>
-            <path d="M33 71h50c6 0 11-4 11-9s-4-9-10-9h-2c-2-8-9-13-17-13-6 0-11 2-15 7-2 0-3-1-5-1-6 0-11 4-11 10v2c-4 2-7 5-7 9 0 5 4 9 9 9z" stroke="#e0f2fe" stroke-opacity="0.42" stroke-width="1.7"/>
-            <circle cx="58" cy="47" r="15.5" stroke="url(#globeStroke)" stroke-width="3.5"/>
-            <ellipse cx="58" cy="47" rx="6.1" ry="15.5" stroke="url(#globeStroke)" stroke-width="2.2"/>
-            <ellipse cx="58" cy="47" rx="12.4" ry="5.3" stroke="url(#globeStroke)" stroke-width="2.2"/>
-            <path d="M43 47h30M58 32v30M48 38c3 2.7 6.4 4.1 10 4.1 3.6 0 7-1.4 10-4.1M48 56c3-2.7 6.4-4.1 10-4.1 3.6 0 7 1.4 10 4.1" stroke="url(#globeStroke)" stroke-width="1.95"/>
-        </g>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120">
+        <path
+            d="M30 94H146c16 0 30-13 30-29 0-13-9-25-22-28-3-19-20-35-41-35-17 0-31 8-40 23-4-2-7-3-11-3-15 0-28 11-31 26C14 50 8 58 8 68c0 14 10 26 22 26z"
+            fill="#ffffff"
+            stroke="#1f5fbf"
+            stroke-width="4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+        />
+        <text
+            x="90"
+            y="67"
+            fill="#1f5fbf"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="16.5"
+            font-weight="700"
+            letter-spacing="0.7"
+            text-anchor="middle"
+        >INTERNET</text>
     </svg>`;
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
 }
@@ -1023,18 +1253,20 @@ function renderPremiumDOMNode(device) {
     }
 
     const type = (device.device_type || 'server').toLowerCase();
-    const isServer = type === 'server' || type === 'vmware';
+    const isVmware = type === 'vmware';
+    const isServer = type === 'server';
     const isInternet = type === 'internet';
     const isSwitch = type === 'switch';
     const isFirewall = type === 'firewall';
     const isRouter = type === 'router';
+    const isVpnRouter = type === 'vpnrouter';
+    const isWebsite = type === 'website' || type === 'web';
     const isWireless = type === 'wireless' || type === 'wifi';
 
     // Choose Template
     let templateId = 'floating-node-template';
     if (isInternet) templateId = 'internet-node-template';
-    if (isServer) templateId = 'wide-server-template';
-    if (isSwitch || isFirewall || isRouter) templateId = 'rackmount-hardware-template';
+    if (isServer || isVmware || isSwitch || isFirewall || isRouter || isVpnRouter || isWebsite) templateId = 'rackmount-hardware-template';
     if (isWireless) templateId = 'wireless-ap-template';
 
     const templateNode = document.getElementById(templateId);
@@ -1046,19 +1278,26 @@ function renderPremiumDOMNode(device) {
         'firewall': 'fa-shield-halved',
         'switch': 'fa-network-wired',
         'router': 'fa-globe',
+        'vpnrouter': 'fa-lock',
+        'website': 'fa-globe',
+        'web': 'fa-globe',
         'internet': 'fa-cloud',
         'wireless': 'fa-wifi',
         'server': 'fa-server',
         'vmware': 'fa-database'
     };
     const icon = iconMap[type] || 'fa-microchip';
-    const glowClass = `glow-${type}`;
+    const glowClass = isWebsite ? 'glow-website' : `glow-${type}`;
 
     let imageUrl = '';
     if (isInternet) imageUrl = getPremiumInternetImageUrl();
+    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=1';
+    else if (isVmware) imageUrl = '/static/icons/premium_vmware.png?v=1';
     else if (isSwitch) imageUrl = '/static/icons/premium_switch.png?v=2';
     else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';
     else if (isRouter) imageUrl = '/static/icons/premium_router.svg?v=1';
+    else if (isVpnRouter) imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
+    else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
 
     // Fill Template
@@ -1084,7 +1323,7 @@ function renderPremiumDOMNode(device) {
 
     // FORCE POSITION VIA JS - Bypasses all CSS Caching
     setTimeout(() => {
-        if (isSwitch || isRouter) {
+        if (isSwitch || isRouter || isVpnRouter || isWebsite) {
             const title = el.querySelector('.hardware-title');
             const ip = el.querySelector('.hardware-ip');
             if (title) {
@@ -1092,8 +1331,7 @@ function renderPremiumDOMNode(device) {
                 title.style.setProperty('display', 'block', 'important');
             }
             if (ip) {
-                ip.style.setProperty('position', 'absolute', 'important');
-                ip.style.setProperty('display', 'block', 'important');
+                ip.style.setProperty('display', 'none', 'important');
             }
             return;
         }

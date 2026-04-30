@@ -13,7 +13,8 @@ window.DashboardRenderer = {
         'router': { icon: '🌐', name: 'Routers', color: '#f59e0b' },
         'internet': { icon: '☁️', name: 'Internet', color: '#38bdf8' },
         'wireless': { icon: '📶', name: 'Wireless', color: '#ec4899' },
-        'website': { icon: '🌐', name: 'Websites', color: '#8b5cf6' },
+        'website': { icon: '🌐', name: 'Websites', color: '#0ea5e9' },
+        'web': { icon: '🌐', name: 'Websites', color: '#0ea5e9' },
         'vmware': { icon: '🖴', name: 'VMware', color: '#22c55e' },
         'ippbx': { icon: '☎️', name: 'IP-PBX', color: '#3b82f6' },
         'vpnrouter': { icon: '🔒', name: 'VPN Router', color: '#a855f7' },
@@ -547,8 +548,7 @@ window.DashboardRenderer = {
     getPremiumWidgetTemplateId: function (device) {
         const type = (device.device_type || 'server').toLowerCase();
         if (type === 'internet') return 'internet-node-template';
-        if (type === 'server' || type === 'vmware') return 'wide-server-template';
-        if (type === 'switch' || type === 'firewall' || type === 'router') return 'rackmount-hardware-template';
+        if (type === 'server' || type === 'vmware' || type === 'switch' || type === 'firewall' || type === 'router' || type === 'vpnrouter' || type === 'website' || type === 'web') return 'rackmount-hardware-template';
         if (type === 'wireless' || type === 'wifi') return 'wireless-ap-template';
         return 'floating-node-template';
     },
@@ -566,6 +566,7 @@ window.DashboardRenderer = {
         }
 
         const type = (device.device_type || 'server').toLowerCase();
+        const isWebsite = type === 'website' || type === 'web';
         const templateId = this.getPremiumWidgetTemplateId(device);
         const templateNode = document.getElementById(templateId);
         if (!templateNode) return;
@@ -574,6 +575,9 @@ window.DashboardRenderer = {
             'firewall': 'fa-shield-halved',
             'switch': 'fa-network-wired',
             'router': 'fa-globe',
+            'vpnrouter': 'fa-lock',
+            'website': 'fa-globe',
+            'web': 'fa-globe',
             'internet': 'fa-cloud',
             'wireless': 'fa-wifi',
             'server': 'fa-server',
@@ -582,10 +586,16 @@ window.DashboardRenderer = {
 
         let imageUrl = '';
         if (type === 'internet') imageUrl = this.getPremiumInternetImageUrl();
+        else if (type === 'server') imageUrl = '/static/icons/premium_server.png?v=1';
+        else if (type === 'vmware') imageUrl = '/static/icons/premium_vmware.png?v=1';
         else if (type === 'switch') imageUrl = '/static/icons/premium_switch.png?v=2';
         else if (type === 'firewall') imageUrl = '/static/icons/premium_firewall.svg?v=1';
         else if (type === 'router') imageUrl = '/static/icons/premium_router.svg?v=1';
+        else if (type === 'vpnrouter') imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
+        else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
         else if (type === 'wireless' || type === 'wifi') imageUrl = '/static/icons/premium_wireless.svg?v=2';
+
+        const glowClass = isWebsite ? 'glow-website' : `glow-${type}`;
 
         let html = templateNode.innerHTML
             .replace(/{id}/g, `${index}-${device.id}`)
@@ -595,7 +605,7 @@ window.DashboardRenderer = {
             .replace(/{status}/g, device.status || 'unknown')
             .replace(/{type-label}/g, device.device_type || 'N/A')
             .replace(/{response-label}/g, device.response_time != null ? `${device.response_time}ms` : '--')
-            .replace(/{glow-class}/g, `glow-${type}`)
+            .replace(/{glow-class}/g, glowClass)
             .replace(/{image_url}/g, imageUrl);
         if (type === 'server' || type === 'vmware') {
             const cpu = device.response_time != null ? Math.min(99, Math.max(5, Math.round(device.response_time % 100))) : 15;
@@ -604,13 +614,13 @@ window.DashboardRenderer = {
         }
 
         el.innerHTML = html;
-        if (type === 'switch' || type === 'router') {
+        if (type === 'switch' || type === 'router' || type === 'vpnrouter' || isWebsite) {
             const title = el.querySelector('.hardware-title');
             const ip = el.querySelector('.hardware-ip');
             if (title) {
                 title.style.setProperty('position', 'absolute', 'important');
                 title.style.setProperty('display', 'block', 'important');
-                title.style.setProperty('bottom', '8px', 'important');
+                title.style.setProperty('bottom', type === 'vpnrouter' ? '18px' : '8px', 'important');
                 title.style.setProperty('top', 'auto', 'important');
             }
             if (ip) {
@@ -644,8 +654,8 @@ window.DashboardRenderer = {
             const domPos = network.canvasToDOM(pos);
             const width = el.offsetWidth || 120;
             const height = el.offsetHeight || 120;
-            const isSwitchNode = !!el.querySelector('.rackmount-node');
-            const effectiveScale = isSwitchNode
+            const isRackStyleNode = !!el.querySelector('.rackmount-node') || !!el.querySelector('.internet-node');
+            const effectiveScale = isRackStyleNode
                 ? Math.max(0.8, Math.min(1.25, scale * 1.2))
                 : Math.max(0.42, Math.min(1.2, scale));
 
@@ -2016,38 +2026,20 @@ window.DashboardRenderer = {
 
             const svgString = `
                 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 100 100">
-                    <defs>
-                        <linearGradient id="cloudStroke" x1="12" y1="10" x2="88" y2="68" gradientUnits="userSpaceOnUse">
-                            <stop offset="0" stop-color="#9be7ff"/>
-                            <stop offset="0.28" stop-color="#67d3ff"/>
-                            <stop offset="0.62" stop-color="#2ea8ff"/>
-                            <stop offset="1" stop-color="#2563eb"/>
-                        </linearGradient>
-                        <linearGradient id="cloudFill" x1="26" y1="24" x2="76" y2="64" gradientUnits="userSpaceOnUse">
-                            <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
-                            <stop offset="0.55" stop-color="#dbeafe" stop-opacity="0.14"/>
-                            <stop offset="1" stop-color="#60a5fa" stop-opacity="0.04"/>
-                        </linearGradient>
-                        <linearGradient id="globeStroke" x1="34" y1="28" x2="66" y2="62" gradientUnits="userSpaceOnUse">
-                            <stop offset="0" stop-color="#d8fbff"/>
-                            <stop offset="0.22" stop-color="#67e8f9"/>
-                            <stop offset="0.65" stop-color="#38bdf8"/>
-                            <stop offset="1" stop-color="#2563eb"/>
-                        </linearGradient>
-                        <filter id="iconGlow" x="-30%" y="-30%" width="160%" height="170%">
-                            <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#38bdf8" flood-opacity="0.16"/>
-                            <feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.18"/>
-                        </filter>
-                    </defs>
-                    <g filter="url(#iconGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M27 76H20C10 76 3 68 3 59c0-7 4-13 11-16 1-12 11-21 25-21 3 0 5 0 7 1 4-14 17-23 32-23 14 0 26 7 31 17 2 0 3 0 5 0 12 0 22 9 22 20 9 2 16 10 16 18 0 12-9 21-21 21H64" fill="url(#cloudFill)" stroke="url(#cloudStroke)" stroke-width="5.5"/>
-                        <path d="M28 72H21c-8 0-14-6-14-13 0-6 3-11 9-13 1-11 10-18 22-18 3 0 5 0 7 1 4-12 16-20 29-20 11 0 21 5 27 14" stroke="#e0f2fe" stroke-opacity="0.56" stroke-width="1.8"/>
-                        <circle cx="50" cy="48" r="18" fill="rgba(255,255,255,0.08)" stroke="url(#globeStroke)" stroke-width="3.8"/>
-                        <ellipse cx="50" cy="48" rx="7.5" ry="18" stroke="url(#globeStroke)" stroke-width="2.5"/>
-                        <ellipse cx="50" cy="48" rx="14" ry="6.5" stroke="url(#globeStroke)" stroke-width="2.5"/>
-                        <path d="M32 48h36M50 30v36M36 38c4 3 9 5 14 5s10-2 14-5M36 58c4-3 9-5 14-5s10 2 14 5" stroke="url(#globeStroke)" stroke-width="2.4"/>
-                        <circle cx="76" cy="17" r="4.8" fill="${color}" stroke="rgba(255,255,255,0.96)" stroke-width="1.8"/>
-                    </g>
+                    <path d="M22 75H84c7 0 12-6 12-13 0-6-4-12-10-14-2-9-11-16-21-16-8 0-16 4-20 11-2-1-4-2-7-2-9 0-16 6-17 14-5 2-9 7-9 13 0 8 6 14 14 14h4z"
+                        fill="#ffffff"
+                        stroke="#1f5fbf"
+                        stroke-width="3.2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <text x="52" y="56"
+                        fill="#1f5fbf"
+                        font-family="Arial, Helvetica, sans-serif"
+                        font-size="8.5"
+                        font-weight="700"
+                        letter-spacing="0.55"
+                        text-anchor="middle">INTERNET</text>
+                    <circle cx="82" cy="20" r="4" fill="${color}" stroke="#ffffff" stroke-width="1.5"/>
                 </svg>`;
             return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgString);
         }
@@ -2077,33 +2069,25 @@ window.DashboardRenderer = {
 
     getPremiumInternetImageUrl: function () {
         const svg = `
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="6 8 108 92">
-                <defs>
-                    <linearGradient id="cloudStroke" x1="16" y1="18" x2="108" y2="82" gradientUnits="userSpaceOnUse">
-                        <stop offset="0" stop-color="#c8f6ff"/>
-                        <stop offset="0.25" stop-color="#67d3ff"/>
-                        <stop offset="0.62" stop-color="#38bdf8"/>
-                        <stop offset="1" stop-color="#2563eb"/>
-                    </linearGradient>
-                    <linearGradient id="globeStroke" x1="42" y1="34" x2="78" y2="68" gradientUnits="userSpaceOnUse">
-                        <stop offset="0" stop-color="#e0fbff"/>
-                        <stop offset="0.24" stop-color="#67e8f9"/>
-                        <stop offset="0.68" stop-color="#38bdf8"/>
-                        <stop offset="1" stop-color="#2563eb"/>
-                    </linearGradient>
-                    <filter id="glow" x="-30%" y="-30%" width="160%" height="170%">
-                        <feDropShadow dx="0" dy="0" stdDeviation="2.4" flood-color="#38bdf8" flood-opacity="0.12"/>
-                        <feDropShadow dx="0" dy="4" stdDeviation="3.4" flood-color="#0f172a" flood-opacity="0.12"/>
-                    </filter>
-                </defs>
-                <g filter="url(#glow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M30 76h55c8 0 14-5 14-12 0-6-4-11-11-13-2-9-10-15-20-15-7 0-13 3-17 8-2-1-4-1-6-1-8 0-14 5-14 12v2c-5 2-9 7-9 12 0 8 6 14 14 14z" stroke="url(#cloudStroke)" stroke-width="5.8"/>
-                    <path d="M33 71h50c6 0 11-4 11-9s-4-9-10-9h-2c-2-8-9-13-17-13-6 0-11 2-15 7-2 0-3-1-5-1-6 0-11 4-11 10v2c-4 2-7 5-7 9 0 5 4 9 9 9z" stroke="#e0f2fe" stroke-opacity="0.42" stroke-width="1.7"/>
-                    <circle cx="58" cy="47" r="15.5" stroke="url(#globeStroke)" stroke-width="3.5"/>
-                    <ellipse cx="58" cy="47" rx="6.1" ry="15.5" stroke="url(#globeStroke)" stroke-width="2.2"/>
-                    <ellipse cx="58" cy="47" rx="12.4" ry="5.3" stroke="url(#globeStroke)" stroke-width="2.2"/>
-                    <path d="M43 47h30M58 32v30M48 38c3 2.7 6.4 4.1 10 4.1 3.6 0 7-1.4 10-4.1M48 56c3-2.7 6.4-4.1 10-4.1 3.6 0 7 1.4 10 4.1" stroke="url(#globeStroke)" stroke-width="1.95"/>
-                </g>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 120">
+                <path
+                    d="M30 94H146c16 0 30-13 30-29 0-13-9-25-22-28-3-19-20-35-41-35-17 0-31 8-40 23-4-2-7-3-11-3-15 0-28 11-31 26C14 50 8 58 8 68c0 14 10 26 22 26z"
+                    fill="#ffffff"
+                    stroke="#1f5fbf"
+                    stroke-width="4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                />
+                <text
+                    x="90"
+                    y="67"
+                    fill="#1f5fbf"
+                    font-family="Arial, Helvetica, sans-serif"
+                    font-size="16.5"
+                    font-weight="700"
+                    letter-spacing="0.7"
+                    text-anchor="middle"
+                >INTERNET</text>
             </svg>`;
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
     },

@@ -406,6 +406,30 @@
     filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.45));
 }
 
+.rackmount-node.glow-switch {
+    width: 122px;
+    height: 48px;
+}
+
+.rackmount-node.glow-switch .hardware-image {
+    width: 122px;
+    height: 27px;
+    margin-top: 10px;
+}
+
+.rackmount-node.glow-switch .hardware-title {
+    top: 5px !important;
+}
+
+.rackmount-node.glow-switch .hardware-ip {
+    bottom: 6px !important;
+}
+
+.rackmount-node.glow-switch .floating-status {
+    top: 11px;
+    right: 5px;
+}
+
 /* Switch card text layout */
 .rackmount-node .hardware-title {
     position: absolute !important;

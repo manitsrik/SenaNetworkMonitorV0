@@ -23,6 +23,7 @@ async function loadSettings() {
         document.getElementById('alert_on_recovery').checked = settings.alert_on_recovery !== 'false';
         document.getElementById('alert_on_ssl_expiry').checked = settings.alert_on_ssl_expiry !== 'false';
         document.getElementById('alert_cooldown').value = settings.alert_cooldown || '300';
+        document.getElementById('ssl_alert_cooldown').value = settings.ssl_alert_cooldown || '86400';
 
         // Email settings
         document.getElementById('email_enabled').checked = settings.email_enabled === 'true';
@@ -71,6 +72,7 @@ async function saveSettings() {
         alert_on_recovery: document.getElementById('alert_on_recovery').checked.toString(),
         alert_on_ssl_expiry: document.getElementById('alert_on_ssl_expiry').checked.toString(),
         alert_cooldown: document.getElementById('alert_cooldown').value,
+        ssl_alert_cooldown: document.getElementById('ssl_alert_cooldown').value,
 
         // Email
         email_enabled: document.getElementById('email_enabled').checked.toString(),

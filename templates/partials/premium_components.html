@@ -1,4 +1,4 @@
-<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=8.25">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/premium_topology_v2.css') }}?v=8.28">
 <style id="premium-fix-styles">
     /* FORCE LABELS INSIDE CARDS - HIGH SPECIFICITY FALLBACK */
     #dom-overlay-container .floating-label,
@@ -239,9 +239,9 @@
             </div>
             
             <div class="premium-modal-actions">
-                <button class="btn-premium-action primary" onclick="viewDeviceDashboard()">
+                <a id="modal-performance-link" class="btn-premium-action primary" href="/devices" target="_blank" rel="noopener">
                     <i class="fas fa-chart-line"></i> Performance Dashboard
-                </button>
+                </a>
                 <button class="btn-premium-action secondary" onclick="closePremiumModal()">
                     Dismiss
                 </button>
@@ -263,6 +263,10 @@ function showPremiumDeviceDetails(device) {
     _currentPremiumModalDeviceId = device.id;
     const modal = document.getElementById('premium-device-modal');
     if (!modal) return;
+    const performanceLink = document.getElementById('modal-performance-link');
+    if (performanceLink) {
+        performanceLink.href = `/devices?highlight_device=${encodeURIComponent(device.id)}`;
+    }
 
     // Icon Mapping
     const type = (device.device_type || 'server').toLowerCase();
@@ -310,7 +314,7 @@ function closePremiumModal() {
 
 function viewDeviceDashboard() {
     if (!_currentPremiumModalDeviceId) return;
-    window.location.href = `/devices?highlight_device=${_currentPremiumModalDeviceId}`;
+    window.open(`/devices?highlight_device=${encodeURIComponent(_currentPremiumModalDeviceId)}`, '_blank', 'noopener');
 }
 
 function _formatPremiumRelativeTime(dateStr) {

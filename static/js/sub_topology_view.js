@@ -901,7 +901,7 @@ function renderPremiumDOMNode(device) {
 
     let imageUrl = '';
     if (isInternet) imageUrl = getPremiumInternetImageUrl();
-    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=1';
+    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=3';
     else if (isVmware) imageUrl = '/static/icons/premium_vmware.png?v=1';
     else if (isSwitch) imageUrl = '/static/icons/premium_switch.png?v=2';
     else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';

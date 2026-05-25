@@ -301,7 +301,10 @@ This is an automated message from Network Monitor.
         if event_type == 'recovery':
             return True
             
-        cooldown = int(self._get_setting('alert_cooldown', 300))  # Default 5 minutes
+        if event_type == 'ssl_expiry':
+            cooldown = self._get_cooldown_seconds('ssl_alert_cooldown', 86400)
+        else:
+            cooldown = self._get_cooldown_seconds('alert_cooldown', 300)
         last_alert = self.db.get_last_alert_time(device_id, event_type)
         
         if not last_alert:
@@ -312,6 +315,14 @@ This is an automated message from Network Monitor.
             return (now - last_time).total_seconds() >= cooldown
         except:
             return True
+
+    def _get_cooldown_seconds(self, setting_key, default_seconds):
+        """Read a cooldown setting defensively, falling back to a safe default."""
+        try:
+            cooldown = int(self._get_setting(setting_key, default_seconds))
+        except (TypeError, ValueError):
+            cooldown = default_seconds
+        return max(0, cooldown)
     
     def _mark_alert_sent(self, device_id, event_type):
         """Mark alert as sent in memory lock"""

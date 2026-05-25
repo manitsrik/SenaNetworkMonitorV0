@@ -138,7 +138,7 @@ function createDeviceCardDom(dv) {
     else if (isVpnRouter) imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
     else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
-    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=1';
+    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=3';
 
     const glowClass = isWebsite
         ? 'glow-website'

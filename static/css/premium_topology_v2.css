@@ -500,14 +500,14 @@
 
 .rackmount-node.glow-server,
 .rackmount-node.glow-vmware {
-    width: 168px;
-    height: 48px;
+    width: 134px;
+    height: 38px;
 }
 
 .rackmount-node.glow-server .hardware-image,
 .rackmount-node.glow-vmware .hardware-image {
-    width: 150px;
-    height: 30px;
+    width: 120px;
+    height: 24px;
     margin-top: 2px;
     object-position: center;
     filter: drop-shadow(0 9px 14px rgba(15, 23, 42, 0.28));
@@ -551,9 +551,9 @@
 }
 
 .rackmount-node.glow-firewall .hardware-image {
-    width: 172px;
-    height: 35px;
-    margin-top: 6px;
+    width: 120px;
+    height: 25px;
+    margin-top: 11px;
     object-position: center;
     filter: drop-shadow(0 10px 16px rgba(15, 23, 42, 0.28));
 }
@@ -598,9 +598,9 @@
 }
 
 .rackmount-node.glow-router .hardware-image {
-    width: 184px;
-    height: 30px;
-    margin-top: 10px;
+    width: 129px;
+    height: 21px;
+    margin-top: 14px;
     object-position: center;
     filter: drop-shadow(0 10px 16px rgba(15, 23, 42, 0.28));
 }
@@ -1065,6 +1065,7 @@
     font-weight: 600;
     border: none;
     cursor: pointer;
+    text-decoration: none;
     transition: all 0.2s;
     display: flex;
     align-items: center;

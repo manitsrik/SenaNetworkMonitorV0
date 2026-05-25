@@ -303,6 +303,9 @@
         <button class="btn btn-sm btn-success" onclick="toggleBuilderConnectMode()">
             ➕ Add Connection
         </button>
+        <button class="btn btn-sm btn-outline-danger" type="button" id="remove-connection-btn" onclick="removeSelectedConnections()" disabled>
+            Remove Connection
+        </button>
         <button class="btn btn-sm btn-info" onclick="document.getElementById('bg-upload-input').click()">
             🖼️ Upload Background
         </button>
@@ -389,5 +392,5 @@
 <script>
     const SUB_TOPO_ID = {{ sub_topo_id | default ('null') }};
 </script>
-<script src="{{ url_for('static', filename='js/sub_topology_builder.js') }}?v=6.3"></script>
+<script src="{{ url_for('static', filename='js/sub_topology_builder.js') }}?v=6.4"></script>
 {% endblock %}

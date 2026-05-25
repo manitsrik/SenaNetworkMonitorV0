@@ -49,6 +49,11 @@
                     <small style="color: var(--text-muted);">Minimum time between repeated alerts for the same
                         device</small>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">SSL Expiry Alert Cooldown (seconds)</label>
+                    <input type="number" id="ssl_alert_cooldown" class="form-control" value="86400" min="3600" max="604800">
+                    <small style="color: var(--text-muted);">Minimum time between repeated SSL expiry alerts for the same device. Default is 86400 seconds (24 hours).</small>
+                </div>
             </div>
         </div>
 

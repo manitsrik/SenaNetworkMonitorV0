@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await loadExistingSubTopology();
     }
     setupThemeListener();
-    updateDecorationButtons();
+    updateSelectionButtons();
 });
 
 async function loadAllDevices() {
@@ -94,7 +94,7 @@ async function loadExistingSubTopology() {
 
         renderDeviceList();
         updatePreview();
-        updateDecorationButtons();
+        updateSelectionButtons();
 
         // Restore background image if saved
         if (data.background_image) {
@@ -324,6 +324,18 @@ function updateDecorationButtons() {
     removeBtn.disabled = selectedRackIds.length === 0;
 }
 
+function updateConnectionButtons() {
+    const removeBtn = document.getElementById('remove-connection-btn');
+    if (!removeBtn || !previewNetwork) return;
+
+    removeBtn.disabled = previewNetwork.getSelectedEdges().length === 0;
+}
+
+function updateSelectionButtons() {
+    updateDecorationButtons();
+    updateConnectionButtons();
+}
+
 function addRackDecoration() {
     const rackSelect = document.getElementById('rack-u-select');
     const rackU = Math.max(1, parseInt(rackSelect ? rackSelect.value : '4', 10) || 4);
@@ -348,7 +360,7 @@ function addRackDecoration() {
     if (previewNetwork) {
         previewNetwork.selectNodes([rackId]);
     }
-    updateDecorationButtons();
+    updateSelectionButtons();
 }
 
 function removeSelectedDecoration() {
@@ -364,7 +376,28 @@ function removeSelectedDecoration() {
     });
 
     updatePreview();
-    updateDecorationButtons();
+    updateSelectionButtons();
+}
+
+function removeSelectedConnections() {
+    if (!previewNetwork) return;
+
+    const selectedEdgeIds = previewNetwork.getSelectedEdges();
+    if (!selectedEdgeIds.length) return;
+
+    const selectedIndexes = new Set(
+        selectedEdgeIds
+            .map(edgeId => String(edgeId).match(/^conn_(\d+)$/))
+            .filter(Boolean)
+            .map(match => Number(match[1]))
+    );
+
+    if (!selectedIndexes.size) return;
+
+    customConnections = customConnections.filter((_, index) => !selectedIndexes.has(index));
+    previewNetwork.unselectAll();
+    updatePreview();
+    updateSelectionButtons();
 }
 
 // ========================================
@@ -402,9 +435,11 @@ function initPreviewNetwork() {
 
     previewNetwork = new vis.Network(container, { nodes: previewNodes, edges: previewEdges }, options);
 
-    previewNetwork.on('selectNode', updateDecorationButtons);
-    previewNetwork.on('deselectNode', updateDecorationButtons);
-    previewNetwork.on('click', updateDecorationButtons);
+    previewNetwork.on('selectNode', updateSelectionButtons);
+    previewNetwork.on('deselectNode', updateSelectionButtons);
+    previewNetwork.on('selectEdge', updateSelectionButtons);
+    previewNetwork.on('deselectEdge', updateSelectionButtons);
+    previewNetwork.on('click', updateSelectionButtons);
 
     // Render background on canvas
     previewNetwork.on('beforeDrawing', (ctx) => {
@@ -564,7 +599,7 @@ function updatePreview() {
     if (selectedDevices.length === 0 && customDecorations.length === 0) {
         const container = document.getElementById('dom-overlay-container');
         if (container) container.innerHTML = '';
-        updateDecorationButtons();
+        updateSelectionButtons();
         return;
     }
 
@@ -721,7 +756,7 @@ function updatePreview() {
         }
     }
 
-    updateDecorationButtons();
+    updateSelectionButtons();
 }
 
 function fitPreview() {
@@ -851,8 +886,16 @@ document.addEventListener('keydown', (e) => {
     }
 
     if ((e.key === 'Delete' || e.key === 'Backspace') && previewNetwork) {
+        const selectedEdgeIds = previewNetwork.getSelectedEdges();
+        if (selectedEdgeIds.length) {
+            e.preventDefault();
+            removeSelectedConnections();
+            return;
+        }
+
         const selectedRackIds = previewNetwork.getSelectedNodes().filter(isRackDecorationId);
         if (selectedRackIds.length) {
+            e.preventDefault();
             removeSelectedDecoration();
         }
     }
@@ -1291,7 +1334,7 @@ function renderPremiumDOMNode(device) {
 
     let imageUrl = '';
     if (isInternet) imageUrl = getPremiumInternetImageUrl();
-    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=1';
+    else if (isServer) imageUrl = '/static/icons/premium_server.png?v=3';
     else if (isVmware) imageUrl = '/static/icons/premium_vmware.png?v=1';
     else if (isSwitch) imageUrl = '/static/icons/premium_switch.png?v=2';
     else if (isFirewall) imageUrl = '/static/icons/premium_firewall.svg?v=1';

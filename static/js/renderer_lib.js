@@ -586,7 +586,7 @@ window.DashboardRenderer = {
 
         let imageUrl = '';
         if (type === 'internet') imageUrl = this.getPremiumInternetImageUrl();
-        else if (type === 'server') imageUrl = '/static/icons/premium_server.png?v=1';
+        else if (type === 'server') imageUrl = '/static/icons/premium_server.png?v=3';
         else if (type === 'vmware') imageUrl = '/static/icons/premium_vmware.png?v=1';
         else if (type === 'switch') imageUrl = '/static/icons/premium_switch.png?v=2';
         else if (type === 'firewall') imageUrl = '/static/icons/premium_firewall.svg?v=1';
@@ -1692,6 +1692,12 @@ window.DashboardRenderer = {
 
         const devices = data.devices || [];
         const alerts = devices.filter(d => d.status === 'down' || d.status === 'slow');
+        const escapeHtml = (value) => String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
 
         let html = `
             <div style="flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -1717,6 +1723,7 @@ window.DashboardRenderer = {
                             <th>Device</th>
                             <th>Time</th>
                             <th>Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1728,11 +1735,20 @@ window.DashboardRenderer = {
                 const badgeStyle = isDown ? 'background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444;' : 'background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid #f59e0b;';
 
                 html += `
-                    <tr>
+                    <tr class="alert-device-row" data-device-id="${escapeHtml(d.id)}" style="cursor: pointer;">
                         <td><span class="status-badge" style="${badgeStyle}">⚠️ ${severity}</span></td>
-                        <td>${d.name}</td>
+                        <td>
+                            <button type="button" class="alert-device-link" data-device-id="${escapeHtml(d.id)}" title="View status">
+                                ${escapeHtml(d.name)}
+                            </button>
+                        </td>
                         <td>${d.last_check ? new Date(d.last_check).toLocaleTimeString() : 'N/A'}</td>
-                        <td><span class="status-badge status-${d.status}">${d.status.toUpperCase()}</span></td>
+                        <td><span class="status-badge status-${escapeHtml(d.status)}">${escapeHtml(d.status).toUpperCase()}</span></td>
+                        <td>
+                            <button type="button" class="btn btn-xs btn-primary alert-status-action" data-device-id="${escapeHtml(d.id)}" title="View device status">
+                                <i class="fa-solid fa-eye"></i> View
+                            </button>
+                        </td>
                     </tr>
                 `;
             });
@@ -1741,6 +1757,21 @@ window.DashboardRenderer = {
 
         html += '</div>';
         container.innerHTML = html;
+
+        if (alerts.length > 0) {
+            container.querySelectorAll('.alert-device-row, .alert-device-link, .alert-status-action').forEach(el => {
+                el.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const deviceId = String(el.dataset.deviceId || '');
+                    const device = alerts.find(item => String(item.id) === deviceId);
+                    if (device && typeof showPremiumDeviceDetails === 'function') {
+                        showPremiumDeviceDetails(device);
+                    }
+                });
+            });
+        }
     },
 
     renderActivityLog: function (container, widget, data) {

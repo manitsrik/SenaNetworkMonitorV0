@@ -867,6 +867,7 @@ async function saveDevice(event) {
     console.log('saveDevice called');
     clearFieldErrors(document.getElementById('device-form'));
 
+    const wasEditing = !!editingDeviceId;
     const saveBtn = event.target.querySelector('button[type="submit"]');
     const originalBtnText = saveBtn.textContent;
 
@@ -992,9 +993,13 @@ async function saveDevice(event) {
         console.log('Response result:', result);
 
         if (result.success || response.ok) {
+            const typeFilter = document.getElementById('filter-type');
+            if (wasEditing && typeFilter && typeFilter.value && typeFilter.value !== deviceData.device_type) {
+                typeFilter.value = deviceData.device_type;
+            }
             closeDeviceModal();
             loadDevices();
-            alert(editingDeviceId ? 'Device updated successfully!' : 'Device added successfully!');
+            alert(wasEditing ? 'Device updated successfully!' : 'Device added successfully!');
         } else {
             console.error('Server returned error:', result);
             alert('Error: ' + (result.error || 'Failed to save device'));

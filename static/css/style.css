@@ -743,6 +743,31 @@ tr:hover {
     background: rgba(0, 0, 0, 0.02);
 }
 
+.alert-device-row:hover {
+    background: rgba(59, 130, 246, 0.06);
+}
+
+.alert-device-link {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 500;
+    padding: 0;
+    text-align: left;
+}
+
+.alert-device-link:hover {
+    color: var(--primary);
+    text-decoration: underline;
+}
+
+.alert-status-action {
+    white-space: nowrap;
+}
+
 /* Forms */
 .form-group {
     margin-bottom: 1rem;
@@ -1878,4 +1903,4 @@ input:checked + .theme-switch:hover .slider:before {
 
 .switch input:checked + .slider:before {
     transform: translateX(16px);
-}
+}

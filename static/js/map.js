@@ -118,6 +118,7 @@ document.head.appendChild(style);
 let map;
 let allDevices = [];
 let markerLayer = L.layerGroup();
+let pinnedMarker = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
@@ -148,6 +149,7 @@ function fetchDevices() {
 }
 
 function plotDevices() {
+    pinnedMarker = null;
     markerLayer.clearLayers();
     const filter = document.getElementById('map-status-filter').value;
     
@@ -172,12 +174,41 @@ function plotDevices() {
                 <div><strong>Status:</strong> <span style="text-transform: uppercase; font-weight: bold; color: ${getStatusColor(device.status)}">${device.status}</span></div>
                 <div><strong>Response:</strong> ${device.response_time !== null ? device.response_time + ' ms' : 'N/A'}</div>
                 <div style="margin-top: 10px;">
-                    <a href="/devices" class="btn btn-sm btn-primary" style="text-decoration: none; display: inline-block; padding: 2px 8px; color: white; background: #007bff; border-radius: 3px;">Manage Device</a>
+                    <a href="/devices?highlight_device=${encodeURIComponent(device.id)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary" style="text-decoration: none; display: inline-block; padding: 2px 8px; color: white; background: #007bff; border-radius: 3px;">Manage Device</a>
                 </div>
             </div>
         `;
         
-        marker.bindPopup(popupContent);
+        marker.bindPopup(popupContent, {
+            autoClose: false,
+            closeOnClick: false
+        });
+
+        marker.on('mouseover', () => {
+            marker.openPopup();
+        });
+
+        marker.on('mouseout', () => {
+            if (pinnedMarker !== marker) {
+                marker.closePopup();
+            }
+        });
+
+        marker.on('click', () => {
+            if (pinnedMarker && pinnedMarker !== marker) {
+                pinnedMarker.closePopup();
+            }
+
+            pinnedMarker = marker;
+            marker.openPopup();
+        });
+
+        marker.on('popupclose', () => {
+            if (pinnedMarker === marker) {
+                pinnedMarker = null;
+            }
+        });
+
         markerLayer.addLayer(marker);
         
         bounds.extend([device.latitude, device.longitude]);

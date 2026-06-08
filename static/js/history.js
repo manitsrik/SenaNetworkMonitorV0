@@ -36,6 +36,17 @@ const typeMetadata = {
 let allDevices = [];
 let comparisonChart = null;
 
+function toChartPoint(record) {
+    return {
+        x: new Date(record.checked_at).getTime(),
+        y: record.response_time || 0
+    };
+}
+
+function formatChartTime(value) {
+    return new Date(value).toLocaleString('th-TH');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Set default date range to last 24 hours
     setQuickRange('24h');
@@ -142,7 +153,8 @@ function filterDevices() {
     
     items.forEach(item => {
         const text = item.textContent.toLowerCase();
-        if (text.includes(searchText)) {
+        const isChecked = item.querySelector('input[type="checkbox"]')?.checked;
+        if (text.includes(searchText) || isChecked) {
             item.style.display = 'flex';
         } else {
             item.style.display = 'none';
@@ -258,12 +270,10 @@ function displayComparisonChart(data, selectedIds) {
                 name: record.name,
                 ip_address: record.ip_address,
                 device_type: record.device_type,
-                labels: [],
                 data: []
             };
         }
-        deviceData[deviceId].labels.push(new Date(record.checked_at).toLocaleString('th-TH'));
-        deviceData[deviceId].data.push(record.response_time || 0);
+        deviceData[deviceId].data.push(toChartPoint(record));
     });
 
     // Generate distinct colors for each device
@@ -277,9 +287,9 @@ function displayComparisonChart(data, selectedIds) {
             label: `${device.name} (${device.ip_address})`,
             data: device.data,
             borderColor: color,
-            backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+            backgroundColor: color.replace(')', ', 0.08)').replace('rgb', 'rgba'),
             tension: 0.4,
-            fill: false,
+            fill: true,
             borderWidth: 2.5,
             pointRadius: 3,
             pointHoverRadius: 6,
@@ -289,23 +299,19 @@ function displayComparisonChart(data, selectedIds) {
         };
     });
 
-    // Find the longest labels array for x-axis
-    const allLabels = Object.values(deviceData).reduce((longest, device) =>
-        device.labels.length > longest.length ? device.labels : longest, []);
-
     // Create chart
     const ctx = document.getElementById('comparison-chart').getContext('2d');
     comparisonChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: allLabels,
             datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            parsing: false,
             interaction: {
-                mode: 'index',
+                mode: 'nearest',
                 intersect: false
             },
             plugins: {
@@ -341,6 +347,9 @@ function displayComparisonChart(data, selectedIds) {
                     padding: 14,
                     displayColors: true,
                     callbacks: {
+                        title: function (items) {
+                            return items.length ? formatChartTime(items[0].parsed.x) : '';
+                        },
                         label: function (context) {
                             return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ms`;
                         }
@@ -370,6 +379,7 @@ function displayComparisonChart(data, selectedIds) {
                     }
                 },
                 x: {
+                    type: 'linear',
                     grid: {
                         display: false
                     },
@@ -378,7 +388,10 @@ function displayComparisonChart(data, selectedIds) {
                         maxRotation: 45,
                         minRotation: 45,
                         autoSkip: true,
-                        maxTicksLimit: 12
+                        maxTicksLimit: 12,
+                        callback: function (value) {
+                            return formatChartTime(value);
+                        }
                     },
                     title: {
                         display: true,
@@ -555,12 +568,10 @@ function displayHistoricalCharts(data) {
             const deviceName = record.name;
             if (!deviceData[deviceName]) {
                 deviceData[deviceName] = {
-                    labels: [],
                     data: []
                 };
             }
-            deviceData[deviceName].labels.push(new Date(record.checked_at).toLocaleString('th-TH'));
-            deviceData[deviceName].data.push(record.response_time || 0);
+            deviceData[deviceName].data.push(toChartPoint(record));
         });
 
         // Create chart container
@@ -594,29 +605,26 @@ function displayHistoricalCharts(data) {
                 label: deviceName,
                 data: deviceData[deviceName].data,
                 borderColor: `hsl(${hue}, 70%, 50%)`,
-                backgroundColor: `hsla(${hue}, 70%, 50%, 0.1)`,
+                backgroundColor: `hsla(${hue}, 70%, 50%, 0.08)`,
                 tension: 0.4,
-                fill: false,
+                fill: true,
                 borderWidth: 2,
                 pointRadius: 2,
                 pointHoverRadius: 5
             };
         });
 
-        // Use labels from first device (all should have same timestamps)
-        const labels = Object.values(deviceData)[0].labels;
-
         // Create chart
         const ctx = document.getElementById(`chart-${type}`).getContext('2d');
         charts[type] = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels,
                 datasets: datasets
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                parsing: false,
                 plugins: {
                     zoom: {
                         zoom: {
@@ -646,6 +654,9 @@ function displayHistoricalCharts(data) {
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
+                            title: function (items) {
+                                return items.length ? formatChartTime(items[0].parsed.x) : '';
+                            },
                             label: function (context) {
                                 return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} ms`;
                             }
@@ -671,6 +682,7 @@ function displayHistoricalCharts(data) {
                         }
                     },
                     x: {
+                        type: 'linear',
                         grid: {
                             display: false
                         },
@@ -679,7 +691,10 @@ function displayHistoricalCharts(data) {
                             maxRotation: 45,
                             minRotation: 45,
                             autoSkip: true,
-                            maxTicksLimit: 10
+                            maxTicksLimit: 10,
+                            callback: function (value) {
+                                return formatChartTime(value);
+                            }
                         },
                         title: {
                             display: true,

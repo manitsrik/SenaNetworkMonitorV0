@@ -1043,21 +1043,23 @@ tr:hover {
 /* Device Status Grid */
 .device-type-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.6rem;
     padding: 0.5rem;
+    width: 100%;
+    min-width: 0;
 }
 
-@media (max-width: 1200px) {
-    .device-type-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
+.device-type-grid.compact {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 0.45rem;
+    padding: 0.35rem;
 }
 
-@media (max-width: 768px) {
-    .device-type-grid {
-        grid-template-columns: 1fr;
-    }
+.device-type-grid.micro {
+    grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+    gap: 0.35rem;
+    padding: 0.25rem;
 }
 
 .device-type-card {
@@ -1070,6 +1072,7 @@ tr:hover {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    min-width: 0;
 }
 
 .device-type-card:hover {

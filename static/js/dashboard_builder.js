@@ -154,7 +154,7 @@ function renderGrid() {
         if (!window.dynamicLoadTried) {
             window.dynamicLoadTried = true;
             const script = document.createElement('script');
-            script.src = '/static/js/renderer_lib.js?v=dynamic_20260427_vpnrouter_label_2';
+            script.src = '/static/js/renderer_lib.js?v=dynamic_20260608_device_pie_compact';
             script.onload = () => {
                 console.log('renderer_lib.js loaded dynamically');
                 renderGrid();
@@ -190,7 +190,8 @@ function initGridStack() {
     }
 
     grid = GridStack.init({
-        cellHeight: 78, // Slightly more compact rows
+        column: 24,     // Half-column units: 1 dashboard column = 2 GridStack columns
+        cellHeight: 39, // Half-row units: 1 dashboard row = 2 GridStack rows
         margin: 3,      // Unified margin for all sides (reduced for compactness)
         handle: '.widget-title', // drag handle
         float: true, // Allow widgets to be placed anywhere
@@ -202,15 +203,42 @@ function initGridStack() {
         if (!items) return;
         
         // Update currentLayout based on new GridStack positions
+        let shouldRerenderStats = false;
         items.forEach(item => {
             const index = item.el.dataset.index;
             if (index !== undefined && currentLayout[index]) {
-                currentLayout[index].x = item.x;
-                currentLayout[index].y = item.y;
-                currentLayout[index].w = item.w;
-                currentLayout[index].h = item.h;
+                const widget = currentLayout[index];
+                const newHeight = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridRows(item.h, widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4)
+                    : item.h;
+                const oldCompact = widget.type === 'stat_row' && Number(widget.h || 2) <= 1;
+                const newCompact = widget.type === 'stat_row' && Number(newHeight || 2) <= 1;
+                const oldPieTier = widget.type === 'device_pie'
+                    ? (Number(widget.h || (widget.height ? widget.height / 78 : 4)) <= 1.5 ? 'micro' : (Number(widget.h || (widget.height ? widget.height / 78 : 4)) <= 4.5 ? 'compact' : 'normal'))
+                    : null;
+                const newPieTier = widget.type === 'device_pie'
+                    ? (Number(newHeight || 4) <= 1.5 ? 'micro' : (Number(newHeight || 4) <= 4.5 ? 'compact' : 'normal'))
+                    : null;
+                currentLayout[index].x = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridCols(item.x, 0)
+                    : item.x;
+                currentLayout[index].y = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridRows(item.y, 0)
+                    : item.y;
+                currentLayout[index].w = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridCols(item.w, 4)
+                    : item.w;
+                currentLayout[index].h = newHeight;
+                if (oldCompact !== newCompact || oldPieTier !== newPieTier) {
+                    shouldRerenderStats = true;
+                }
             }
         });
+
+        if (shouldRerenderStats) {
+            setTimeout(renderGrid, 50);
+            return;
+        }
         
         // We do NOT call renderGrid() here because GridStack already updated the DOM
         // and we don't want to interrupt the user's drag/resize action.
@@ -248,10 +276,21 @@ function saveDashboard() {
                 const node = el.gridstackNode;
                 const index = el.dataset.index;
                 if (node && index !== undefined && currentLayout[index]) {
-                    currentLayout[index].x = node.x;
-                    currentLayout[index].y = node.y;
-                    currentLayout[index].w = node.w || 4;
-                    currentLayout[index].h = node.h || 4;
+                    currentLayout[index].x = window.DashboardRenderer
+                        ? window.DashboardRenderer.fromGridCols(node.x, 0)
+                        : node.x;
+                    currentLayout[index].y = window.DashboardRenderer
+                        ? window.DashboardRenderer.fromGridRows(node.y, 0)
+                        : node.y;
+                    currentLayout[index].w = window.DashboardRenderer
+                        ? window.DashboardRenderer.fromGridCols(node.w, 4)
+                        : (node.w || 4);
+                    currentLayout[index].h = window.DashboardRenderer
+                        ? window.DashboardRenderer.fromGridRows(
+                            node.h,
+                            currentLayout[index].type === 'stat_row' || currentLayout[index].type === 'stat_card' ? 2 : 4
+                        )
+                        : (node.h || 4);
                 }
             });
         }
@@ -543,11 +582,11 @@ function configureWidget(index) {
         <div style="display: flex; gap: 1rem; margin-top: 1rem;">
             <div class="form-group" style="flex: 1;">
                 <label style="display:block; margin-bottom: 0.5rem;">Width (Columns, 1-12)</label>
-                <input type="number" id="config-width" class="form-input" value="${widget.w || widget.width || 4}" min="1" max="12">
+                <input type="number" id="config-width" class="form-input" value="${widget.w || widget.width || 4}" min="1" max="12" step="0.5">
             </div>
             <div class="form-group" style="flex: 1;">
                 <label style="display:block; margin-bottom: 0.5rem;">Height (Rows)</label>
-                <input type="number" id="config-height" class="form-input" value="${widget.h || 4}" min="1" max="10">
+                <input type="number" id="config-height" class="form-input" value="${widget.h || (widget.type === 'stat_row' ? 2 : 4)}" min="1" max="10" step="0.5">
             </div>
         </div>
     `;
@@ -566,12 +605,13 @@ function saveWidgetConfig() {
 
     const widget = currentLayout[configuringIndex];
     const newTitle = document.getElementById('config-title').value;
-    const newWidth = parseInt(document.getElementById('config-width').value);
-    const newHeight = parseInt(document.getElementById('config-height').value);
+    const newWidth = parseFloat(document.getElementById('config-width').value);
+    const newHeight = parseFloat(document.getElementById('config-height').value);
 
     widget.title = newTitle || null;
     widget.w = newWidth || 4;
-    widget.h = newHeight || (widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4);
+    const fallbackHeight = widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4;
+    widget.h = newHeight || fallbackHeight;
     
     // Also remove old properties to keep it clean
     delete widget.width;
@@ -735,10 +775,21 @@ function saveAsTemplate() {
             const node = el.gridstackNode;
             const index = el.dataset.index;
             if (node && index !== undefined && currentLayout[index]) {
-                currentLayout[index].x = node.x;
-                currentLayout[index].y = node.y;
-                currentLayout[index].w = node.w || 4;
-                currentLayout[index].h = node.h || 4;
+                currentLayout[index].x = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridCols(node.x, 0)
+                    : node.x;
+                currentLayout[index].y = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridRows(node.y, 0)
+                    : node.y;
+                currentLayout[index].w = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridCols(node.w, 4)
+                    : (node.w || 4);
+                currentLayout[index].h = window.DashboardRenderer
+                    ? window.DashboardRenderer.fromGridRows(
+                        node.h,
+                        currentLayout[index].type === 'stat_row' || currentLayout[index].type === 'stat_card' ? 2 : 4
+                    )
+                    : (node.h || 4);
             }
         });
     }

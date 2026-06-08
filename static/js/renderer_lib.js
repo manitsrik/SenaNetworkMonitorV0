@@ -27,6 +27,54 @@ window.DashboardRenderer = {
     instances: {},
     lastFullscreenWidgetIndex: null,
     fullscreenListenerBound: false,
+    rowScale: 2,
+    colScale: 2,
+
+    toGridRows: function (rows, fallbackRows = 4, minGridRows = 1) {
+        const value = Number(rows);
+        const safeRows = Number.isFinite(value) && value > 0 ? value : fallbackRows;
+        return Math.max(minGridRows, Math.round(safeRows * this.rowScale));
+    },
+
+    fromGridRows: function (gridRows, fallbackRows = 4) {
+        const value = Number(gridRows);
+        const safeRows = Number.isFinite(value) && value > 0 ? value : fallbackRows * this.rowScale;
+        return safeRows / this.rowScale;
+    },
+
+    toGridCols: function (cols, fallbackCols = 4, minGridCols = 1) {
+        const value = Number(cols);
+        const safeCols = Number.isFinite(value) && value > 0 ? value : fallbackCols;
+        return Math.max(minGridCols, Math.round(safeCols * this.colScale));
+    },
+
+    fromGridCols: function (gridCols, fallbackCols = 4) {
+        const value = Number(gridCols);
+        const safeCols = Number.isFinite(value) && value > 0 ? value : fallbackCols * this.colScale;
+        return safeCols / this.colScale;
+    },
+
+    ensureGridColumnStyles: function (columns = 24) {
+        const styleId = `gridstack-${columns}-column-styles`;
+        if (document.getElementById(styleId)) return;
+
+        const pct = (value) => `${Math.round((value * 100 / columns) * 100000) / 100000}%`;
+        const rules = [
+            `.gs-${columns} > .grid-stack-item { width: ${pct(1)}; }`
+        ];
+
+        for (let i = 1; i < columns; i++) {
+            rules.push(`.gs-${columns} > .grid-stack-item[gs-x="${i}"] { left: ${pct(i)}; }`);
+        }
+        for (let i = 2; i <= columns; i++) {
+            rules.push(`.gs-${columns} > .grid-stack-item[gs-w="${i}"] { width: ${pct(i)}; }`);
+        }
+
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = rules.join('\n');
+        document.head.appendChild(style);
+    },
 
     /**
      * Render a list of widgets into a container
@@ -38,6 +86,7 @@ window.DashboardRenderer = {
 
     renderDashboard: function (container, layoutConfig, data, isEditMode = false) {
         this.ensureFullscreenListeners();
+        this.ensureGridColumnStyles(24);
 
         // Normalize layoutConfig: handle both array and {widgets, variables} object format
         if (layoutConfig && !Array.isArray(layoutConfig) && typeof layoutConfig === 'object') {
@@ -83,17 +132,18 @@ window.DashboardRenderer = {
             widgetEl.className = 'grid-stack-item';
             
             // Set GridStack attributes - ensure we use numbers and avoid NaN/null strings
-            const gw = parseInt(widget.w || widget.width || 4);
-            const gh = parseInt(widget.h || (widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4));
+            const gw = this.toGridCols(widget.w || widget.width || 4, 4);
+            const defaultRows = widget.type === 'stat_row' || widget.type === 'stat_card' ? 2 : 4;
+            const gh = this.toGridRows(widget.h || defaultRows, defaultRows);
             
-            widgetEl.setAttribute('gs-w', isNaN(gw) ? 4 : gw);
-            widgetEl.setAttribute('gs-h', isNaN(gh) ? 4 : gh);
+            widgetEl.setAttribute('gs-w', gw);
+            widgetEl.setAttribute('gs-h', gh);
 
             if (widget.x !== undefined && widget.x !== null && widget.x !== "null") {
-                widgetEl.setAttribute('gs-x', widget.x);
+                widgetEl.setAttribute('gs-x', this.toGridCols(widget.x, 0, 0));
             }
             if (widget.y !== undefined && widget.y !== null && widget.y !== "null") {
-                widgetEl.setAttribute('gs-y', widget.y);
+                widgetEl.setAttribute('gs-y', this.toGridRows(widget.y, 0, 0));
             }
 
             // Determine class configuration
@@ -903,115 +953,18 @@ window.DashboardRenderer = {
         container.style.overflow = 'hidden';
         container.style.padding = '0';
 
-        const totalHeight = container.offsetHeight || widget.height || 400;
-        const gaugeHeight = Math.floor(totalHeight * 0.60);
-        const listHeight = totalHeight - gaugeHeight;
-
         // Gauge Container
         const gaugeContainer = document.createElement('div');
-        gaugeContainer.style.flex = `0 0 ${gaugeHeight}px`;
+        gaugeContainer.style.flex = '1 1 auto';
+        gaugeContainer.style.minHeight = '0';
         gaugeContainer.style.position = 'relative';
         container.appendChild(gaugeContainer);
 
-        // List Outer Container (Nested Card feel)
-        const listWrapper = document.createElement('div');
-        listWrapper.style.flex = '1';
-        listWrapper.style.padding = '0 15px 15px 15px';
-        listWrapper.style.display = 'flex';
-        listWrapper.style.flexDirection = 'column';
-        container.appendChild(listWrapper);
-
-        const listContainer = document.createElement('div');
-        listContainer.style.flex = '1';
-        listContainer.style.overflowY = 'auto';
-        listContainer.style.background = 'var(--bg-glass)';
-        listContainer.style.backdropFilter = 'blur(10px)';
-        listContainer.style.border = '1px solid var(--border-color)';
-        listContainer.style.borderRadius = '12px';
-        listContainer.style.padding = '12px';
-        listWrapper.appendChild(listContainer);
-
-        // Header
-        const listHeader = document.createElement('div');
-        listHeader.style.display = 'flex';
-        listHeader.style.justifyContent = 'space-between';
-        listHeader.style.alignItems = 'center';
-        listHeader.style.marginBottom = '12px';
-        listHeader.innerHTML = '<span style="font-weight:700; font-size:1.1rem; color: var(--text-primary);">Top Slow Devices</span>';
-        listContainer.appendChild(listHeader);
-
-        // Content
-        const listContent = document.createElement('div');
-        listContainer.appendChild(listContent);
-
         this.renderGauge(gaugeContainer, widget, data, index);
-
-        const devices = data.devices || [];
-        const slowest = devices
-            .filter(d => d.status === 'up' && d.response_time)
-            .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
-            .slice(0, 5);
-
-        if (slowest.length === 0) {
-            listContent.innerHTML = `<p style="text-align:center; color:var(--text-muted); font-size:0.85rem">No data</p>`;
-        } else {
-            const maxTime = Math.max(...slowest.map(d => parseFloat(d.response_time)));
-            listContent.innerHTML = slowest.map(device => {
-                const time = parseFloat(device.response_time);
-                const percent = Math.min((time / maxTime) * 100, 100);
-                return `
-                    <div style="margin-bottom: 12px;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px; align-items: center;">
-                            <span style="font-weight:600; font-size:1.0rem; color: var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;">${device.name}</span>
-                            <span style="font-weight:700; color: #d97706; font-size:1.0rem;">${time.toFixed(2)} ms</span>
-                        </div>
-                        <div style="height: 6px; background: var(--bg-tertiary); border-radius: 3px; position: relative;">
-                            <div style="height: 100%; width: ${percent}%; background: linear-gradient(90deg, #f59e0b, #d97706); border-radius: 3px;"></div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
     },
 
     updatePerformance: function (container, widget, data, index) {
-        // 1. Update Gauge
         this.updateGauge(index, data);
-
-        // 2. Update Slow Devices List
-        const listContainer = container.querySelector('div:last-child > div:last-child');
-        if (!listContainer) return;
-
-        const devices = data.devices || [];
-        const slowest = devices
-            .filter(d => d.status === 'up' && d.response_time)
-            .sort((a, b) => parseFloat(b.response_time) - parseFloat(a.response_time))
-            .slice(0, 5);
-
-        if (slowest.length === 0) {
-            listContainer.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; padding: 1.5rem; color: var(--text-muted);">
-                    <p style="margin:0; font-size:0.85rem">No devices with data found</p>
-                </div>
-            `;
-        } else {
-            const maxTime = Math.max(...slowest.map(d => parseFloat(d.response_time)));
-            listContainer.innerHTML = slowest.map(device => {
-                const time = parseFloat(device.response_time);
-                const percent = (time / maxTime) * 100;
-                return `
-                    <div style="margin-bottom: 0.5rem; font-size: 0.95rem;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                            <span style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;" title="${device.name}">${device.name}</span>
-                            <span style="color: var(--warning); font-weight:600;">${device.response_time} ms</span>
-                        </div>
-                        <div style="height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden;">
-                             <div style="height: 100%; width: ${percent}%; background: var(--warning); border-radius: 2px;"></div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
     },
 
     renderStatCard: function (container, widget, data) {
@@ -1062,13 +1015,27 @@ window.DashboardRenderer = {
 
         if (widget.title) label = widget.title;
 
+        const compact = widget.compact === true || widget._compact === true;
+        const cardStyle = compact
+            ? 'height: 100%; display: flex; align-items: center; gap: 0.45rem; padding: 0.2rem 0.55rem; min-height: 0;'
+            : 'height: 100%; display: flex; align-items: center; gap: 1.25rem; padding: 0.75rem 1.25rem;';
+        const iconStyle = compact
+            ? 'width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 50%; font-size: 0.9rem; flex-shrink: 0;'
+            : 'width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 50%; font-size: 1.5rem; flex-shrink: 0;';
+        const valueStyle = compact
+            ? 'font-size: 1.05rem; font-weight: 800; line-height: 1; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;'
+            : 'font-size: 1.75rem; font-weight: 800; line-height: 1; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+        const labelStyle = compact
+            ? 'font-size: 0.58rem; font-weight: 700; line-height: 1.05; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px;'
+            : 'font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;';
+
         // Render standard stat card HTML
         container.innerHTML = `
-            <div class="stat-card ${cssClass}" style="height: 100%; display: flex; align-items: center; gap: 1.25rem; padding: 0.75rem 1.25rem;">
-                <div class="stat-icon" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: var(--bg-tertiary); border-radius: 50%; font-size: 1.5rem; flex-shrink: 0;">${icon}</div>
+            <div class="stat-card ${cssClass}" style="${cardStyle}">
+                <div class="stat-icon" style="${iconStyle}">${icon}</div>
                 <div class="stat-content" style="display: flex; flex-direction: column; justify-content: center; min-width: 0;">
-                    <div class="stat-value" style="font-size: 1.75rem; font-weight: 800; line-height: 1; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${value}</div>
-                    <div class="stat-label" style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px;">${label}</div>
+                    <div class="stat-value" style="${valueStyle}">${value}</div>
+                    <div class="stat-label" style="${labelStyle}">${label}</div>
                 </div>
             </div>
         `;
@@ -1111,7 +1078,8 @@ window.DashboardRenderer = {
         container.style.display = 'flex';
         container.style.setProperty('flex-direction', 'row', 'important');
         container.style.setProperty('flex-wrap', 'nowrap', 'important');
-        container.style.gap = '1rem';
+        const compact = Number(widget.h || 2) <= 1;
+        container.style.gap = compact ? '0.45rem' : '1rem';
         container.style.height = '100%';
 
         let cards = widget.cards || [];
@@ -1148,7 +1116,7 @@ window.DashboardRenderer = {
             container.appendChild(cardWrapper);
 
             // Reuse renderStatCard logic
-            this.renderStatCard(cardWrapper, cardConfig, data);
+            this.renderStatCard(cardWrapper, { ...cardConfig, _compact: compact }, data);
         });
     },
 
@@ -1156,6 +1124,7 @@ window.DashboardRenderer = {
         container.style.display = 'flex';
         container.style.setProperty('flex-direction', 'row', 'important');
         container.style.setProperty('flex-wrap', 'nowrap', 'important');
+        container.style.gap = Number(widget.h || 2) <= 1 ? '0.45rem' : '1rem';
         let cards = widget.cards || [];
         const cardWrappers = container.children; // Assuming each child is a card wrapper
 
@@ -1190,17 +1159,24 @@ window.DashboardRenderer = {
     },
 
     renderDevicePie: function (container, widget, data, index) {
+        const rows = Number(widget.h || (widget.height ? widget.height / 78 : 4));
+        const compact = rows <= 4.5;
+        const micro = rows <= 1.5;
+
         container.innerHTML = '';
         container.style.display = 'flex';
         container.style.flexDirection = 'column';
         container.style.position = 'relative';
-        container.style.padding = '1.25rem';
+        container.style.padding = micro ? '0.25rem 0.45rem' : (compact ? '0.5rem 0.75rem' : '1.25rem');
+        container.style.minHeight = '0';
+        container.dataset.compactPie = compact ? '1' : '0';
+        container.dataset.microPie = micro ? '1' : '0';
 
         // Chart Area
         const chartWrapper = document.createElement('div');
         chartWrapper.style.flex = '1';
         chartWrapper.style.position = 'relative';
-        chartWrapper.style.minHeight = '140px';
+        chartWrapper.style.minHeight = micro ? '26px' : (compact ? '70px' : '140px');
         container.appendChild(chartWrapper);
 
         const canvas = document.createElement('canvas');
@@ -1219,14 +1195,15 @@ window.DashboardRenderer = {
         centerOverlay.style.textAlign = 'center';
         centerOverlay.style.pointerEvents = 'none';
         centerOverlay.innerHTML = `
-            <div class="pie-total-val" style="font-size: 2.75rem; font-weight: 700; color: var(--text-primary); line-height: 1;">0</div>
-            <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); letter-spacing: 1px; margin-top: 4px;">DEVICES</div>
+            <div class="pie-total-val" style="font-size: ${micro ? '1rem' : (compact ? '1.75rem' : '2.75rem')}; font-weight: 700; color: var(--text-primary); line-height: 1;">0</div>
+            <div class="pie-total-label" style="display: ${micro ? 'none' : 'block'}; font-size: ${compact ? '0.58rem' : '0.75rem'}; font-weight: 600; color: var(--text-muted); letter-spacing: 0; margin-top: ${compact ? '1px' : '4px'};">DEVICES</div>
         `;
         chartWrapper.appendChild(centerOverlay);
 
         // Legend Area
         const legendContainer = document.createElement('div');
-        legendContainer.style.marginTop = '1.25rem';
+        legendContainer.style.marginTop = micro ? '0.15rem' : (compact ? '0.35rem' : '1.25rem');
+        legendContainer.style.flexShrink = '0';
         legendContainer.className = 'pie-legend-container';
         container.appendChild(legendContainer);
 
@@ -1251,7 +1228,7 @@ window.DashboardRenderer = {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                cutout: '76%',
+                cutout: micro ? '70%' : (compact ? '74%' : '76%'),
                 plugins: {
                     legend: { display: false },
                     tooltip: {
@@ -1322,6 +1299,8 @@ window.DashboardRenderer = {
         // Update Legend
         const legendContainer = container.querySelector('.pie-legend-container');
         if (legendContainer) {
+            const compact = container.dataset.compactPie === '1';
+            const micro = container.dataset.microPie === '1';
             const legendItems = [
                 { label: 'Online', count: countOnline, color: colorOnline },
                 { label: 'Warning', count: countSlow, color: colorWarning },
@@ -1329,15 +1308,37 @@ window.DashboardRenderer = {
                 { label: 'Offline', count: countOffline, color: colorOffline }
             ];
 
+            if (micro) {
+                legendContainer.style.display = 'grid';
+                legendContainer.style.gridTemplateColumns = 'repeat(4, minmax(0, 1fr))';
+                legendContainer.style.gap = '0.2rem';
+                legendContainer.innerHTML = legendItems.map(item => `
+                    <div title="${item.label}: ${item.count}" style="display: flex; align-items: center; justify-content: center; gap: 0.2rem; min-width: 0; font-size: 0.62rem; color: var(--text-primary); font-weight: 700;">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background-color: ${item.color}; flex-shrink: 0;"></span>
+                        <span style="overflow: hidden; text-overflow: ellipsis;">${item.count}</span>
+                    </div>
+                `).join('');
+                return;
+            }
+
+            if (compact) {
+                legendContainer.style.display = 'grid';
+                legendContainer.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+                legendContainer.style.gap = '0.25rem 0.5rem';
+            } else {
+                legendContainer.style.display = 'block';
+                legendContainer.style.gridTemplateColumns = '';
+                legendContainer.style.gap = '';
+            }
             legendContainer.innerHTML = legendItems.map((item, idx) => {
-                const borderBottom = idx !== legendItems.length - 1 ? 'border-bottom: 1px solid var(--border-color);' : '';
+                const borderBottom = !compact && idx !== legendItems.length - 1 ? 'border-bottom: 1px solid var(--border-color);' : '';
                 return `
-                <div style="display: flex; justify-content: space-between; padding: 0.6rem 0.25rem; ${borderBottom} font-size: 0.9rem;">
-                    <div style="display: flex; align-items: center; color: var(--text-secondary);">
-                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: ${item.color}; margin-right: 0.75rem;"></span>
+                <div style="display: flex; justify-content: space-between; align-items: center; min-width: 0; padding: ${compact ? '0.16rem 0.1rem' : '0.6rem 0.25rem'}; ${borderBottom} font-size: ${compact ? '0.68rem' : '0.9rem'}; line-height: 1.1;">
+                    <div style="display: flex; align-items: center; color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        <span style="display: inline-block; width: ${compact ? '6px' : '8px'}; height: ${compact ? '6px' : '8px'}; border-radius: 50%; background-color: ${item.color}; margin-right: ${compact ? '0.35rem' : '0.75rem'}; flex-shrink: 0;"></span>
                         ${item.label}
                     </div>
-                    <div style="font-weight: 600; color: var(--text-primary);">${item.count}</div>
+                    <div style="font-weight: 700; color: var(--text-primary); margin-left: 0.35rem;">${item.count}</div>
                 </div>
                 `;
             }).join('');
@@ -1598,6 +1599,17 @@ window.DashboardRenderer = {
 
         const devices = data.devices || [];
         const devicesByType = {};
+        const rows = Number(widget.h || (widget.height ? widget.height / 78 : 4));
+        const width = Number(widget.w || widget.width || 4);
+        const compact = rows <= 3 || width <= 4;
+        const micro = rows <= 2 || width <= 3;
+        const cardPadding = micro ? '0.35rem' : (compact ? '0.45rem' : '0.6rem');
+        const cardGap = micro ? '0.25rem' : (compact ? '0.35rem' : '0.5rem');
+        const iconSize = micro ? 22 : (compact ? 26 : 32);
+        const iconFont = micro ? '0.78rem' : (compact ? '0.88rem' : '1rem');
+        const nameFont = micro ? '0.68rem' : (compact ? '0.75rem' : '0.85rem');
+        const metaFont = micro ? '0.58rem' : (compact ? '0.64rem' : '0.75rem');
+        const badgeFont = micro ? '0.62rem' : (compact ? '0.7rem' : '0.8rem');
 
         // Group everything by type (even if filtered) because that's the view structure
         devices.forEach(device => {
@@ -1626,7 +1638,7 @@ window.DashboardRenderer = {
             }
         });
 
-        let html = '<div class="device-type-grid">';
+        let html = `<div class="device-type-grid ${micro ? 'micro' : (compact ? 'compact' : '')}">`;
 
         if (Object.keys(devicesByType).length === 0) {
             html += '<p class="text-muted text-center" style="padding:1rem">No devices</p>';
@@ -1652,24 +1664,24 @@ window.DashboardRenderer = {
                 }
 
                 html += `
-                    <div class="device-type-card ${statusClass}">
-                        <div class="device-card-header">
-                            <div class="device-icon-wrapper" style="background-color: ${meta.color}20; color: ${meta.color};">
+                    <div class="device-type-card ${statusClass}" style="padding: ${cardPadding}; gap: ${cardGap};">
+                        <div class="device-card-header" style="gap: ${micro ? '0.3rem' : '0.5rem'};">
+                            <div class="device-icon-wrapper" style="width: ${iconSize}px; height: ${iconSize}px; font-size: ${iconFont}; background-color: ${meta.color}20; color: ${meta.color};">
                                 ${meta.icon}
                             </div>
                             <div class="device-info">
-                                <div class="device-name">${meta.name}</div>
-                                <div class="device-count">${stats.total} Devices</div>
-                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+                                <div class="device-name" style="font-size: ${nameFont};">${meta.name}</div>
+                                <div class="device-count" style="font-size: ${metaFont};">${stats.total} Devices</div>
+                                <div style="font-size: ${metaFont}; color: var(--text-muted); margin-top: ${micro ? '0' : '2px'};">
                                     Avg: <span style="font-weight: 600; color: var(--text-primary);">${avgResponseTime} ms</span>
                                 </div>
                             </div>
-                            <div class="device-status-badge" style="color: ${statusColor};">
+                            <div class="device-status-badge" style="font-size: ${badgeFont}; color: ${statusColor};">
                                 ${stats.up}/${stats.total}
                             </div>
                         </div>
                         
-                        <div class="device-progress-bar">
+                        <div class="device-progress-bar" style="height: ${micro ? '3px' : '4px'};">
                             <div class="progress-segment success" style="width: ${upPercent}%"></div>
                             <div class="progress-segment warning" style="width: ${slowPercent}%"></div>
                             <div class="progress-segment danger" style="width: ${downPercent}%"></div>
@@ -2304,7 +2316,8 @@ window.DashboardRenderer = {
             }
         } else {
             // Default "Top" mode
-            const limitCount = widget.h === 2 ? 5 : (widget.h >= 6 ? 20 : 10);
+            const widgetRows = Number(widget.h || 4);
+            const limitCount = widgetRows <= 2 ? 5 : (widgetRows >= 6 ? 20 : 10);
             displayData = top.slice(0, limitCount);
         }
 

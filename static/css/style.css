@@ -747,6 +747,84 @@ tr:hover {
     background: rgba(59, 130, 246, 0.06);
 }
 
+.alerts-table {
+    table-layout: fixed;
+    font-size: 0.78rem;
+}
+
+.alerts-table th {
+    padding: 0.55rem 0.45rem;
+    font-size: 0.64rem;
+    letter-spacing: 0;
+}
+
+.alerts-table td {
+    padding: 0.6rem 0.45rem;
+    vertical-align: middle;
+    line-height: 1.25;
+}
+
+.alerts-table th:nth-child(1),
+.alerts-table td:nth-child(1) {
+    width: 22%;
+}
+
+.alerts-table th:nth-child(2),
+.alerts-table td:nth-child(2) {
+    width: 36%;
+}
+
+.alerts-table th:nth-child(3),
+.alerts-table td:nth-child(3) {
+    width: 18%;
+}
+
+.alerts-table th:nth-child(4),
+.alerts-table td:nth-child(4) {
+    width: 12%;
+}
+
+.alerts-table th:nth-child(5),
+.alerts-table td:nth-child(5) {
+    width: 12%;
+}
+
+.alerts-table .alert-device-link {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
+.alerts-table .status-badge {
+    padding: 0.15rem 0.42rem;
+    font-size: 0.58rem;
+    line-height: 1.05;
+}
+
+.alerts-table .alert-status-action {
+    padding: 0.2rem 0.45rem;
+    font-size: 0.62rem;
+    line-height: 1;
+}
+
+.alert-severity-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.18rem 0.42rem;
+    border-radius: 999px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1.05;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.alert-severity-badge i {
+    font-size: 0.56rem;
+}
+
 .alert-device-link {
     appearance: none;
     border: 0;

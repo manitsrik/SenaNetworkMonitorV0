@@ -3,6 +3,7 @@ Page routes — HTML rendering
 """
 from flask import Blueprint, render_template, request
 from .auth import login_required, admin_required
+from config import Config
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -48,7 +49,11 @@ def premium_topology():
 @login_required
 def devices():
     """Device management page"""
-    return render_template('devices.html')
+    return render_template(
+        'devices.html',
+        monitor_thresholds=Config.MONITOR_THRESHOLDS,
+        default_slow_threshold=Config.DEFAULT_SLOW_THRESHOLD
+    )
 
 
 @pages_bp.route('/history')

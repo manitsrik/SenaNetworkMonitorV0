@@ -42,6 +42,156 @@
         color: #dc2626;
         font-size: 0.8rem;
     }
+    #graph-modal {
+        background-color: rgba(15, 23, 42, 0.52);
+        backdrop-filter: blur(5px);
+    }
+    #graph-modal .graph-modal-content {
+        max-width: 675px;
+        padding: 0;
+        border-radius: 0.35rem;
+        overflow: hidden;
+        background: var(--bg-secondary);
+    }
+    #graph-modal .modal-header {
+        margin: 0;
+        padding: 1rem 1.5rem 0.75rem;
+    }
+    #graph-modal .modal-header h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+    .graph-modal-body {
+        padding: 1.65rem 2.25rem 2rem;
+    }
+    .graph-period-bar {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.35rem;
+        margin-bottom: 0.85rem;
+    }
+    .graph-period-bar .period-btn {
+        min-width: 2.1rem;
+        padding: 0.12rem 0.45rem;
+        border: 0;
+        border-radius: 0.35rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+    .graph-period-bar .btn-outline-secondary {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+    }
+    .graph-period-bar .btn-primary {
+        background: var(--success);
+        color: #fff;
+    }
+    .graph-device-info {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1rem;
+        align-items: start;
+        margin-bottom: 0.85rem;
+        font-size: 0.82rem;
+    }
+    .graph-device-meta {
+        min-width: 0;
+        color: var(--text-primary);
+        line-height: 1.35;
+    }
+    .graph-device-meta code {
+        color: var(--text-primary);
+        background: transparent;
+        padding: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .graph-muted {
+        color: var(--text-muted);
+    }
+    .graph-current {
+        min-width: 8.5rem;
+        text-align: left;
+        color: var(--text-muted);
+    }
+    #graph-current-response {
+        font-size: 0.95rem;
+        font-weight: 800;
+        margin-left: 0.25rem;
+    }
+    #graph-status-badge {
+        display: inline-flex;
+        margin-top: 0.3rem;
+        font-size: 0.65rem;
+        padding: 0.12rem 0.48rem;
+    }
+    .graph-chart-shell {
+        height: 250px;
+        padding: 1rem;
+        margin-bottom: 0.85rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0.35rem;
+        background: var(--bg-secondary);
+        cursor: crosshair;
+    }
+    .graph-chart-shell canvas {
+        width: 100% !important;
+        height: 100% !important;
+        touch-action: none;
+    }
+    .graph-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+    .graph-stat-card {
+        padding: 0.75rem 0.5rem;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        border-radius: 0.35rem;
+        background: var(--bg-secondary);
+    }
+    .graph-stat-label {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        margin-bottom: 0.25rem;
+    }
+    .graph-stat-value {
+        font-size: 1.15rem;
+        line-height: 1.15;
+        font-weight: 800;
+    }
+    .graph-modal-actions {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.45rem;
+    }
+    .graph-modal-actions .btn {
+        min-height: 2rem;
+        border-radius: 0.35rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+    @media (max-width: 760px) {
+        #graph-modal .graph-modal-content {
+            max-width: calc(100vw - 1rem);
+        }
+        .graph-modal-body {
+            padding: 1rem;
+        }
+        .graph-device-info,
+        .graph-modal-actions {
+            grid-template-columns: 1fr;
+        }
+        .graph-stats-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
 </style>
 {% endblock %}
 
@@ -565,14 +715,14 @@
 
 <!-- Real-time Graph Modal -->
 <div id="graph-modal" class="modal">
-    <div class="modal-content" style="max-width: 900px;">
+    <div class="modal-content graph-modal-content">
         <div class="modal-header">
             <h3>📈 Response Time Graph - <span id="graph-device-name"></span></h3>
             <button class="modal-close" onclick="closeGraphModal()">&times;</button>
         </div>
-        <div style="padding: 1rem;">
+        <div class="graph-modal-body">
             <!-- Period Selection -->
-            <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-bottom: 1rem;">
+            <div class="graph-period-bar">
                 <button class="btn btn-xs btn-outline-secondary period-btn"
                     onclick="setGraphPeriod(15, this)">15m</button>
                 <button class="btn btn-xs btn-primary period-btn" onclick="setGraphPeriod(60, this)">1h</button>
@@ -587,47 +737,48 @@
             </div>
 
             <!-- Device Info -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <div>
-                    <span style="color: var(--text-muted);">IP: </span>
+            <div class="graph-device-info">
+                <div class="graph-device-meta">
+                    <span class="graph-muted">IP: </span>
                     <code id="graph-device-ip"></code>
-                    <span style="margin-left: 1rem; color: var(--text-muted);">Type: </span>
+                    <span class="graph-muted" style="margin-left: 1rem;">Type: </span>
                     <span id="graph-device-type"></span>
                 </div>
-                <div>
-                    <span style="color: var(--text-muted);">Current: </span>
-                    <strong id="graph-current-response" style="font-size: 1.2rem;"></strong>
+                <div class="graph-current">
+                    <span>Current: </span>
+                    <strong id="graph-current-response"></strong>
+                    <br>
                     <span id="graph-status-badge" class="status-badge"></span>
                 </div>
             </div>
 
             <!-- Chart Container -->
-            <div class="card" style="padding: 1rem; margin-bottom: 1rem;">
-                <canvas id="response-time-chart" height="300"></canvas>
+            <div class="graph-chart-shell">
+                <canvas id="response-time-chart"></canvas>
             </div>
 
             <!-- Statistics -->
-            <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
-                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                    <div style="color: var(--text-muted); font-size: 0.875rem;">Average</div>
-                    <div id="graph-avg" style="font-size: 1.5rem; font-weight: bold; color: var(--primary);"></div>
+            <div class="graph-stats-grid">
+                <div class="graph-stat-card">
+                    <div class="graph-stat-label">Average</div>
+                    <div id="graph-avg" class="graph-stat-value" style="color: var(--primary);"></div>
                 </div>
-                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                    <div style="color: var(--text-muted); font-size: 0.875rem;">Min</div>
-                    <div id="graph-min" style="font-size: 1.5rem; font-weight: bold; color: var(--success);"></div>
+                <div class="graph-stat-card">
+                    <div class="graph-stat-label">Min</div>
+                    <div id="graph-min" class="graph-stat-value" style="color: var(--success);"></div>
                 </div>
-                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                    <div style="color: var(--text-muted); font-size: 0.875rem;">Max</div>
-                    <div id="graph-max" style="font-size: 1.5rem; font-weight: bold; color: var(--danger);"></div>
+                <div class="graph-stat-card">
+                    <div class="graph-stat-label">Max</div>
+                    <div id="graph-max" class="graph-stat-value" style="color: var(--danger);"></div>
                 </div>
-                <div class="card" style="flex: 1; padding: 1rem; text-align: center;">
-                    <div style="color: var(--text-muted); font-size: 0.875rem;">Data Points</div>
-                    <div id="graph-count" style="font-size: 1.5rem; font-weight: bold; color: var(--text);"></div>
+                <div class="graph-stat-card">
+                    <div class="graph-stat-label">Data Points</div>
+                    <div id="graph-count" class="graph-stat-value" style="color: var(--text-primary);"></div>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 0.5rem;">
-                <button class="btn btn-primary" onclick="refreshGraphData()" style="flex: 1;">
+            <div class="graph-modal-actions">
+                <button class="btn btn-primary" onclick="refreshGraphData()">
                     🔄 Refresh Data
                 </button>
                 <button class="btn btn-secondary" onclick="resetGraphZoom()" title="Reset Chart Zoom">
@@ -871,5 +1022,9 @@
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <!-- Devices Script -->
-<script src="{{ url_for('static', filename='js/devices.js') }}"></script>
+<script>
+    window.NM_MONITOR_THRESHOLDS = {{ monitor_thresholds | tojson }};
+    window.NM_DEFAULT_SLOW_THRESHOLD = {{ default_slow_threshold | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/devices.js') }}?v=20260609_device_graph_drag_zoom_fix"></script>
 {% endblock %}

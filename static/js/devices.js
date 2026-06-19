@@ -1645,7 +1645,90 @@ let currentGraphDeviceId = null;
 let responseTimeChart = null;
 let graphHistoryData = [];
 let currentGraphMinutes = 60;
-const SLOW_THRESHOLD = 500; // ms
+let currentGraphSlowThreshold = 500;
+
+const MONITOR_TYPE_THRESHOLDS = {
+    ping: 200,
+    website: 2000,
+    http: 2000,
+    tcp: 500,
+    dns: 500,
+    snmp: 2000,
+    ssh: 5000,
+    winrm: 5000,
+    ...(window.NM_MONITOR_THRESHOLDS || {})
+};
+const DEFAULT_SLOW_THRESHOLD = window.NM_DEFAULT_SLOW_THRESHOLD || 500;
+
+function formatGraphMs(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 'N/A';
+    return `${numeric.toFixed(2)} ms`;
+}
+
+function getDeviceMonitorType(device) {
+    return String(device?.monitor_type || 'ping').toLowerCase();
+}
+
+function getSlowThresholdForDevice(device) {
+    const monitorType = getDeviceMonitorType(device);
+    return MONITOR_TYPE_THRESHOLDS[monitorType] || DEFAULT_SLOW_THRESHOLD;
+}
+
+function getGraphChartData() {
+    return graphHistoryData.map(d => ({
+        x: d.time,
+        y: d.value === null ? 0 : d.value,
+        originalValue: d.value
+    }));
+}
+
+function getGraphSuggestedMax() {
+    const values = graphHistoryData
+        .filter(d => d.value !== null && d.value !== undefined)
+        .map(d => Number(d.value));
+    const maxValue = values.length ? Math.max(...values) : 0;
+    return Math.max(maxValue, currentGraphSlowThreshold) * 1.18;
+}
+
+const responseThresholdPlugin = {
+    id: 'responseThreshold',
+    beforeDatasetsDraw(chart, args, pluginOptions) {
+        const threshold = Number(pluginOptions.threshold);
+        if (!threshold || !chart.chartArea || !chart.scales?.y) return;
+
+        const { ctx, chartArea } = chart;
+        const y = chart.scales.y.getPixelForValue(threshold);
+        if (!Number.isFinite(y)) return;
+
+        const top = chartArea.top;
+        const bottom = chartArea.bottom;
+        const clippedY = Math.min(Math.max(y, top), bottom);
+
+        ctx.save();
+        ctx.fillStyle = pluginOptions.normalFill || 'rgba(16, 185, 129, 0.05)';
+        ctx.fillRect(chartArea.left, clippedY, chartArea.right - chartArea.left, bottom - clippedY);
+
+        ctx.fillStyle = pluginOptions.slowFill || 'rgba(245, 158, 11, 0.08)';
+        ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, clippedY - top);
+
+        ctx.setLineDash([6, 5]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = pluginOptions.lineColor || 'rgba(245, 158, 11, 0.9)';
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, clippedY);
+        ctx.lineTo(chartArea.right, clippedY);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+        ctx.font = '600 11px sans-serif';
+        ctx.fillStyle = pluginOptions.textColor || '#64748b';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`Slow > ${threshold} ms`, chartArea.right - 6, clippedY - 4);
+        ctx.restore();
+    }
+};
 
 // Show device graph modal
 async function showDeviceGraph(deviceId) {
@@ -1661,7 +1744,9 @@ async function showDeviceGraph(deviceId) {
     // Update modal info
     document.getElementById('graph-device-name').textContent = device.name;
     document.getElementById('graph-device-ip').textContent = device.ip_address;
-    document.getElementById('graph-device-type').textContent = device.device_type || 'N/A';
+    currentGraphSlowThreshold = getSlowThresholdForDevice(device);
+    const monitorType = getDeviceMonitorType(device).toUpperCase();
+    document.getElementById('graph-device-type').textContent = `${device.device_type || 'N/A'} / ${monitorType} (Slow > ${currentGraphSlowThreshold} ms)`;
     updateGraphCurrentStatus(device);
 
     // Show modal
@@ -1690,11 +1775,12 @@ function updateGraphCurrentStatus(device) {
     const responseEl = document.getElementById('graph-current-response');
     const badgeEl = document.getElementById('graph-status-badge');
 
-    responseEl.textContent = device.response_time !== null && device.response_time !== undefined ? device.response_time + ' ms' : 'N/A';
+    responseEl.textContent = device.response_time !== null && device.response_time !== undefined ? formatGraphMs(device.response_time) : 'N/A';
 
     // Set color based on response time
     if (device.response_time !== null && device.response_time !== undefined) {
-        if (device.response_time > SLOW_THRESHOLD) {
+        const threshold = getSlowThresholdForDevice(device);
+        if (device.response_time > threshold) {
             responseEl.style.color = 'var(--warning)';
         } else {
             responseEl.style.color = 'var(--success)';
@@ -1704,7 +1790,7 @@ function updateGraphCurrentStatus(device) {
     }
 
     badgeEl.className = `status-badge status-${device.status || 'unknown'}`;
-    badgeEl.textContent = device.status || 'unknown';
+    badgeEl.textContent = String(device.status || 'unknown').toUpperCase();
 }
 
 // Load graph history data
@@ -1754,18 +1840,14 @@ async function setGraphPeriod(minutes, btn) {
     if (currentGraphDeviceId) {
         await loadGraphHistory(currentGraphDeviceId);
         if (responseTimeChart) {
-            const chartData = graphHistoryData.map(d => ({
-                x: d.time,
-                y: d.value === null ? 0 : d.value,
-                originalValue: d.value
-            }));
-            responseTimeChart.data.datasets[0].data = chartData;
+            responseTimeChart.data.datasets[0].data = getGraphChartData();
 
             // Sync X-axis range
             const now = new Date();
             const start = new Date(now.getTime() - currentGraphMinutes * 60 * 1000);
             responseTimeChart.options.scales.x.min = start;
             responseTimeChart.options.scales.x.max = now;
+            responseTimeChart.options.scales.y.suggestedMax = getGraphSuggestedMax();
 
             responseTimeChart.update();
         }
@@ -1792,15 +1874,12 @@ function createResponseTimeChart() {
     }
 
     // Prepare data
-    const chartData = graphHistoryData.map(d => ({
-        x: d.time,
-        y: d.value === null ? 0 : d.value,
-        originalValue: d.value
-    }));
+    const chartData = getGraphChartData();
 
     // Create chart
     responseTimeChart = new Chart(ctx, {
         type: 'line',
+        plugins: [responseThresholdPlugin],
         data: {
             datasets: [{
                 label: 'Response Time (ms)',
@@ -1813,12 +1892,21 @@ function createResponseTimeChart() {
                 spanGaps: true, // Connect lines across
                 
                 pointRadius: (ctx) => ctx.raw && ctx.raw.originalValue === null ? 3 : 0,
-                pointBackgroundColor: (ctx) => ctx.raw && ctx.raw.originalValue === null ? '#ef4444' : 'rgba(16, 185, 129, 1)',
+                pointBackgroundColor: (ctx) => {
+                    if (ctx.raw && ctx.raw.originalValue === null) return '#ef4444';
+                    return ctx.raw && ctx.raw.originalValue > currentGraphSlowThreshold ? '#f59e0b' : 'rgba(16, 185, 129, 1)';
+                },
                 pointBorderColor: (ctx) => ctx.raw && ctx.raw.originalValue === null ? '#ef4444' : 'white',
                 pointBorderWidth: 2,
                 pointHoverRadius: 7,
                 segment: {
-                    borderColor: (ctx) => ctx.p0.raw && ctx.p0.raw.originalValue === null && ctx.p1.raw && ctx.p1.raw.originalValue === null ? '#ef4444' : undefined,
+                    borderColor: (ctx) => {
+                        const v0 = ctx.p0.raw?.originalValue;
+                        const v1 = ctx.p1.raw?.originalValue;
+                        if (v0 === null && v1 === null) return '#ef4444';
+                        if (v0 > currentGraphSlowThreshold || v1 > currentGraphSlowThreshold) return '#f59e0b';
+                        return 'rgba(16, 185, 129, 1)';
+                    },
                     borderDash: (ctx) => ctx.p0.raw && ctx.p0.raw.originalValue === null && ctx.p1.raw && ctx.p1.raw.originalValue === null ? [4, 4] : undefined
                 }
             }]
@@ -1829,17 +1917,28 @@ function createResponseTimeChart() {
             plugins: {
                 zoom: {
                     zoom: {
-                        wheel: { enabled: true },
+                        wheel: { enabled: true, speed: 0.08 },
                         pinch: { enabled: true },
+                        drag: {
+                            enabled: true,
+                            backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                            borderColor: 'rgba(16, 185, 129, 0.8)',
+                            borderWidth: 1
+                        },
                         mode: 'x',
                     },
                     pan: {
                         enabled: true,
                         mode: 'x',
+                        modifierKey: 'shift',
                     }
                 },
                 legend: {
                     display: false
+                },
+                responseThreshold: {
+                    threshold: currentGraphSlowThreshold,
+                    textColor: textColor
                 },
                 tooltip: {
                     callbacks: {
@@ -1847,24 +1946,6 @@ function createResponseTimeChart() {
                             const original = context.raw?.originalValue;
                             if (original === null || original === undefined) return 'DOWN';
                             return `${original} ms`;
-                        }
-                    }
-                },
-                annotation: {
-                    annotations: {
-                        slowLine: {
-                            type: 'line',
-                            yMin: SLOW_THRESHOLD,
-                            yMax: SLOW_THRESHOLD,
-                            borderColor: 'rgba(251, 191, 36, 0.7)',
-                            borderWidth: 2,
-                            borderDash: [5, 5],
-                            label: {
-                                display: true,
-                                content: 'Slow Threshold',
-                                position: 'end',
-                                color: textColor
-                            }
                         }
                     }
                 }
@@ -1910,7 +1991,8 @@ function createResponseTimeChart() {
                     grid: {
                         color: gridColor
                     },
-                    min: 0
+                    min: 0,
+                    suggestedMax: getGraphSuggestedMax()
                 }
             },
             animation: {
@@ -1967,11 +2049,8 @@ function addGraphDataPoint(deviceId, responseTime, timestamp) {
     responseTimeChart.options.scales.x.max = now;
 
     // Update chart
-    responseTimeChart.data.datasets[0].data = graphHistoryData.map(d => ({
-        x: d.time,
-        y: d.value === null ? 0 : d.value,
-        originalValue: d.value
-    }));
+    responseTimeChart.data.datasets[0].data = getGraphChartData();
+    responseTimeChart.options.scales.y.suggestedMax = getGraphSuggestedMax();
     responseTimeChart.update('none');
 
     // Update statistics

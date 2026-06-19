@@ -1,0 +1,24 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dnsDeviceTitle">
+  <title id="dnsDeviceTitle">DNS device icon</title>
+  <rect x="8" y="8" width="112" height="112" rx="18" fill="#F5F5F5"/>
+  <g color="#0EA5E9">
+    <circle cx="64" cy="64" r="52" fill="currentColor"/>
+
+    <path d="M64 13C51 25 44 43 44 64C44 85 51 103 64 115" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M64 13C77 25 84 43 84 64C84 85 77 103 64 115" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M64 13V115" stroke="white" stroke-width="4" stroke-linecap="round"/>
+
+    <path d="M21 40H107" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M13 64H115" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M21 88H107" stroke="white" stroke-width="4" stroke-linecap="round"/>
+
+    <rect x="26" y="46" width="76" height="36" rx="7" fill="#F5F5F5"/>
+    <rect x="30" y="50" width="68" height="28" rx="4" fill="white"/>
+    <path d="M26 58H14" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M114 58H102" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M26 70H14" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <path d="M114 70H102" stroke="white" stroke-width="4" stroke-linecap="round"/>
+
+    <text x="64" y="72" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="800" letter-spacing="0" fill="#0EA5E9">DNS</text>
+  </g>
+</svg>

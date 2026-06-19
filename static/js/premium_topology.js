@@ -116,13 +116,14 @@ function createDeviceCardDom(dv) {
     const isWebsite = type === 'website' || type === 'web';
     const isWireless = type === 'wireless' || type === 'wifi';
     const isVmware = type === 'vmware';
+    const isDns = type === 'dns';
     
     // Choose Template
     const tmplId = isInternet
         ? 'internet-node-template'
         : isWireless
         ? 'wireless-ap-template'
-        : (isServer || isFirewall || isRouter || isVpnRouter ? 'rackmount-hardware-template' : 'floating-node-template');
+        : (isServer || isFirewall || isRouter || isVpnRouter || isDns ? 'rackmount-hardware-template' : 'floating-node-template');
     const tmpl = document.getElementById(tmplId).innerHTML;
     
     let cpu = dv.cpu_usage || 0;
@@ -138,12 +139,15 @@ function createDeviceCardDom(dv) {
     else if (isVpnRouter) imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
     else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
+    else if (isDns) imageUrl = '/static/icons/dns-device.svg?v=1';
     else if (isServer) imageUrl = '/static/icons/premium_server.png?v=3';
 
     const glowClass = isWebsite
         ? 'glow-website'
         : isVpnRouter
         ? 'glow-vpnrouter'
+        : isDns
+        ? 'glow-dns'
         : GLOW_MAPPING[tier];
 
     let html = tmpl

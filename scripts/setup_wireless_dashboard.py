@@ -45,7 +45,7 @@ def setup_wireless_dashboard():
                 { "type": "stat_card", "title": "Online APs", "statType": "up", "config": { "deviceType": "wireless" } },
                 { "type": "stat_card", "title": "Avg AP Latency", "statType": "latency", "config": { "deviceType": "wireless" } },
                 { "type": "stat_card", "title": "Slow APs", "statType": "slow", "config": { "deviceType": "wireless" } },
-                { "type": "stat_card", "title": "Alerts", "statType": "down", "config": { "deviceType": "wireless" } }
+                { "type": "stat_card", "title": "DOWN", "statType": "down", "config": { "deviceType": "wireless" } }
             ]
         },
         

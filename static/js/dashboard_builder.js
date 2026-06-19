@@ -154,7 +154,7 @@ function renderGrid() {
         if (!window.dynamicLoadTried) {
             window.dynamicLoadTried = true;
             const script = document.createElement('script');
-            script.src = '/static/js/renderer_lib.js?v=dynamic_20260608_device_pie_compact';
+            script.src = '/static/js/renderer_lib.js?v=dynamic_20260609_dns_device_icon';
             script.onload = () => {
                 console.log('renderer_lib.js loaded dynamically');
                 renderGrid();

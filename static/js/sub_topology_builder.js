@@ -1305,11 +1305,12 @@ function renderPremiumDOMNode(device) {
     const isVpnRouter = type === 'vpnrouter';
     const isWebsite = type === 'website' || type === 'web';
     const isWireless = type === 'wireless' || type === 'wifi';
+    const isDns = type === 'dns';
 
     // Choose Template
     let templateId = 'floating-node-template';
     if (isInternet) templateId = 'internet-node-template';
-    if (isServer || isVmware || isSwitch || isFirewall || isRouter || isVpnRouter || isWebsite) templateId = 'rackmount-hardware-template';
+    if (isServer || isVmware || isSwitch || isFirewall || isRouter || isVpnRouter || isWebsite || isDns) templateId = 'rackmount-hardware-template';
     if (isWireless) templateId = 'wireless-ap-template';
 
     const templateNode = document.getElementById(templateId);
@@ -1326,6 +1327,7 @@ function renderPremiumDOMNode(device) {
         'web': 'fa-globe',
         'internet': 'fa-cloud',
         'wireless': 'fa-wifi',
+        'dns': 'fa-globe',
         'server': 'fa-server',
         'vmware': 'fa-database'
     };
@@ -1342,6 +1344,7 @@ function renderPremiumDOMNode(device) {
     else if (isVpnRouter) imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
     else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
     else if (isWireless) imageUrl = '/static/icons/premium_wireless.svg?v=2';
+    else if (isDns) imageUrl = '/static/icons/dns-device.svg?v=1';
 
     // Fill Template
     let html = template

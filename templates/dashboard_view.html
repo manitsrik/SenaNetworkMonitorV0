@@ -96,6 +96,34 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
+    }
+
+    .widget-controls {
+        display: flex;
+        gap: 0.25rem;
+        flex-shrink: 0;
+        margin-left: 0.5rem;
+    }
+
+    .widget-btn {
+        width: 1.6rem;
+        height: 1.6rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0;
+        border-radius: 0.25rem;
+        font-size: 0.8rem;
+    }
+
+    .widget-btn:hover {
+        background-color: var(--bg-tertiary);
+        color: var(--text-primary);
     }
 
     /* Target specific widget content containers to ensure they scroll or behave */
@@ -126,6 +154,195 @@
         min-height: 0 !important;
         flex: 1 1 0 !important;
     }
+
+    .trend-expand-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 5000;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        background: rgba(15, 23, 42, 0.52);
+        backdrop-filter: blur(5px);
+    }
+
+    .trend-expand-modal.active {
+        display: flex;
+    }
+
+    .trend-expand-dialog {
+        width: min(675px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        overflow: hidden;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 0.35rem;
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .trend-expand-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.5rem 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .trend-expand-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+    }
+
+    .trend-expand-close {
+        border: 0;
+        background: none;
+        color: var(--text-muted);
+        font-size: 1.45rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .trend-expand-close:hover {
+        color: var(--danger);
+    }
+
+    .trend-expand-body {
+        padding: 1.65rem 2.25rem 2rem;
+        overflow: auto;
+    }
+
+    .trend-expand-range {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.35rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .trend-expand-range .btn {
+        min-width: 2.1rem;
+        padding: 0.12rem 0.45rem;
+        border: 0;
+        border-radius: 0.35rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .trend-expand-range .btn-outline-secondary {
+        background: var(--bg-tertiary);
+        color: var(--text-secondary);
+    }
+
+    .trend-expand-range .btn-primary {
+        background: var(--success);
+        color: #fff;
+    }
+
+    .trend-expand-meta {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 1rem;
+        margin-bottom: 0.85rem;
+        font-size: 0.82rem;
+        color: var(--text-primary);
+    }
+
+    .trend-muted {
+        color: var(--text-muted);
+    }
+
+    .trend-expand-chart-wrap {
+        height: 250px;
+        padding: 1rem;
+        margin-bottom: 0.85rem;
+        border: 1px solid var(--border-color);
+        border-radius: 0.35rem;
+        background: var(--bg-secondary);
+        position: relative;
+    }
+
+    .trend-expand-chart-wrap canvas {
+        width: 100% !important;
+        height: 100% !important;
+        touch-action: none;
+    }
+
+    .trend-expand-loading,
+    .trend-expand-empty {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        background: var(--bg-secondary);
+    }
+
+    .trend-expand-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .trend-stat-card {
+        padding: 0.75rem 0.5rem;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        border-radius: 0.35rem;
+        background: var(--bg-secondary);
+    }
+
+    .trend-stat-card span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .trend-stat-card strong {
+        display: block;
+        font-size: 1.15rem;
+        line-height: 1.15;
+        color: var(--text-primary);
+    }
+
+    .trend-expand-actions {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 0.45rem;
+    }
+
+    .trend-expand-actions .btn {
+        min-height: 2rem;
+        border-radius: 0.35rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    @media (max-width: 760px) {
+        .trend-expand-body {
+            padding: 1rem;
+        }
+        .trend-expand-meta,
+        .trend-expand-actions {
+            grid-template-columns: 1fr;
+        }
+        .trend-expand-stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
 </style>
 {% endblock %}
 
@@ -146,9 +363,11 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <!-- Use the new shared renderer -->
-<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=39"></script>
+<script src="{{ url_for('static', filename='js/renderer_lib.js') }}?v=20260609_dns_device_icon"></script>
 <script>
     let currentDashboard = null;
     let dashboardVariables = { location: true, deviceType: true, monitorType: false, status: false };
@@ -413,7 +632,7 @@
             if (!window.dynamicLoadTried) {
                 window.dynamicLoadTried = true;
                 const script = document.createElement('script');
-                script.src = '/static/js/renderer_lib.js?v=dynamic_view_20260608_device_pie_compact';
+                script.src = '/static/js/renderer_lib.js?v=dynamic_view_20260609_dns_device_icon';
                 script.onload = () => {
                     console.log('renderer_lib.js loaded dynamically in view');
                     render();
@@ -433,11 +652,31 @@
         const Renderer = window.DashboardRenderer || DashboardRenderer;
         try {
             Renderer.renderDashboard(container, currentDashboard.layout_config, currentData, false);
+            bindTrendExpandButtons();
             initGridStack();
         } catch (e) {
             console.error('Error in renderDashboard:', e);
             container.innerHTML = `<div class="alert alert-danger">Error rendering dashboard: ${e.message}</div>`;
         }
+    }
+
+    function bindTrendExpandButtons() {
+        document.querySelectorAll('.grid-stack-item[data-type="trends"]').forEach(item => {
+            const index = item.dataset.index;
+            const button = item.querySelector('.widget-btn.fullscreen');
+            if (!button || button.dataset.trendModalBound === '1') return;
+            button.dataset.trendModalBound = '1';
+            button.onclick = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const Renderer = window.DashboardRenderer || DashboardRenderer;
+                if (Renderer && typeof Renderer.openTrendModal === 'function') {
+                    Renderer.openTrendModal(Number(index));
+                } else {
+                    console.error('Trend modal renderer is not available');
+                }
+            };
+        });
     }
     
     function initGridStack() {

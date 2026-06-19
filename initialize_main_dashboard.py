@@ -18,7 +18,7 @@ def initialize_main_dashboard():
                 { "type": "stat_card", "statType": "up", "title": "ONLINE DEVICES" },
                 { "type": "stat_card", "statType": "latency", "title": "AVG LATENCY" },
                 { "type": "stat_card", "statType": "slow", "title": "SLOW DEVICES" },
-                { "type": "stat_card", "statType": "down", "title": "ACTIVE ALERTS" }
+                { "type": "stat_card", "statType": "down", "title": "DOWN" }
             ]
         },
         # Left Column - Gauges and Trends

@@ -30,6 +30,32 @@ window.DashboardRenderer = {
     rowScale: 2,
     colScale: 2,
 
+    ensureChartZoomPlugin: function () {
+        if (!window.Chart) return false;
+
+        try {
+            if (window.Chart.registry?.plugins?.get?.('zoom')) {
+                return true;
+            }
+        } catch (e) {
+            // Older Chart.js builds may not expose registry lookups consistently.
+        }
+
+        const plugin = window.ChartZoom || window.zoomPlugin || window['chartjs-plugin-zoom'];
+        if (!plugin || typeof window.Chart.register !== 'function') {
+            console.warn('Chart zoom plugin is not available on window');
+            return false;
+        }
+
+        try {
+            window.Chart.register(plugin);
+            return true;
+        } catch (e) {
+            console.warn('Failed to register Chart zoom plugin:', e);
+            return false;
+        }
+    },
+
     toGridRows: function (rows, fallbackRows = 4, minGridRows = 1) {
         const value = Number(rows);
         const safeRows = Number.isFinite(value) && value > 0 ? value : fallbackRows;
@@ -155,7 +181,9 @@ window.DashboardRenderer = {
             let dragHandleHtml = '';
             const fullscreenControl = widget.type === 'topology'
                 ? `<button class="widget-btn fullscreen" onclick="window.DashboardRenderer.toggleWidgetFullscreen(${index})" title="Fullscreen"><i class="fas fa-expand"></i></button>`
-                : '';
+                : (widget.type === 'trends'
+                    ? `<button class="widget-btn fullscreen" onclick="window.DashboardRenderer.openTrendModal(${index})" title="Expand graph"><i class="fas fa-expand"></i></button>`
+                    : '');
             if (isEditMode) {
                 // Remove individual drag handle icon to use the whole title as handle
                 dragHandleHtml = ``;
@@ -382,7 +410,7 @@ window.DashboardRenderer = {
             const targetIndex = activeIndex !== null && activeIndex !== undefined ? activeIndex : this.lastFullscreenWidgetIndex;
             if (targetIndex !== null && targetIndex !== undefined) {
                 [80, 220, 500].forEach(delay => {
-                    setTimeout(() => this.refreshTopologyLayout(targetIndex), delay);
+                    setTimeout(() => this.refreshFullscreenWidgetLayout(targetIndex), delay);
                 });
             }
         };
@@ -421,6 +449,269 @@ window.DashboardRenderer = {
         } catch (e) {
             console.warn('Failed to refresh topology fullscreen layout:', e);
         }
+    },
+
+    refreshFullscreenWidgetLayout: function (index) {
+        this.refreshTopologyLayout(index);
+        const chart = this.instances[`chart_${index}`];
+        if (!chart || typeof chart.resize !== 'function') return;
+        try {
+            chart.resize();
+            chart.update('none');
+        } catch (e) {
+            console.warn('Failed to refresh trend fullscreen layout:', e);
+        }
+    },
+
+    escapeHtml: function (value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    getTrendDisplayTitle: function (index) {
+        const titleEl = document.querySelector(`#widget-${index} .widget-title`);
+        return titleEl ? titleEl.textContent.trim() : 'Response Time Graph';
+    },
+
+    getTrendStats: function (datasets) {
+        const values = [];
+        (datasets || []).forEach(dataset => {
+            (dataset.data || []).forEach(value => {
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) values.push(numeric);
+            });
+        });
+
+        if (!values.length) {
+            return { avg: 'N/A', min: 'N/A', max: 'N/A', count: 0 };
+        }
+
+        const total = values.reduce((sum, value) => sum + value, 0);
+        return {
+            avg: `${(total / values.length).toFixed(2)} ms`,
+            min: `${Math.min(...values).toFixed(2)} ms`,
+            max: `${Math.max(...values).toFixed(2)} ms`,
+            count: values.length
+        };
+    },
+
+    cloneTrendDatasets: function (datasets) {
+        return (datasets || []).map(dataset => ({
+            ...dataset,
+            data: [...(dataset.data || [])],
+            pointRadius: 1,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            fill: true
+        }));
+    },
+
+    ensureTrendModal: function () {
+        let modal = document.getElementById('trend-expand-modal');
+        if (modal) return modal;
+
+        modal = document.createElement('div');
+        modal.id = 'trend-expand-modal';
+        modal.className = 'trend-expand-modal';
+        modal.innerHTML = `
+            <div class="trend-expand-dialog">
+                <div class="trend-expand-header">
+                    <h3><i class="fas fa-chart-line" aria-hidden="true"></i> <span id="trend-expand-title">Response Time Graph</span></h3>
+                    <button class="trend-expand-close" onclick="window.DashboardRenderer.closeTrendModal()" title="Close">&times;</button>
+                </div>
+                <div class="trend-expand-body">
+                    <div class="trend-expand-range" id="trend-expand-range"></div>
+                    <div class="trend-expand-meta">
+                        <div>
+                            <span class="trend-muted">Graph:</span>
+                            <strong id="trend-expand-name"></strong>
+                        </div>
+                        <div>
+                            <span class="trend-muted">Current Range:</span>
+                            <strong id="trend-expand-current-range"></strong>
+                        </div>
+                    </div>
+                    <div class="trend-expand-chart-wrap">
+                        <canvas id="trend-expand-chart"></canvas>
+                    </div>
+                    <div class="trend-expand-stats">
+                        <div class="trend-stat-card"><span>Average</span><strong id="trend-stat-avg"></strong></div>
+                        <div class="trend-stat-card"><span>Min</span><strong id="trend-stat-min"></strong></div>
+                        <div class="trend-stat-card"><span>Max</span><strong id="trend-stat-max"></strong></div>
+                        <div class="trend-stat-card"><span>Data Points</span><strong id="trend-stat-count"></strong></div>
+                    </div>
+                    <div class="trend-expand-actions">
+                        <button class="btn btn-primary" onclick="window.DashboardRenderer.refreshTrendModal()"><i class="fas fa-sync-alt"></i> Refresh Data</button>
+                        <button class="btn btn-secondary" onclick="window.DashboardRenderer.resetTrendModalZoom()"><i class="fas fa-search"></i> Reset Zoom</button>
+                        <button class="btn btn-secondary" onclick="window.DashboardRenderer.closeTrendModal()">Close</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) this.closeTrendModal();
+        });
+        document.body.appendChild(modal);
+        return modal;
+    },
+
+    renderTrendModalChart: function (index) {
+        const payload = this.instances[`trend_payload_${index}`];
+        if (!payload) return;
+
+        const stats = this.getTrendStats(payload.datasets);
+        document.getElementById('trend-stat-avg').textContent = stats.avg;
+        document.getElementById('trend-stat-min').textContent = stats.min;
+        document.getElementById('trend-stat-max').textContent = stats.max;
+        document.getElementById('trend-stat-count').textContent = stats.count;
+
+        const chartEl = document.getElementById('trend-expand-chart');
+        if (!chartEl) return;
+        const existing = this.instances.trend_modal_chart;
+        if (existing) existing.destroy();
+        const zoomAvailable = this.ensureChartZoomPlugin();
+
+        this.instances.trend_modal_chart = new Chart(chartEl.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [...payload.labels],
+                datasets: this.cloneTrendDatasets(payload.datasets)
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    zoom: {
+                        zoom: {
+                            wheel: { enabled: zoomAvailable, speed: 0.08 },
+                            pinch: { enabled: true },
+                            drag: {
+                                enabled: zoomAvailable,
+                                backgroundColor: 'rgba(16, 185, 129, 0.14)',
+                                borderColor: 'rgba(16, 185, 129, 0.8)',
+                                borderWidth: 1
+                            },
+                            mode: 'x'
+                        },
+                        pan: {
+                            enabled: zoomAvailable,
+                            mode: 'x'
+                        }
+                    },
+                    legend: {
+                        display: payload.datasets.length > 1,
+                        position: 'top',
+                        align: 'end',
+                        labels: { usePointStyle: true, boxWidth: 7, font: { size: 11 } }
+                    },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(0,0,0,0.055)' },
+                        ticks: { font: { size: 11 } },
+                        title: { display: true, text: 'Response Time (ms)', font: { size: 11 } }
+                    },
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.04)' },
+                        ticks: { font: { size: 11 }, maxTicksLimit: 10 },
+                        title: { display: true, text: 'Time', font: { size: 11 } }
+                    }
+                }
+            }
+        });
+    },
+
+    openTrendModal: async function (index) {
+        console.log('Opening trend modal', index);
+        const modal = this.ensureTrendModal();
+        this.instances.trend_modal_index = index;
+        const title = this.getTrendDisplayTitle(index);
+        document.getElementById('trend-expand-title').textContent = title;
+        document.getElementById('trend-expand-name').textContent = title;
+        document.getElementById('trend-expand-current-range').textContent = 'Loading...';
+        document.getElementById('trend-expand-range').innerHTML = '';
+        document.getElementById('trend-stat-avg').textContent = '...';
+        document.getElementById('trend-stat-min').textContent = '...';
+        document.getElementById('trend-stat-max').textContent = '...';
+        document.getElementById('trend-stat-count').textContent = '...';
+        const chartWrap = modal.querySelector('.trend-expand-chart-wrap');
+        if (chartWrap) {
+            chartWrap.innerHTML = '<canvas id="trend-expand-chart"></canvas><div class="trend-expand-loading">Loading graph...</div>';
+        }
+        modal.classList.add('active');
+
+        let payload = this.instances[`trend_payload_${index}`];
+        if (!payload) {
+            const container = document.getElementById(`widget-content-${index}`);
+            const widget = this.instances[`widget_${index}`] || { type: 'trends', config: {} };
+            if (container) {
+                await this.renderResponseTrends(container, widget, null, index);
+                payload = this.instances[`trend_payload_${index}`];
+            }
+        }
+
+        if (!payload) {
+            if (chartWrap) {
+                chartWrap.innerHTML = '<div class="trend-expand-empty">No graph data available yet.</div>';
+            }
+            document.getElementById('trend-expand-current-range').textContent = 'N/A';
+            document.getElementById('trend-stat-avg').textContent = 'N/A';
+            document.getElementById('trend-stat-min').textContent = 'N/A';
+            document.getElementById('trend-stat-max').textContent = 'N/A';
+            document.getElementById('trend-stat-count').textContent = '0';
+            return;
+        }
+
+        if (chartWrap && !document.getElementById('trend-expand-chart')) {
+            chartWrap.innerHTML = '<canvas id="trend-expand-chart"></canvas>';
+        } else {
+            const loading = chartWrap ? chartWrap.querySelector('.trend-expand-loading') : null;
+            if (loading) loading.remove();
+        }
+        document.getElementById('trend-expand-current-range').textContent = payload.rangeLabel;
+        document.getElementById('trend-expand-range').innerHTML = [15, 60, 180].map(range => `
+            <button class="btn btn-xs ${payload.range === range ? 'btn-primary' : 'btn-outline-secondary'}"
+                    onclick="window.DashboardRenderer.setTrendModalRange(${index}, ${range})">
+                ${range >= 180 ? '3h' : range >= 60 ? '1h' : range + 'm'}
+            </button>
+        `).join('');
+        this.renderTrendModalChart(index);
+    },
+
+    closeTrendModal: function () {
+        const modal = document.getElementById('trend-expand-modal');
+        if (modal) modal.classList.remove('active');
+        if (this.instances.trend_modal_chart) {
+            this.instances.trend_modal_chart.destroy();
+            this.instances.trend_modal_chart = null;
+        }
+        this.instances.trend_modal_index = null;
+    },
+
+    refreshTrendModal: async function () {
+        const index = this.instances.trend_modal_index;
+        if (index === null || index === undefined) return;
+        const container = document.getElementById(`widget-content-${index}`);
+        const widget = this.instances[`widget_${index}`] || { type: 'trends', config: {} };
+        if (container) await this.renderResponseTrends(container, widget, null, index);
+        this.openTrendModal(index);
+    },
+
+    setTrendModalRange: async function (index, range) {
+        this.instances[`trend_range_${index}`] = range;
+        await this.refreshTrendModal();
+    },
+
+    resetTrendModalZoom: function () {
+        const chart = this.instances.trend_modal_chart;
+        if (chart && typeof chart.resetZoom === 'function') chart.resetZoom();
+        else if (chart) chart.update('none');
     },
 
     addTopologyZoomControls: function (container, index) {
@@ -598,7 +889,7 @@ window.DashboardRenderer = {
     getPremiumWidgetTemplateId: function (device) {
         const type = (device.device_type || 'server').toLowerCase();
         if (type === 'internet') return 'internet-node-template';
-        if (type === 'server' || type === 'vmware' || type === 'switch' || type === 'firewall' || type === 'router' || type === 'vpnrouter' || type === 'website' || type === 'web') return 'rackmount-hardware-template';
+        if (type === 'server' || type === 'vmware' || type === 'switch' || type === 'firewall' || type === 'router' || type === 'vpnrouter' || type === 'website' || type === 'web' || type === 'dns') return 'rackmount-hardware-template';
         if (type === 'wireless' || type === 'wifi') return 'wireless-ap-template';
         return 'floating-node-template';
     },
@@ -630,6 +921,7 @@ window.DashboardRenderer = {
             'web': 'fa-globe',
             'internet': 'fa-cloud',
             'wireless': 'fa-wifi',
+            'dns': 'fa-globe',
             'server': 'fa-server',
             'vmware': 'fa-database'
         };
@@ -644,6 +936,7 @@ window.DashboardRenderer = {
         else if (type === 'vpnrouter') imageUrl = '/static/icons/premium_vpnrouter.svg?v=2';
         else if (isWebsite) imageUrl = '/static/icons/premium_website.svg?v=2';
         else if (type === 'wireless' || type === 'wifi') imageUrl = '/static/icons/premium_wireless.svg?v=2';
+        else if (type === 'dns') imageUrl = '/static/icons/dns-device.svg?v=1';
 
         const glowClass = isWebsite ? 'glow-website' : `glow-${type}`;
 
@@ -1096,7 +1389,7 @@ window.DashboardRenderer = {
                 { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
                 { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type ? type.toUpperCase() : 'NET'} LATENCY` },
                 { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
-                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
+                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `DOWN` }
             ];
         }
 
@@ -1140,7 +1433,7 @@ window.DashboardRenderer = {
                 { type: 'stat_card', statType: 'up', config: { deviceType: type }, title: `ONLINE ${deviceNoun}` },
                 { type: 'stat_card', statType: 'latency', config: { deviceType: type }, title: `AVG ${type ? type.toUpperCase() : 'NET'} LATENCY` },
                 { type: 'stat_card', statType: 'slow', config: { deviceType: type }, title: `SLOW ${deviceNoun}` },
-                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `ALERTS` }
+                { type: 'stat_card', statType: 'down', config: { deviceType: type }, title: `DOWN` }
             ];
         }
 
@@ -1745,10 +2038,16 @@ window.DashboardRenderer = {
                 const isDown = d.status === 'down';
                 const severity = isDown ? 'Critical' : 'Warning';
                 const badgeStyle = isDown ? 'background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid #ef4444;' : 'background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid #f59e0b;';
+                const severityIcon = isDown ? 'fa-triangle-exclamation' : 'fa-circle-exclamation';
 
                 html += `
                     <tr class="alert-device-row" data-device-id="${escapeHtml(d.id)}" style="cursor: pointer;">
-                        <td><span class="status-badge" style="${badgeStyle}">⚠️ ${severity}</span></td>
+                        <td>
+                            <span class="alert-severity-badge" style="${badgeStyle}">
+                                <i class="fa-solid ${severityIcon}" aria-hidden="true"></i>
+                                ${severity}
+                            </span>
+                        </td>
                         <td>
                             <button type="button" class="alert-device-link" data-device-id="${escapeHtml(d.id)}" title="View status">
                                 ${escapeHtml(d.name)}
@@ -1975,6 +2274,16 @@ window.DashboardRenderer = {
             const sortedTimes = timeBuckets.map(b => b.label);
 
             const chartDatasets = Object.values(datasets);
+            const rangeLabel = currentRange >= 180 ? '3h' : currentRange >= 60 ? '1h' : currentRange + 'm';
+            this.instances[`trend_payload_${index}`] = {
+                labels: sortedTimes,
+                datasets: chartDatasets.map(dataset => ({
+                    ...dataset,
+                    data: [...dataset.data]
+                })),
+                range: currentRange,
+                rangeLabel
+            };
 
 
 

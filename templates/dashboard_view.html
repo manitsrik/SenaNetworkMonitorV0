@@ -468,13 +468,14 @@
             
             const bwUrl = bandwidthIds.length > 0 ? `/api/bandwidth/current?ids=${bandwidthIds.join(',')}` : '/api/bandwidth/current';
 
-            const [devices, stats, topology, bandwidth] = await Promise.all([
+            const [devices, stats, topology, bandwidth, serverHealth] = await Promise.all([
                 fetch('/api/devices').then(r => r.json()),
                 fetch('/api/statistics').then(r => r.json()),
                 fetch('/api/topology').then(r => r.json()),
-                fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] }))
+                fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] })),
+                fetch('/api/server-health').then(r => r.json()).catch(() => ({ summary: {} }))
             ]);
-            originalData = { devices, stats, connections: topology.connections, bandwidth };
+            originalData = { devices, stats, connections: topology.connections, bandwidth, serverHealth };
         } catch (e) {
             console.error("Error fetching data:", e);
         }
@@ -602,7 +603,8 @@
             devices: filteredDevices,
             connections: filteredConnections,
             stats: filteredStats,
-            bandwidth: originalData.bandwidth
+            bandwidth: originalData.bandwidth,
+            serverHealth: originalData.serverHealth
         };
         
         // Update status text

@@ -170,3 +170,14 @@ def send_test_report():
         return jsonify(result)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@alerts_bp.route('/api/reports/test-server-health', methods=['POST'])
+@operator_required
+def send_test_server_health_report():
+    """Generate and send a test server-health report."""
+    try:
+        result = _get_report_generator().run_server_health_report()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

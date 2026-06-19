@@ -18,6 +18,25 @@ let incidentContextLocation = '';
 let pluginMonitorMetadata = {};
 let currentPluginConfig = {};
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function parseJsonField(value, fallback) {
+    if (!value) return fallback;
+    if (typeof value === 'object') return value;
+    try {
+        return JSON.parse(value);
+    } catch (error) {
+        return fallback;
+    }
+}
+
 // Location type icon mapping
 const locationTypeIcons = {
     'cloud': '☁️',
@@ -347,6 +366,7 @@ function updateDevicesTable(devices) {
                 <span class="status-badge status-${device.status || 'unknown'}">
                     ${device.status || 'unknown'}
                 </span>
+                ${renderDeviceServerHealth(device)}
             </td>
             <td>${device.response_time !== null && device.response_time !== undefined ? device.response_time + ' ms' : 'N/A'}</td>
             <td>${device.last_check ? formatDateTime(device.last_check) : 'Never'}</td>
@@ -397,6 +417,32 @@ function updateDevicesTable(devices) {
             </td>
         </tr>
     `}).join('');
+}
+
+function renderDeviceServerHealth(device) {
+    if (!['ssh', 'winrm', 'wmi'].includes(device.monitor_type)) return '';
+    const services = parseJsonField(device.service_status_json, []);
+    const summary = parseJsonField(device.service_summary_json, {});
+    const pending = !!device.pending_reboot;
+    const stopped = services.filter(service => !service.ok);
+    const parts = [];
+
+    if (services.length) {
+        const running = services.length - stopped.length;
+        const cls = stopped.length ? 'status-down' : 'status-up';
+        parts.push(`<span class="status-badge ${cls}" title="${escapeHtml(stopped.map(s => `${s.name}: ${s.status}`).join(', ') || 'All monitored services running')}">Svc ${running}/${services.length}</span>`);
+    } else if (summary && summary.total !== undefined) {
+        const autoStopped = Number(summary.auto_stopped || 0);
+        const cls = autoStopped > 0 ? 'status-slow' : 'status-up';
+        parts.push(`<span class="status-badge ${cls}" title="Windows service summary">Svc ${escapeHtml(summary.running ?? '-')}/${escapeHtml(summary.total ?? '-')}</span>`);
+    }
+
+    if (pending) {
+        parts.push('<span class="status-badge status-slow" title="Windows pending reboot">Reboot</span>');
+    }
+
+    if (!parts.length) return '';
+    return `<div style="display:flex; flex-wrap:wrap; gap:0.25rem; margin-top:0.35rem;">${parts.join('')}</div>`;
 }
 
 // Update device count
@@ -639,6 +685,14 @@ function showAddDeviceModal() {
     document.getElementById('expected-status-code').value = '200';
     // Reset expected ports
     document.getElementById('expected-ports').value = '';
+    if (document.getElementById('monitored-services')) {
+        document.getElementById('monitored-services').value = '';
+        document.getElementById('cpu-threshold').value = '85';
+        document.getElementById('ram-threshold').value = '90';
+        document.getElementById('disk-threshold').value = '90';
+        document.getElementById('swap-threshold').value = '80';
+        document.getElementById('threshold-duration').value = '5';
+    }
     document.getElementById('device-note').value = '';
     renderPluginSettingsFields('ping', {});
     // Reset location type to default
@@ -674,6 +728,7 @@ function updateIPFieldLabel() {
     const sshSettings = document.getElementById('ssh-settings');
     const winrmSettings = document.getElementById('winrm-settings');
     const expectedPortsSettings = document.getElementById('expected-ports-settings');
+    const serverMonitoringSettings = document.getElementById('server-monitoring-settings');
     const pluginSettings = document.getElementById('plugin-settings');
 
     // Hide all optional settings first
@@ -684,6 +739,7 @@ function updateIPFieldLabel() {
     sshSettings.style.display = 'none';
     winrmSettings.style.display = 'none';
     if (expectedPortsSettings) expectedPortsSettings.style.display = 'none';
+    if (serverMonitoringSettings) serverMonitoringSettings.style.display = 'none';
     if (pluginSettings) pluginSettings.style.display = 'none';
 
     if (pluginMeta) {
@@ -728,6 +784,7 @@ function updateIPFieldLabel() {
         ipHint.textContent = 'Enter IP address for SSH monitoring';
         sshSettings.style.display = 'block';
         if (expectedPortsSettings) expectedPortsSettings.style.display = 'block';
+        if (serverMonitoringSettings) serverMonitoringSettings.style.display = 'block';
     } else if (monitorType === 'winrm') {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
@@ -735,6 +792,7 @@ function updateIPFieldLabel() {
         ipHint.textContent = 'Enter IP address for WinRM monitoring';
         winrmSettings.style.display = 'block';
         if (expectedPortsSettings) expectedPortsSettings.style.display = 'block';
+        if (serverMonitoringSettings) serverMonitoringSettings.style.display = 'block';
     } else {
         ipLabel.textContent = 'IP Address *';
         ipInput.placeholder = 'e.g., 192.168.1.1';
@@ -824,6 +882,16 @@ async function editDevice(deviceId) {
             // Load Expected Ports
             if (document.getElementById('expected-ports')) {
                 document.getElementById('expected-ports').value = device.expected_ports || '';
+            }
+            if (document.getElementById('monitored-services')) {
+                document.getElementById('monitored-services').value = device.monitored_services || '';
+            }
+            if (document.getElementById('cpu-threshold')) {
+                document.getElementById('cpu-threshold').value = device.cpu_threshold || 85;
+                document.getElementById('ram-threshold').value = device.ram_threshold || 90;
+                document.getElementById('disk-threshold').value = device.disk_threshold || 90;
+                document.getElementById('swap-threshold').value = device.swap_threshold || 80;
+                document.getElementById('threshold-duration').value = device.threshold_duration_minutes || 5;
             }
 
             // Load parent device
@@ -936,6 +1004,12 @@ async function saveDevice(event) {
             deviceData.ssh_password = getElementValue('ssh-password', '');
             deviceData.ssh_port = parseInt(getElementValue('ssh-port', '22')) || 22;
             deviceData.expected_ports = getElementValue('expected-ports', '');
+            deviceData.monitored_services = getElementValue('monitored-services', '');
+            deviceData.cpu_threshold = parseFloat(getElementValue('cpu-threshold', '85')) || 85;
+            deviceData.ram_threshold = parseFloat(getElementValue('ram-threshold', '90')) || 90;
+            deviceData.disk_threshold = parseFloat(getElementValue('disk-threshold', '90')) || 90;
+            deviceData.swap_threshold = parseFloat(getElementValue('swap-threshold', '80')) || 80;
+            deviceData.threshold_duration_minutes = parseInt(getElementValue('threshold-duration', '5')) || 5;
         }
 
         // Add WinRM (WMI) credentials if WinRM monitor type is selected
@@ -943,6 +1017,12 @@ async function saveDevice(event) {
             deviceData.wmi_username = getElementValue('winrm-username', '');
             deviceData.wmi_password = getElementValue('winrm-password', '');
             deviceData.expected_ports = getElementValue('expected-ports', '');
+            deviceData.monitored_services = getElementValue('monitored-services', '');
+            deviceData.cpu_threshold = parseFloat(getElementValue('cpu-threshold', '85')) || 85;
+            deviceData.ram_threshold = parseFloat(getElementValue('ram-threshold', '90')) || 90;
+            deviceData.disk_threshold = parseFloat(getElementValue('disk-threshold', '90')) || 90;
+            deviceData.swap_threshold = parseFloat(getElementValue('swap-threshold', '80')) || 80;
+            deviceData.threshold_duration_minutes = parseInt(getElementValue('threshold-duration', '5')) || 5;
         }
 
         if (pluginMonitorMetadata[monitorType]) {
@@ -2585,6 +2665,7 @@ let cpuChart = null;
 let ramChart = null;
 let diskChart = null;
 let networkChart = null;
+let diskPartitionCharts = [];
 
 /**
  * Show performance metrics for a device (CPU, RAM, Disk)
@@ -2602,12 +2683,16 @@ async function showPerformanceMetrics(deviceId) {
     if (ramChart) { ramChart.destroy(); ramChart = null; }
     if (diskChart) { diskChart.destroy(); diskChart = null; }
     if (networkChart) { networkChart.destroy(); networkChart = null; }
+    diskPartitionCharts.forEach(chart => chart.destroy());
+    diskPartitionCharts = [];
 
     await loadPerformanceData();
 }
 
 function closePerformanceModal() {
     document.getElementById('performance-modal').classList.remove('active');
+    diskPartitionCharts.forEach(chart => chart.destroy());
+    diskPartitionCharts = [];
     currentPerfDeviceId = null;
 }
 
@@ -2639,8 +2724,190 @@ async function loadPerformanceData() {
         }
 
         initPerformanceCharts(data);
+        renderDiskPartitionCharts(data.disk_partitions || []);
+        renderServerHealthDetails(data);
     } catch (error) {
         console.error('Error loading performance data:', error);
+    }
+}
+
+function renderDiskPartitionCharts(partitions) {
+    const section = document.getElementById('disk-partition-history-section');
+    const container = document.getElementById('disk-partition-charts');
+    if (!section || !container) return;
+
+    diskPartitionCharts.forEach(chart => chart.destroy());
+    diskPartitionCharts = [];
+    container.innerHTML = '';
+
+    const available = (partitions || []).filter(item => Array.isArray(item.history) && item.history.length);
+    section.style.display = available.length ? 'block' : 'none';
+    if (!available.length) return;
+
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    const textColor = theme === 'light' ? '#64748b' : 'rgba(255,255,255,0.65)';
+    const gridColor = theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+    const colors = ['#0f766e', '#2563eb', '#d97706', '#be123c', '#7c3aed', '#0891b2'];
+
+    available.forEach((partition, index) => {
+        const panel = document.createElement('div');
+        panel.className = 'card';
+        panel.style.padding = '1rem';
+
+        const title = document.createElement('h5');
+        title.style.cssText = 'margin:0 0 0.6rem; text-align:center; font-size:0.9rem;';
+        title.textContent = partition.mount || 'Disk';
+
+        const chartWrap = document.createElement('div');
+        chartWrap.style.cssText = 'height:151px; position:relative;';
+        const canvas = document.createElement('canvas');
+        chartWrap.appendChild(canvas);
+        panel.appendChild(title);
+        panel.appendChild(chartWrap);
+        container.appendChild(panel);
+
+        const color = colors[index % colors.length];
+        const points = partition.history.map(item => {
+            const raw = item.timestamp || item.sampled_at;
+            const normalized = typeof raw === 'string' && raw.includes(' ') ? raw.replace(' ', 'T') : raw;
+            return { x: new Date(normalized), y: Number(item.value) };
+        }).filter(point => !Number.isNaN(point.x.getTime()) && Number.isFinite(point.y));
+
+        const chart = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: partition.mount || 'Disk',
+                    data: points,
+                    borderColor: color,
+                    backgroundColor: `${color}24`,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: currentPerfHours <= 1 ? 'minute' : (currentPerfHours <= 24 ? 'hour' : 'day') },
+                        ticks: { color: textColor, font: { size: 9 } },
+                        grid: { color: gridColor }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        ticks: { color: textColor, callback: value => `${value}%` },
+                        grid: { color: gridColor }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: { label: context => `${partition.mount || 'Disk'}: ${context.parsed.y.toFixed(1)}%` }
+                    }
+                }
+            }
+        });
+        diskPartitionCharts.push(chart);
+    });
+}
+
+function formatPercentValue(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(1)}%` : 'N/A';
+}
+
+function formatDiskSize(kb) {
+    const num = Number(kb);
+    if (!Number.isFinite(num)) return 'N/A';
+    const gb = num / 1024 / 1024;
+    if (gb >= 1024) return `${(gb / 1024).toFixed(2)} TB`;
+    return `${gb.toFixed(1)} GB`;
+}
+
+function renderServerHealthDetails(data) {
+    const summary = document.getElementById('server-health-summary');
+    if (!summary) return;
+
+    const current = data.current || {};
+    const disks = current.disk_details || [];
+    const services = current.service_status || [];
+    const serviceSummary = current.service_summary || {};
+    const hasDetails = current.uptime_text || current.last_boot_time || disks.length || services.length ||
+        current.swap !== null || current.inode !== null || current.load1 !== null || current.pending_reboot !== null ||
+        Object.keys(serviceSummary).length;
+
+    summary.style.display = hasDetails ? 'block' : 'none';
+    if (!hasDetails) return;
+
+    const meta = document.getElementById('server-health-meta');
+    if (meta) {
+        const pills = [
+            current.uptime_text ? `Uptime: ${current.uptime_text}` : null,
+            current.last_boot_time ? `Last boot: ${current.last_boot_time}` : null,
+            current.swap !== null && current.swap !== undefined ? `Swap: ${formatPercentValue(current.swap)}` : null,
+            current.inode !== null && current.inode !== undefined ? `Max inode: ${formatPercentValue(current.inode)}` : null,
+            current.load1 !== null && current.load1 !== undefined ? `Load: ${Number(current.load1).toFixed(2)} / ${Number(current.load5 || 0).toFixed(2)} / ${Number(current.load15 || 0).toFixed(2)}` : null,
+            current.pending_reboot ? 'Pending reboot' : null
+        ].filter(Boolean);
+        meta.innerHTML = pills.map(text => `<span class="status-badge status-unknown">${escapeHtml(text)}</span>`).join('');
+    }
+
+    const diskWrap = document.getElementById('server-disk-details');
+    if (diskWrap) {
+        if (!disks.length) {
+            diskWrap.innerHTML = '<span class="text-muted">No disk details yet.</span>';
+        } else {
+            diskWrap.innerHTML = disks.map(disk => {
+                const label = disk.mount || disk.name || 'disk';
+                const used = formatPercentValue(disk.use_percent);
+                const size = formatDiskSize(disk.size_kb);
+                return `
+                    <div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color);">
+                        <span>${escapeHtml(label)}</span>
+                        <strong>${escapeHtml(used)} / ${escapeHtml(size)}</strong>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    const serviceWrap = document.getElementById('server-service-details');
+    if (serviceWrap) {
+        if (!services.length) {
+            if (Object.keys(serviceSummary).length) {
+                if (serviceSummary.source === 'selected') {
+                    serviceWrap.innerHTML = `<span class="text-muted">Monitored services: ${escapeHtml(serviceSummary.monitored || 0)}. Configure service names in Edit Device.</span>`;
+                } else {
+                    serviceWrap.innerHTML = `
+                        <div style="display: grid; gap: 0.35rem;">
+                            <div>Total: <strong>${escapeHtml(serviceSummary.total ?? '-')}</strong></div>
+                            <div>Running: <strong>${escapeHtml(serviceSummary.running ?? '-')}</strong></div>
+                            <div>Stopped: <strong>${escapeHtml(serviceSummary.stopped ?? '-')}</strong></div>
+                            ${serviceSummary.auto_stopped !== undefined ? `<div>Auto stopped: <strong>${escapeHtml(serviceSummary.auto_stopped)}</strong></div>` : ''}
+                        </div>
+                    `;
+                }
+            } else {
+                serviceWrap.innerHTML = '<span class="text-muted">No monitored services configured.</span>';
+            }
+        } else {
+            serviceWrap.innerHTML = services.map(service => {
+                const ok = !!service.ok;
+                const cls = ok ? 'status-up' : 'status-down';
+                return `
+                    <div style="display: flex; justify-content: space-between; gap: 1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--border-color);">
+                        <span>${escapeHtml(service.name || '-')}</span>
+                        <span class="status-badge ${cls}">${escapeHtml(service.status || 'unknown')}</span>
+                    </div>
+                `;
+            }).join('');
+        }
     }
 }
 

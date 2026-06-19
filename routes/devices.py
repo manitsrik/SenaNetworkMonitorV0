@@ -5,6 +5,8 @@ from flask import Blueprint, jsonify, request, Response, current_app, session
 import csv
 import io
 import os
+import json
+from datetime import datetime
 from .auth import login_required, operator_required
 from .audit import log_audit
 
@@ -33,6 +35,50 @@ def _read_device_note(device_id):
     except Exception:
         current_app.logger.exception('Failed to read note for device %s', device_id)
         return ''
+
+
+def _simple_pdf(lines):
+    """Create a dependency-free, text-based PDF document."""
+    def pdf_text(value):
+        text = str(value).encode('latin-1', 'replace').decode('latin-1')
+        return text.replace('\\', '\\\\').replace('(', '\\(').replace(')', '\\)')
+
+    pages = [lines[index:index + 52] for index in range(0, len(lines), 52)] or [[]]
+    objects = {
+        1: b'<< /Type /Catalog /Pages 2 0 R >>',
+        3: b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    }
+    page_refs = []
+    for index, page_lines in enumerate(pages):
+        page_id = 4 + index * 2
+        content_id = page_id + 1
+        page_refs.append(f'{page_id} 0 R')
+        stream_lines = ['BT', '/F1 10 Tf', '45 800 Td', '14 TL']
+        for line in page_lines:
+            stream_lines.extend([f'({pdf_text(line)}) Tj', 'T*'])
+        stream_lines.append('ET')
+        stream = '\n'.join(stream_lines).encode('latin-1')
+        objects[page_id] = (
+            f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] '
+            f'/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>'
+        ).encode('ascii')
+        objects[content_id] = f'<< /Length {len(stream)} >>\nstream\n'.encode('ascii') + stream + b'\nendstream'
+    objects[2] = f'<< /Type /Pages /Kids [{" ".join(page_refs)}] /Count {len(pages)} >>'.encode('ascii')
+
+    output = bytearray(b'%PDF-1.4\n')
+    offsets = [0] * (max(objects) + 1)
+    for object_id in sorted(objects):
+        offsets[object_id] = len(output)
+        output.extend(f'{object_id} 0 obj\n'.encode('ascii'))
+        output.extend(objects[object_id])
+        output.extend(b'\nendobj\n')
+    xref = len(output)
+    output.extend(f'xref\n0 {len(offsets)}\n'.encode('ascii'))
+    output.extend(b'0000000000 65535 f \n')
+    for offset in offsets[1:]:
+        output.extend(f'{offset:010d} 00000 n \n'.encode('ascii'))
+    output.extend(f'trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF'.encode('ascii'))
+    return bytes(output)
 
 
 def _write_device_note(device_id, note):
@@ -121,6 +167,12 @@ def add_device():
         wmi_username=data.get('wmi_username'),
         wmi_password=data.get('wmi_password'),
         expected_ports=data.get('expected_ports'),
+        monitored_services=data.get('monitored_services'),
+        cpu_threshold=data.get('cpu_threshold', 85),
+        ram_threshold=data.get('ram_threshold', 90),
+        disk_threshold=data.get('disk_threshold', 90),
+        swap_threshold=data.get('swap_threshold', 80),
+        threshold_duration_minutes=data.get('threshold_duration_minutes', 5),
         plugin_config_json=plugin_config_json
     )
     
@@ -214,6 +266,12 @@ def update_device(device_id):
         wmi_username=data.get('wmi_username', '__NOT_SET__'),
         wmi_password=data.get('wmi_password', '__NOT_SET__'),
         expected_ports=data.get('expected_ports', '__NOT_SET__'),
+        monitored_services=data.get('monitored_services', '__NOT_SET__'),
+        cpu_threshold=data.get('cpu_threshold', '__NOT_SET__'),
+        ram_threshold=data.get('ram_threshold', '__NOT_SET__'),
+        disk_threshold=data.get('disk_threshold', '__NOT_SET__'),
+        swap_threshold=data.get('swap_threshold', '__NOT_SET__'),
+        threshold_duration_minutes=data.get('threshold_duration_minutes', '__NOT_SET__'),
         plugin_config_json=plugin_config_json,
         **parent_kw
     )
@@ -307,21 +365,271 @@ def get_device_performance(device_id):
     """Get performance metrics history for a device"""
     hours = request.args.get('hours', 24, type=int)
     db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
     
     cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours)
     ram_history = db.get_system_metrics_history(device_id, 'ram', hours)
     disk_history = db.get_system_metrics_history(device_id, 'disk', hours)
+    swap_history = db.get_system_metrics_history(device_id, 'swap', hours)
+    inode_history = db.get_system_metrics_history(device_id, 'inode', hours)
+    load1_history = db.get_system_metrics_history(device_id, 'load1', hours)
+    load5_history = db.get_system_metrics_history(device_id, 'load5', hours)
+    load15_history = db.get_system_metrics_history(device_id, 'load15', hours)
     network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours)
     network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours)
+    disk_partition_history = db.get_disk_partition_history(device_id, hours)
+
+    def _json_field(name, fallback):
+        try:
+            raw = device.get(name)
+            return json.loads(raw) if raw else fallback
+        except Exception:
+            return fallback
     
     return jsonify({
         'device_id': device_id,
         'cpu': cpu_history,
         'ram': ram_history,
         'disk': disk_history,
+        'swap': swap_history,
+        'inode': inode_history,
+        'load1': load1_history,
+        'load5': load5_history,
+        'load15': load15_history,
         'network_in': network_in_history,
-        'network_out': network_out_history
+        'network_out': network_out_history,
+        'disk_partitions': disk_partition_history,
+        'current': {
+            'cpu': device.get('cpu_usage'),
+            'ram': device.get('ram_usage'),
+            'disk': device.get('disk_usage'),
+            'swap': device.get('swap_usage'),
+            'inode': device.get('inode_usage'),
+            'load1': device.get('load1'),
+            'load5': device.get('load5'),
+            'load15': device.get('load15'),
+            'pending_reboot': bool(device.get('pending_reboot')),
+            'uptime_text': device.get('server_uptime_text'),
+            'uptime_seconds': device.get('server_uptime_seconds'),
+            'last_boot_time': device.get('last_boot_time'),
+            'network_in_bps': device.get('network_in_bps'),
+            'network_out_bps': device.get('network_out_bps'),
+            'disk_details': _json_field('disk_details_json', []),
+            'service_status': _json_field('service_status_json', []),
+            'service_summary': _json_field('service_summary_json', {}),
+        },
+        'thresholds': {
+            'cpu': device.get('cpu_threshold', 85),
+            'ram': device.get('ram_threshold', 90),
+            'disk': device.get('disk_threshold', 90),
+            'swap': device.get('swap_threshold', 80),
+            'duration_minutes': device.get('threshold_duration_minutes', 5),
+        }
     })
+
+
+@devices_bp.route('/api/server-health', methods=['GET'])
+def get_server_health():
+    """Get server-focused health summary for SSH/WinRM monitored devices."""
+    devices = _get_db().get_all_devices()
+
+    def _json_field(device, name, fallback):
+        try:
+            raw = device.get(name)
+            return json.loads(raw) if raw else fallback
+        except Exception:
+            return fallback
+
+    servers = []
+    service_down = []
+    pending_reboot = []
+    disk_rows = []
+
+    for device in devices:
+        if device.get('monitor_type') not in ('ssh', 'winrm', 'wmi'):
+            continue
+        service_status = _json_field(device, 'service_status_json', [])
+        service_summary = _json_field(device, 'service_summary_json', {})
+        disk_details = _json_field(device, 'disk_details_json', [])
+        server = {
+            'id': device.get('id'),
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'monitor_type': device.get('monitor_type'),
+            'status': device.get('status'),
+            'cpu': device.get('cpu_usage'),
+            'ram': device.get('ram_usage'),
+            'disk': device.get('disk_usage'),
+            'swap': device.get('swap_usage'),
+            'inode': device.get('inode_usage'),
+            'load1': device.get('load1'),
+            'load5': device.get('load5'),
+            'load15': device.get('load15'),
+            'pending_reboot': bool(device.get('pending_reboot')),
+            'uptime_text': device.get('server_uptime_text'),
+            'last_boot_time': device.get('last_boot_time'),
+            'service_status': service_status,
+            'service_summary': service_summary,
+            'disk_details': disk_details,
+        }
+        servers.append(server)
+        if server['pending_reboot']:
+            pending_reboot.append(server)
+        for service in service_status:
+            if not service.get('ok'):
+                service_down.append({
+                    'device_id': server['id'],
+                    'device_name': server['name'],
+                    'service': service.get('name'),
+                    'status': service.get('status'),
+                })
+        for disk in disk_details:
+            disk_rows.append({
+                'device_id': server['id'],
+                'device_name': server['name'],
+                'mount': disk.get('mount') or disk.get('name'),
+                'use_percent': disk.get('use_percent'),
+                'size_kb': disk.get('size_kb'),
+            })
+
+    def _top(items, key, limit=10):
+        def value(item):
+            try:
+                return float(item.get(key))
+            except Exception:
+                return -1
+        return sorted([item for item in items if item.get(key) is not None], key=value, reverse=True)[:limit]
+
+    return jsonify({
+        'success': True,
+        'summary': {
+            'total_servers': len(servers),
+            'up': sum(1 for s in servers if s.get('status') == 'up'),
+            'slow': sum(1 for s in servers if s.get('status') == 'slow'),
+            'down': sum(1 for s in servers if s.get('status') == 'down'),
+            'pending_reboot': len(pending_reboot),
+            'service_down': len(service_down),
+        },
+        'servers': servers,
+        'top_cpu': _top(servers, 'cpu'),
+        'top_ram': _top(servers, 'ram'),
+        'top_disk': _top(disk_rows, 'use_percent'),
+        'service_down': service_down,
+        'pending_reboot': pending_reboot,
+    })
+
+
+@devices_bp.route('/api/server-health/export.csv', methods=['GET'])
+def export_server_health_csv():
+    """Export latest server metrics as CSV."""
+    db = _get_db()
+    devices = db.get_all_devices()
+
+    def _json_field(device, name, fallback):
+        try:
+            raw = device.get(name)
+            return json.loads(raw) if raw else fallback
+        except Exception:
+            return fallback
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'id', 'name', 'ip_address', 'monitor_type', 'status',
+        'cpu_usage', 'ram_usage', 'disk_usage', 'swap_usage', 'inode_usage',
+        'load1', 'load5', 'load15', 'pending_reboot',
+        'uptime', 'last_boot_time', 'services', 'disks'
+    ])
+
+    for device in devices:
+        if device.get('monitor_type') not in ('ssh', 'winrm', 'wmi'):
+            continue
+        services = _json_field(device, 'service_status_json', [])
+        disks = _json_field(device, 'disk_details_json', [])
+        service_text = '; '.join(f"{s.get('name')}={s.get('status')}" for s in services)
+        disk_text = '; '.join(f"{d.get('mount') or d.get('name')}={d.get('use_percent')}%" for d in disks)
+        writer.writerow([
+            device.get('id'), device.get('name'), device.get('ip_address'), device.get('monitor_type'), device.get('status'),
+            device.get('cpu_usage'), device.get('ram_usage'), device.get('disk_usage'), device.get('swap_usage'), device.get('inode_usage'),
+            device.get('load1'), device.get('load5'), device.get('load15'), device.get('pending_reboot'),
+            device.get('server_uptime_text'), device.get('last_boot_time'), service_text, disk_text
+        ])
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename=server_health.csv'}
+    )
+
+
+@devices_bp.route('/api/server-health/export.pdf', methods=['GET'])
+def export_server_health_pdf():
+    """Download the latest server-health snapshot as a PDF file."""
+    lines = ['SERVER HEALTH REPORT', datetime.now().strftime('Generated: %Y-%m-%d %H:%M:%S'), '']
+    servers = [
+        device for device in _get_db().get_all_devices()
+        if device.get('monitor_type') in ('ssh', 'winrm', 'wmi')
+    ]
+    lines.append(f'Total servers: {len(servers)}')
+    lines.append(f'Down: {sum(1 for device in servers if device.get("status") == "down")}')
+    lines.extend(['', 'SERVER DETAILS'])
+    for device in servers:
+        lines.append(
+            f'{device.get("name", "Unknown")} | {device.get("ip_address", "")} | '
+            f'{str(device.get("status", "unknown")).upper()} | CPU {device.get("cpu_usage", "-")}% | '
+            f'RAM {device.get("ram_usage", "-")}% | Disk {device.get("disk_usage", "-")}%'
+        )
+        try:
+            disks = json.loads(device.get('disk_details_json') or '[]')
+        except (TypeError, ValueError):
+            disks = []
+        for disk in disks:
+            lines.append(f'  Disk {disk.get("mount") or disk.get("name")}: {disk.get("use_percent", "-")}%')
+        try:
+            services = json.loads(device.get('service_status_json') or '[]')
+        except (TypeError, ValueError):
+            services = []
+        stopped = [service for service in services if not service.get('ok')]
+        for service in stopped:
+            lines.append(f'  SERVICE DOWN: {service.get("name")} ({service.get("status", "unknown")})')
+        if device.get('pending_reboot'):
+            lines.append('  PENDING REBOOT')
+    return Response(
+        _simple_pdf(lines), mimetype='application/pdf',
+        headers={'Content-Disposition': 'attachment; filename=server_health.pdf'},
+    )
+
+
+@devices_bp.route('/api/server-thresholds/apply', methods=['POST'])
+@operator_required
+def apply_server_thresholds_to_group():
+    """Bulk apply server thresholds by location or device type."""
+    data = request.get_json(silent=True) or {}
+    group_type = data.get('group_type')
+    group_value = str(data.get('group_value') or '').strip()
+    if group_type not in ('location', 'device_type') or not group_value:
+        return jsonify({'success': False, 'error': 'Group type and value are required'}), 400
+    try:
+        thresholds = {
+            'cpu': float(data.get('cpu', 85)), 'ram': float(data.get('ram', 90)),
+            'disk': float(data.get('disk', 90)), 'swap': float(data.get('swap', 80)),
+            'duration_minutes': max(1, int(data.get('duration_minutes', 5))),
+        }
+        if any(value < 0 or value > 100 for key, value in thresholds.items() if key != 'duration_minutes'):
+            raise ValueError('Thresholds must be between 0 and 100')
+    except (TypeError, ValueError) as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    result = _get_db().apply_server_thresholds_to_group(group_type, group_value, thresholds)
+    code = 200 if result.get('success') else 500
+    if result.get('success'):
+        log_audit('update', 'device', details={
+            'action': 'apply_group_thresholds', 'group_type': group_type,
+            'group_value': group_value, 'updated': result.get('updated'), **thresholds,
+        })
+    return jsonify(result), code
 
 @devices_bp.route('/api/devices/<int:device_id>/ports', methods=['GET'])
 def get_device_ports(device_id):

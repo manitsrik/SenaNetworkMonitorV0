@@ -146,9 +146,8 @@ def monitor_devices():
     return results
 
 def scheduled_daily_report():
-    """Background task to send daily status report"""
-    print("Running scheduled daily report...")
-    report_generator.run_daily_report()
+    """Check whether network or server-health reports are due."""
+    report_generator.run_scheduled_reports()
 
 def scheduled_data_cleanup():
     """Background task to clean up old data"""
@@ -169,14 +168,19 @@ def check_alert_escalations():
         minutes = 15
         
     devices_to_escalate = db.get_devices_for_escalation(minutes)
-    if not devices_to_escalate:
-        return
-        
-    print(f"Running scheduled escalation check: found {len(devices_to_escalate)} devices ready for escalation...")
+    resource_alerts = db.get_resource_alerts_for_escalation(minutes)
+    if devices_to_escalate:
+        print(f"Running scheduled escalation check: found {len(devices_to_escalate)} devices ready for escalation...")
     for device in devices_to_escalate:
         success = alerter.trigger_escalated_alert(device, minutes)
         if success:
             db.mark_device_escalated(device['id'])
+    if resource_alerts:
+        print(f"Running resource escalation check: found {len(resource_alerts)} active conditions...")
+    for condition in resource_alerts:
+        success = alerter.trigger_resource_escalated_alert(condition, minutes)
+        if success:
+            db.mark_resource_alert_escalated(condition['device_id'], condition['event_type'])
 
 def check_custom_reports_schedule():
     """Background task to generate and send custom reports according to their schedule"""
@@ -313,8 +317,8 @@ task_scheduler.add_task('incident_materialize', 'Incident Materialization', mate
                         trigger='interval', minutes=1)
 task_scheduler.add_task('anomaly_detection', 'Anomaly Detection', materialize_anomalies,
                         trigger='interval', minutes=5)
-task_scheduler.add_task('daily_report', 'Daily Report', scheduled_daily_report,
-                        trigger='cron', hour=8, minute=0)
+task_scheduler.add_task('scheduled_reports', 'Scheduled Reports', scheduled_daily_report,
+                        trigger='interval', minutes=1)
 task_scheduler.add_task('cleanup', 'Data Cleanup', scheduled_data_cleanup,
                         trigger='cron', hour=3, minute=0)
 

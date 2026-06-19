@@ -3,9 +3,16 @@
  * Handles alert settings configuration
  */
 
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+}
+
 // Load settings on page load
 document.addEventListener('DOMContentLoaded', function () {
     loadSettings();
+    loadThresholdGroups();
     loadLDAPSettings();
     loadAlertHistory();
 });
@@ -55,6 +62,10 @@ async function loadSettings() {
         document.getElementById('reports_enabled').checked = settings.reports_enabled === 'true';
         document.getElementById('report_time').value = settings.report_time || '08:00';
         document.getElementById('report_recipient').value = settings.report_recipient || '';
+        document.getElementById('server_reports_enabled').checked = settings.server_reports_enabled === 'true';
+        document.getElementById('server_report_frequency').value = settings.server_report_frequency || 'daily';
+        document.getElementById('server_report_weekday').value = settings.server_report_weekday || '0';
+        document.getElementById('server_report_recipient').value = settings.server_report_recipient || '';
 
     } catch (error) {
         console.error('Error loading settings:', error);
@@ -103,7 +114,11 @@ async function saveSettings() {
         // Reports
         reports_enabled: document.getElementById('reports_enabled').checked.toString(),
         report_time: document.getElementById('report_time').value,
-        report_recipient: document.getElementById('report_recipient').value
+        report_recipient: document.getElementById('report_recipient').value,
+        server_reports_enabled: document.getElementById('server_reports_enabled').checked.toString(),
+        server_report_frequency: document.getElementById('server_report_frequency').value,
+        server_report_weekday: document.getElementById('server_report_weekday').value,
+        server_report_recipient: document.getElementById('server_report_recipient').value
     };
 
     try {
@@ -442,6 +457,67 @@ async function sendTestReport() {
     } catch (error) {
         console.error('Error sending test report:', error);
         showAlert('Error sending test report', 'danger');
+    }
+}
+
+async function sendTestServerReport() {
+    await saveSettings();
+    showAlert('Generating and sending server health report...', 'info');
+    try {
+        const response = await fetch('/api/reports/test-server-health', { method: 'POST' });
+        const result = await response.json();
+        showAlert(result.success ? 'Server health report sent successfully!' : 'Report failed: ' + (result.error || 'Unknown error'), result.success ? 'success' : 'danger');
+    } catch (error) {
+        console.error('Error sending server health report:', error);
+        showAlert('Error sending server health report', 'danger');
+    }
+}
+
+async function loadThresholdGroups() {
+    try {
+        const devices = await fetch('/api/devices').then(response => response.json());
+        window.thresholdGroupDevices = Array.isArray(devices)
+            ? devices.filter(device => ['ssh', 'winrm', 'wmi'].includes(device.monitor_type))
+            : [];
+        updateThresholdGroupValues();
+    } catch (error) {
+        console.error('Error loading threshold groups:', error);
+    }
+}
+
+function updateThresholdGroupValues() {
+    const type = document.getElementById('threshold_group_type').value;
+    const select = document.getElementById('threshold_group_value');
+    const values = [...new Set((window.thresholdGroupDevices || [])
+        .map(device => device[type]).filter(Boolean))].sort();
+    select.innerHTML = values.length
+        ? values.map(value => `<option value="${escapeHtml(String(value))}">${escapeHtml(String(value))}</option>`).join('')
+        : '<option value="">No server groups found</option>';
+}
+
+async function applyGroupThresholds() {
+    const payload = {
+        group_type: document.getElementById('threshold_group_type').value,
+        group_value: document.getElementById('threshold_group_value').value,
+        cpu: document.getElementById('group_cpu_threshold').value,
+        ram: document.getElementById('group_ram_threshold').value,
+        disk: document.getElementById('group_disk_threshold').value,
+        swap: document.getElementById('group_swap_threshold').value,
+        duration_minutes: document.getElementById('group_threshold_duration').value
+    };
+    if (!payload.group_value) {
+        showAlert('Select a server group first', 'danger');
+        return;
+    }
+    try {
+        const response = await fetch('/api/server-thresholds/apply', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        showAlert(result.success ? `Thresholds applied to ${result.updated} server(s)` : `Failed: ${result.error}`, result.success ? 'success' : 'danger');
+    } catch (error) {
+        console.error('Error applying group thresholds:', error);
+        showAlert('Error applying group thresholds', 'danger');
     }
 }
 

@@ -264,6 +264,9 @@ window.DashboardRenderer = {
                 case 'network_traffic':
                     this.renderNetworkTraffic(container, widget, widgetData, index);
                     break;
+                case 'server_health':
+                    this.renderServerHealth(container, widget, widgetData);
+                    break;
                 case 'trends':
                     // Silent update (already fetches internally)
                     this.renderResponseTrends(container, widget, widgetData, index);
@@ -332,6 +335,9 @@ window.DashboardRenderer = {
                     break;
                 case 'network_traffic':
                     this.renderNetworkTraffic(container, widget, widgetData, index);
+                    break;
+                case 'server_health':
+                    this.renderServerHealth(container, widget, widgetData);
                     break;
                 default:
                     container.innerHTML = `<p class="text-muted">Unknown widget type: ${widget.type}</p>`;
@@ -3033,6 +3039,38 @@ window.DashboardRenderer = {
         }
     },
 
+    renderServerHealth: function (container, widget, data) {
+        const health = (data && data.serverHealth) || {};
+        const summary = health.summary || {};
+        const top = (health.top_disk || []).slice(0, 4);
+        const services = (health.service_down || []).slice(0, 4);
+        const metric = (label, value, color) => `
+            <div style="padding:0.55rem;border:1px solid var(--border-color);border-radius:0.35rem;min-width:0;">
+                <div style="font-size:0.72rem;color:var(--text-muted);">${label}</div>
+                <strong style="font-size:1.35rem;color:${color || 'var(--text-primary)'};">${value ?? '-'}</strong>
+            </div>`;
+        const diskRows = top.map(row => `
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border-color);font-size:0.78rem;">
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${this.escapeHtml(row.device_name || '')} ${this.escapeHtml(row.mount || '')}</span>
+                <strong>${Number(row.use_percent || 0).toFixed(1)}%</strong>
+            </div>`).join('') || '<div class="text-muted" style="font-size:0.78rem;">No disk data</div>';
+        const serviceRows = services.map(row => `
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border-color);font-size:0.78rem;">
+                <span>${this.escapeHtml(row.device_name || '')}</span><strong style="color:var(--danger);">${this.escapeHtml(row.service || '')}</strong>
+            </div>`).join('') || '<div class="text-muted" style="font-size:0.78rem;">All monitored services running</div>';
+        container.innerHTML = `
+            <div style="width:100%;height:100%;overflow:auto;padding:0.25rem;">
+                <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.45rem;margin-bottom:0.6rem;">
+                    ${metric('Servers', summary.total_servers)}${metric('Down', summary.down, 'var(--danger)')}
+                    ${metric('Service Down', summary.service_down, 'var(--warning)')}${metric('Pending Reboot', summary.pending_reboot, 'var(--warning)')}
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                    <div><strong style="font-size:0.8rem;">Top Disk</strong>${diskRows}</div>
+                    <div><strong style="font-size:0.8rem;">Service Down</strong>${serviceRows}</div>
+                </div>
+            </div>`;
+    },
+
     setSystemMetricsRange: function (index, range, btn) {
         const parent = btn.parentElement;
         parent.querySelectorAll('button').forEach(b => {
@@ -3065,6 +3103,7 @@ function getWidgetDefaultTitle(type) {
         case 'activity': return 'Recent Activity';
         case 'bandwidth': return 'Top Bandwidth';
         case 'network_traffic': return 'Network Traffic';
+        case 'server_health': return 'Server Health';
         default: return 'Widget';
     }
 }

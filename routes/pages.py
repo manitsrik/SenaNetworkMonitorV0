@@ -56,6 +56,13 @@ def devices():
     )
 
 
+@pages_bp.route('/server-health')
+@login_required
+def server_health():
+    """Server-focused health dashboard."""
+    return render_template('server_health.html')
+
+
 @pages_bp.route('/history')
 @login_required
 def history():

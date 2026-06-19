@@ -15,6 +15,7 @@ import socket
 import threading
 import sys
 import ssl
+import json
 
 # Remote monitoring imports
 try:
@@ -722,7 +723,14 @@ class NetworkMonitor:
                 'syscontact': None
             }
 
-    def check_ssh(self, ip_address, username, password, port=22):
+    def _parse_monitored_services(self, value):
+        if not value:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [str(v).strip() for v in value if str(v).strip()]
+        return [part.strip() for part in str(value).replace('\n', ',').split(',') if part.strip()]
+
+    def check_ssh(self, ip_address, username, password, port=22, monitored_services=None):
         """
         Check a Linux device via SSH and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -731,7 +739,14 @@ class NetworkMonitor:
             return {'status': 'down', 'response_time': None, 'error': 'Paramiko not installed'}
         
         start_time = time.time()
-        result = {'cpu': None, 'ram': None, 'disk': None, 'net_in': None, 'net_out': None}
+        service_names = self._parse_monitored_services(monitored_services)
+        result = {
+            'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
+            'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
+            'net_in': None, 'net_out': None, 'uptime_seconds': None,
+            'uptime_text': None, 'last_boot_time': None,
+            'disk_details': [], 'service_status': [], 'service_summary': None
+        }
         
         def _ssh_task():
             client = paramiko.SSHClient()
@@ -743,8 +758,11 @@ class NetworkMonitor:
                 _, stdout, _ = client.exec_command("grep -c ^processor /proc/cpuinfo && uptime")
                 out = stdout.read().decode().strip().split('\n')
                 cores = int(out[0]) if out[0].isdigit() else 1
-                load = float(out[1].split('load average:')[1].split(',')[0].strip())
-                result['cpu'] = min(100.0, round((load / cores) * 100, 2))
+                loads = [float(v.strip()) for v in out[1].split('load average:')[1].split(',')[:3]]
+                result['load1'] = loads[0]
+                result['load5'] = loads[1] if len(loads) > 1 else None
+                result['load15'] = loads[2] if len(loads) > 2 else None
+                result['cpu'] = min(100.0, round((result['load1'] / cores) * 100, 2))
                 
                 # Get RAM Usage
                 _, stdout, _ = client.exec_command("free -m | grep Mem")
@@ -754,11 +772,65 @@ class NetworkMonitor:
                 used_ram = int(out[2])
                 result['ram'] = round((used_ram / total_ram) * 100, 2)
                 
-                # Get Disk Usage (Root partition)
-                _, stdout, _ = client.exec_command("df -h / | tail -1")
+                # Get Disk Usage (all real local filesystems)
+                disk_cmd = "df -P -k -l -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs | tail -n +2"
+                _, stdout, _ = client.exec_command(disk_cmd)
+                disk_rows = []
+                for line in stdout.read().decode().strip().splitlines():
+                    parts = line.split()
+                    if len(parts) < 6:
+                        continue
+                    try:
+                        use_percent = float(parts[4].replace('%', ''))
+                    except ValueError:
+                        continue
+                    disk_rows.append({
+                        'name': parts[0],
+                        'size_kb': int(parts[1]),
+                        'used_kb': int(parts[2]),
+                        'avail_kb': int(parts[3]),
+                        'use_percent': use_percent,
+                        'mount': parts[5]
+                    })
+                result['disk_details'] = disk_rows
+                if disk_rows:
+                    root_disk = next((d for d in disk_rows if d.get('mount') == '/'), None)
+                    result['disk'] = root_disk['use_percent'] if root_disk else max(d['use_percent'] for d in disk_rows)
+
+                # Get Swap Usage
+                _, stdout, _ = client.exec_command("free -m | awk '/^Swap:/ {print $2, $3}'")
                 out = stdout.read().decode().strip().split()
-                # Filesystem Size Used Avail Use% Mounted
-                result['disk'] = float(out[4].replace('%', ''))
+                if len(out) >= 2:
+                    total_swap = int(out[0])
+                    used_swap = int(out[1])
+                    result['swap'] = round((used_swap / total_swap) * 100, 2) if total_swap > 0 else 0.0
+
+                # Get max inode usage across local filesystems
+                inode_cmd = "df -Pi -l -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs | awk 'NR>1 {gsub(/%/, \"\", $5); print $5}'"
+                _, stdout, _ = client.exec_command(inode_cmd)
+                inode_vals = []
+                for item in stdout.read().decode().strip().split():
+                    try:
+                        inode_vals.append(float(item))
+                    except ValueError:
+                        pass
+                if inode_vals:
+                    result['inode'] = max(inode_vals)
+
+                # Get uptime and boot time
+                _, stdout, _ = client.exec_command("cat /proc/uptime | awk '{print int($1)}'")
+                uptime_raw = stdout.read().decode().strip()
+                if uptime_raw.isdigit():
+                    uptime_seconds = int(uptime_raw)
+                    result['uptime_seconds'] = uptime_seconds
+                    days, rem = divmod(uptime_seconds, 86400)
+                    hours, rem = divmod(rem, 3600)
+                    minutes, _ = divmod(rem, 60)
+                    result['uptime_text'] = f"{days}d {hours}h {minutes}m"
+                _, stdout, _ = client.exec_command("uptime -s 2>/dev/null || who -b | awk '{print $3 \" \" $4}'")
+                boot = stdout.read().decode().strip()
+                if boot:
+                    result['last_boot_time'] = boot
                 
                 # Get Network Traffic (Total excluding loopback)
                 _, stdout, _ = client.exec_command("cat /proc/net/dev | awk 'NR>2 && $1 != \"lo:\" {i+=$2; o+=$10} END {print i, o}'")
@@ -766,6 +838,29 @@ class NetworkMonitor:
                 if len(out) >= 2:
                     result['net_in'] = int(out[0])
                     result['net_out'] = int(out[1])
+
+                # Get service/process status for user-selected names.
+                for service_name in service_names:
+                    safe_name = service_name.replace("'", "'\"'\"'")
+                    cmd = (
+                        f"if command -v systemctl >/dev/null 2>&1; then "
+                        f"systemctl is-active '{safe_name}' 2>/dev/null; "
+                        f"else pgrep -x '{safe_name}' >/dev/null 2>&1 && echo active || echo inactive; fi"
+                    )
+                    _, stdout, _ = client.exec_command(cmd)
+                    state = stdout.read().decode().strip().splitlines()
+                    status = state[0].strip() if state else 'unknown'
+                    result['service_status'].append({
+                        'name': service_name,
+                        'status': status or 'unknown',
+                        'ok': status in ('active', 'running')
+                    })
+                result['service_summary'] = {
+                    'monitored': len(result['service_status']),
+                    'running': sum(1 for s in result['service_status'] if s.get('ok')),
+                    'stopped': sum(1 for s in result['service_status'] if not s.get('ok')),
+                    'source': 'selected'
+                }
                 
                 client.close()
                 return True
@@ -786,8 +881,20 @@ class NetworkMonitor:
                     'cpu': result['cpu'],
                     'ram': result['ram'],
                     'disk': result['disk'],
+                    'swap': result['swap'],
+                    'inode': result['inode'],
+                    'load1': result['load1'],
+                    'load5': result['load5'],
+                    'load15': result['load15'],
+                    'pending_reboot': result['pending_reboot'],
                     'net_in': result['net_in'],
-                    'net_out': result['net_out']
+                    'net_out': result['net_out'],
+                    'uptime_seconds': result['uptime_seconds'],
+                    'uptime_text': result['uptime_text'],
+                    'last_boot_time': result['last_boot_time'],
+                    'disk_details': result['disk_details'],
+                    'service_status': result['service_status'],
+                    'service_summary': result['service_summary']
                 }
             else:
                 return {'status': 'down', 'response_time': None}
@@ -923,7 +1030,7 @@ class NetworkMonitor:
             return {'success': True, 'ports': ports}
         return {'success': False, 'error': 'Connection failed or timeout'}
 
-    def check_winrm(self, ip_address, username, password):
+    def check_winrm(self, ip_address, username, password, monitored_services=None):
         """
         Check a Windows device via WinRM and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -932,7 +1039,14 @@ class NetworkMonitor:
             return {'status': 'down', 'response_time': None, 'error': 'pywinrm not installed'}
             
         start_time = time.time()
-        result = {'cpu': None, 'ram': None, 'disk': None, 'net_in': None, 'net_out': None}
+        service_names = self._parse_monitored_services(monitored_services)
+        result = {
+            'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
+            'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
+            'net_in': None, 'net_out': None, 'uptime_seconds': None,
+            'uptime_text': None, 'last_boot_time': None,
+            'disk_details': [], 'service_status': [], 'service_summary': None
+        }
         
         def _winrm_task():
             try:
@@ -952,11 +1066,83 @@ class NetworkMonitor:
                 if r.status_code == 0:
                     result['ram'] = float(r.std_out.decode().strip())
                     
-                # Get Disk Usage (C: Drive)
-                ps_disk = "$d = Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\"; [math]::Round((($d.Size - $d.FreeSpace) / $d.Size) * 100, 2)"
-                r = session.run_ps(ps_disk)
+                # Get Disk Usage (all fixed drives)
+                ps_disks = '''
+                $disks = Get-WmiObject Win32_LogicalDisk -Filter "DriveType=3" | ForEach-Object {
+                    $used = $_.Size - $_.FreeSpace
+                    [PSCustomObject]@{
+                        name = $_.DeviceID
+                        mount = $_.DeviceID
+                        size_kb = [math]::Round($_.Size / 1KB)
+                        used_kb = [math]::Round($used / 1KB)
+                        avail_kb = [math]::Round($_.FreeSpace / 1KB)
+                        use_percent = if ($_.Size -gt 0) { [math]::Round(($used / $_.Size) * 100, 2) } else { 0 }
+                    }
+                }
+                $disks | ConvertTo-Json -Compress
+                '''
+                r = session.run_ps(ps_disks)
                 if r.status_code == 0:
+                    output = r.std_out.decode().strip()
+                    if output:
+                        try:
+                            disks = json.loads(output)
+                            if isinstance(disks, dict):
+                                disks = [disks]
+                            result['disk_details'] = disks
+                            if disks:
+                                c_drive = next((d for d in disks if str(d.get('name', '')).upper() == 'C:'), None)
+                                chosen = c_drive or max(disks, key=lambda d: float(d.get('use_percent') or 0))
+                                result['disk'] = float(chosen.get('use_percent') or 0)
+                        except Exception as e:
+                            print(f"[WinRM] Disk parse error for {ip_address}: {e}")
+
+                # Legacy C: fallback
+                ps_disk = "$d = Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\"; if ($d -and $d.Size -gt 0) { [math]::Round((($d.Size - $d.FreeSpace) / $d.Size) * 100, 2) }"
+                r = session.run_ps(ps_disk)
+                if r.status_code == 0 and result['disk'] is None and r.std_out.decode().strip():
                     result['disk'] = float(r.std_out.decode().strip())
+
+                # Get uptime and last boot time
+                ps_uptime = '''
+                $os = Get-WmiObject Win32_OperatingSystem
+                $boot = $os.ConvertToDateTime($os.LastBootUpTime)
+                $uptime = New-TimeSpan -Start $boot -End (Get-Date)
+                [PSCustomObject]@{
+                    uptime_seconds = [int64]$uptime.TotalSeconds
+                    uptime_text = ("{0}d {1}h {2}m" -f $uptime.Days, $uptime.Hours, $uptime.Minutes)
+                    last_boot_time = $boot.ToString("yyyy-MM-dd HH:mm:ss")
+                } | ConvertTo-Json -Compress
+                '''
+                r = session.run_ps(ps_uptime)
+                if r.status_code == 0:
+                    output = r.std_out.decode().strip()
+                    if output:
+                        try:
+                            uptime = json.loads(output)
+                            result['uptime_seconds'] = uptime.get('uptime_seconds')
+                            result['uptime_text'] = uptime.get('uptime_text')
+                            result['last_boot_time'] = uptime.get('last_boot_time')
+                        except Exception as e:
+                            print(f"[WinRM] Uptime parse error for {ip_address}: {e}")
+
+                # Detect pending reboot using common Windows registry indicators.
+                ps_pending_reboot = '''
+                $paths = @(
+                  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending',
+                  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired',
+                  'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager'
+                )
+                $pending = $false
+                if (Test-Path $paths[0]) { $pending = $true }
+                if (Test-Path $paths[1]) { $pending = $true }
+                $sm = Get-ItemProperty -Path $paths[2] -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
+                if ($sm.PendingFileRenameOperations) { $pending = $true }
+                if ($pending) { 'true' } else { 'false' }
+                '''
+                r = session.run_ps(ps_pending_reboot)
+                if r.status_code == 0:
+                    result['pending_reboot'] = r.std_out.decode().strip().lower() == 'true'
                 
                 # Get Network Traffic (Sum of all adapters) - Using more universal WMI class
                 ps_net = "$n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface; $in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; $out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; \"$in $out\""
@@ -966,6 +1152,56 @@ class NetworkMonitor:
                     if len(parts) >= 2:
                         result['net_in'] = int(parts[0])
                         result['net_out'] = int(parts[1])
+
+                # Get selected Windows service status
+                if service_names:
+                    ps_array = '@(' + ','.join("'" + name.replace("'", "''") + "'" for name in service_names) + ')'
+                    ps_services = f'''
+                    $names = {ps_array}
+                    $result = @()
+                    foreach ($name in $names) {{
+                        $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
+                        if (-not $svc) {{ $svc = Get-Service -DisplayName $name -ErrorAction SilentlyContinue }}
+                        if ($svc) {{
+                            $result += [PSCustomObject]@{{ name = $name; status = [string]$svc.Status; ok = ($svc.Status -eq 'Running') }}
+                        }} else {{
+                            $result += [PSCustomObject]@{{ name = $name; status = 'not_found'; ok = $false }}
+                        }}
+                    }}
+                    $result | ConvertTo-Json -Compress
+                    '''
+                    r = session.run_ps(ps_services)
+                    if r.status_code == 0:
+                        output = r.std_out.decode().strip()
+                        if output:
+                            try:
+                                services = json.loads(output)
+                                if isinstance(services, dict):
+                                    services = [services]
+                                result['service_status'] = services
+                            except Exception as e:
+                                print(f"[WinRM] Service parse error for {ip_address}: {e}")
+
+                # Windows service summary for quick server-health scanning.
+                ps_service_summary = '''
+                $all = Get-Service
+                $autoStopped = Get-WmiObject Win32_Service | Where-Object { $_.StartMode -eq 'Auto' -and $_.State -ne 'Running' }
+                [PSCustomObject]@{
+                    total = @($all).Count
+                    running = @($all | Where-Object { $_.Status -eq 'Running' }).Count
+                    stopped = @($all | Where-Object { $_.Status -eq 'Stopped' }).Count
+                    auto_stopped = @($autoStopped).Count
+                    source = 'windows'
+                } | ConvertTo-Json -Compress
+                '''
+                r = session.run_ps(ps_service_summary)
+                if r.status_code == 0:
+                    output = r.std_out.decode().strip()
+                    if output:
+                        try:
+                            result['service_summary'] = json.loads(output)
+                        except Exception as e:
+                            print(f"[WinRM] Service summary parse error for {ip_address}: {e}")
                 
                 return True
             except Exception as e:
@@ -984,8 +1220,20 @@ class NetworkMonitor:
                     'cpu': result['cpu'],
                     'ram': result['ram'],
                     'disk': result['disk'],
+                    'swap': result['swap'],
+                    'inode': result['inode'],
+                    'load1': result['load1'],
+                    'load5': result['load5'],
+                    'load15': result['load15'],
+                    'pending_reboot': result['pending_reboot'],
                     'net_in': result['net_in'],
-                    'net_out': result['net_out']
+                    'net_out': result['net_out'],
+                    'uptime_seconds': result['uptime_seconds'],
+                    'uptime_text': result['uptime_text'],
+                    'last_boot_time': result['last_boot_time'],
+                    'disk_details': result['disk_details'],
+                    'service_status': result['service_status'],
+                    'service_summary': result['service_summary']
                 }
             else:
                 return {'status': 'down', 'response_time': None}
@@ -1011,6 +1259,119 @@ class NetworkMonitor:
             err_msg = ports_res.get('error', 'Failed to fetch ports metadata')
             result['error'] = f"Port check failed: {err_msg}"
             print(f"[PORTS] {device['name']} port check failed: {err_msg}")
+
+    def _verify_monitored_services(self, device, result):
+        """Mark a server down when selected services are missing or stopped."""
+        services = result.get('service_status') or []
+        bad = [str(s.get('name')) for s in services if not s.get('ok')]
+        if bad:
+            result['status'] = 'down'
+            err_msg = f"Services not running: {', '.join(bad)}"
+            result['error'] = err_msg
+            if self.alerter:
+                self.alerter.trigger_alert(device, 'service_down', err_msg)
+            print(f"[SERVICES] {device['name']} service issue: {bad}")
+
+    def _threshold_value(self, device, key, default):
+        try:
+            value = device.get(key)
+            return float(value) if value is not None and str(value).strip() != '' else default
+        except Exception:
+            return default
+
+    def _threshold_duration_minutes(self, device):
+        try:
+            return max(1, int(device.get('threshold_duration_minutes') or 5))
+        except Exception:
+            return 5
+
+    def _parse_metric_timestamp(self, value):
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None)
+        if not value:
+            return None
+        text = str(value).replace('Z', '+00:00')
+        try:
+            parsed = datetime.fromisoformat(text)
+            return parsed.replace(tzinfo=None)
+        except Exception:
+            pass
+        try:
+            return datetime.strptime(str(value).split('.')[0], '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return None
+
+    def _metric_sustained_above(self, device_id, metric_type, threshold, duration_minutes):
+        rows = self.db.get_system_metric_values_since(device_id, metric_type, duration_minutes)
+        if not rows:
+            return False
+        values = []
+        for row in rows:
+            try:
+                values.append(float(row.get('value')))
+            except Exception:
+                return False
+        if not values or any(value < threshold for value in values):
+            return False
+        if duration_minutes <= 1:
+            return True
+        oldest = self._parse_metric_timestamp(rows[0].get('timestamp'))
+        if not oldest:
+            return len(rows) >= 2
+        age_seconds = (datetime.now() - oldest).total_seconds()
+        return age_seconds >= (duration_minutes * 60 * 0.8)
+
+    def _check_resource_threshold_alerts(self, device, result):
+        """Trigger simple rule-based alerts for server resources."""
+        if not self.alerter or result.get('status') == 'down':
+            return
+        checks = [
+            ('cpu', 'CPU', result.get('cpu'), self._threshold_value(device, 'cpu_threshold', 85)),
+            ('ram', 'RAM', result.get('ram'), self._threshold_value(device, 'ram_threshold', 90)),
+            ('disk', 'Disk', result.get('disk'), self._threshold_value(device, 'disk_threshold', 90)),
+            ('swap', 'Swap', result.get('swap'), self._threshold_value(device, 'swap_threshold', 80)),
+        ]
+        duration_minutes = self._threshold_duration_minutes(device)
+        for metric_key, label, value, threshold in checks:
+            if value is None:
+                continue
+            try:
+                numeric_value = float(value)
+            except Exception:
+                continue
+            event_type = f'resource_{metric_key}'
+            active = numeric_value >= threshold and self._metric_sustained_above(
+                device.get('id'), metric_key, threshold, duration_minutes
+            )
+            message = f"{label} usage is {numeric_value:.1f}% (threshold {threshold:.1f}%) for at least {duration_minutes} minute(s)."
+            self.db.sync_resource_alert_state(device.get('id'), event_type, active, message)
+            if active:
+                self.alerter.trigger_alert(
+                    device,
+                    event_type,
+                    message
+                )
+
+        for disk_item in result.get('disk_details') or []:
+            try:
+                usage = float(disk_item.get('use_percent'))
+            except Exception:
+                continue
+            threshold = self._threshold_value(device, 'disk_threshold', 90)
+            mount = disk_item.get('mount') or disk_item.get('name') or 'disk'
+            metric_name = f"disk:{str(mount).strip()[:120]}"
+            event_type = f"resource_disk_{str(mount).replace(' ', '_')[:40]}"
+            active = usage >= threshold and self._metric_sustained_above(
+                device.get('id'), metric_name, threshold, duration_minutes
+            )
+            message = f"Disk {mount} usage is {usage:.1f}% (threshold {threshold:.1f}%) for at least {duration_minutes} minute(s)."
+            self.db.sync_resource_alert_state(device.get('id'), event_type, active, message)
+            if active:
+                self.alerter.trigger_alert(
+                    device,
+                    event_type,
+                    message
+                )
     
     def check_device(self, device):
         """
@@ -1054,7 +1415,8 @@ class NetworkMonitor:
                 device['ip_address'], 
                 device.get('ssh_username'), 
                 device.get('ssh_password'),
-                device.get('ssh_port', 22)
+                device.get('ssh_port', 22),
+                device.get('monitored_services')
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1065,11 +1427,14 @@ class NetworkMonitor:
                     device.get('ssh_port', 22)
                 )
                 self._verify_expected_ports(device, result, ports_res)
+            if result.get('status') in ('up', 'slow') and device.get('monitored_services'):
+                self._verify_monitored_services(device, result)
         elif monitor_type == 'winrm' or monitor_type == 'wmi':
             result = self.check_winrm(
                 device['ip_address'], 
                 device.get('wmi_username'), 
-                device.get('wmi_password')
+                device.get('wmi_password'),
+                device.get('monitored_services')
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1079,6 +1444,8 @@ class NetworkMonitor:
                     device.get('wmi_password')
                 )
                 self._verify_expected_ports(device, result, ports_res)
+            if result.get('status') in ('up', 'slow') and device.get('monitored_services'):
+                self._verify_monitored_services(device, result)
         elif monitor_type == 'tcp':
             tcp_port = device.get('tcp_port', 80)
             result = self.check_tcp_port(device['ip_address'], tcp_port)
@@ -1162,8 +1529,31 @@ class NetworkMonitor:
                         network_in=net_in_bps,
                         network_out=net_out_bps,
                         raw_in=raw_in,
-                        raw_out=raw_out
+                        raw_out=raw_out,
+                        swap=result.get('swap'),
+                        inode=result.get('inode'),
+                        uptime_seconds=result.get('uptime_seconds'),
+                        uptime_text=result.get('uptime_text'),
+                        last_boot_time=result.get('last_boot_time'),
+                        disk_details=result.get('disk_details'),
+                        service_status=result.get('service_status'),
+                        load1=result.get('load1'),
+                        load5=result.get('load5'),
+                        load15=result.get('load15'),
+                        pending_reboot=result.get('pending_reboot'),
+                        service_summary=result.get('service_summary')
                     )
+                    self._check_resource_threshold_alerts(device, result)
+                    if (
+                        self.alerter
+                        and result.get('pending_reboot') is True
+                        and not bool(device.get('pending_reboot'))
+                    ):
+                        self.alerter.trigger_alert(
+                            device,
+                            'pending_reboot',
+                            'Windows reports a pending reboot. Schedule a restart during the next maintenance window.'
+                        )
                 except Exception as e:
                     print(f"[METRICS] Error updating metrics for {device['name']}: {e}")
         
@@ -1270,6 +1660,21 @@ class NetworkMonitor:
             'ssl_days_left': result.get('ssl_days_left'),
             'ssl_issuer': result.get('ssl_issuer'),
             'ssl_status': result.get('ssl_status'),
+            'cpu': result.get('cpu'),
+            'ram': result.get('ram'),
+            'disk': result.get('disk'),
+            'swap': result.get('swap'),
+            'inode': result.get('inode'),
+            'load1': result.get('load1'),
+            'load5': result.get('load5'),
+            'load15': result.get('load15'),
+            'pending_reboot': result.get('pending_reboot'),
+            'uptime_seconds': result.get('uptime_seconds'),
+            'uptime_text': result.get('uptime_text'),
+            'last_boot_time': result.get('last_boot_time'),
+            'disk_details': result.get('disk_details'),
+            'service_status': result.get('service_status'),
+            'service_summary': result.get('service_summary'),
             'last_check': datetime.now().isoformat()
         }
         for extra_key in ['plugin_id', 'plugin_name', 'message', 'banner', 'error']:

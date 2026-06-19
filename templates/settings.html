@@ -207,9 +207,66 @@
                     <input type="email" id="report_recipient" class="form-control"
                         placeholder="Leave empty to use alert email recipient">
                 </div>
+                <div class="form-group">
+                    <label class="form-label"><input type="checkbox" id="server_reports_enabled"> Server Health Report</label>
+                    <small style="color: var(--text-muted);">CPU, RAM, disks, service down and pending reboot summary</small>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Frequency</label>
+                    <select id="server_report_frequency" class="form-control">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Weekly Day</label>
+                    <select id="server_report_weekday" class="form-control">
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6">Sunday</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Server Report Recipient</label>
+                    <input type="email" id="server_report_recipient" class="form-control"
+                        placeholder="Leave empty to use report recipient">
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="sendTestServerReport()">
+                    Send Test Server Report
+                </button>
                 <button class="btn btn-primary btn-sm" onclick="sendTestReport()">
                     📧 Send Test Report
                 </button>
+            </div>
+        </div>
+
+        <!-- Server Group Thresholds -->
+        <div class="card">
+            <div class="card-header"><h3 class="card-title">Server Group Thresholds</h3></div>
+            <div class="card-body">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0.75rem;">
+                    <div class="form-group">
+                        <label class="form-label">Group By</label>
+                        <select id="threshold_group_type" class="form-control" onchange="updateThresholdGroupValues()">
+                            <option value="location">Location</option>
+                            <option value="device_type">Device Type</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Group</label>
+                        <select id="threshold_group_value" class="form-control"></select>
+                    </div>
+                    <div class="form-group"><label class="form-label">CPU (%)</label><input id="group_cpu_threshold" type="number" class="form-control" value="85" min="0" max="100"></div>
+                    <div class="form-group"><label class="form-label">RAM (%)</label><input id="group_ram_threshold" type="number" class="form-control" value="90" min="0" max="100"></div>
+                    <div class="form-group"><label class="form-label">Disk (%)</label><input id="group_disk_threshold" type="number" class="form-control" value="90" min="0" max="100"></div>
+                    <div class="form-group"><label class="form-label">Swap (%)</label><input id="group_swap_threshold" type="number" class="form-control" value="80" min="0" max="100"></div>
+                    <div class="form-group"><label class="form-label">Duration (minutes)</label><input id="group_threshold_duration" type="number" class="form-control" value="5" min="1"></div>
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="applyGroupThresholds()">Apply to Group</button>
             </div>
         </div>
 

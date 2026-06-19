@@ -3,6 +3,8 @@ Scheduled Reports Module for Network Monitor
 Generates and sends daily email summaries of network status
 """
 import smtplib
+import json
+from html import escape
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
@@ -61,6 +63,109 @@ class ReportGenerator:
             'recent_alerts': recent_alerts[:10],  # Top 10 recent alerts
             'alert_count': len(recent_alerts)
         }
+
+    @staticmethod
+    def _json_value(device, key, fallback):
+        try:
+            value = device.get(key)
+            return json.loads(value) if value else fallback
+        except (TypeError, ValueError):
+            return fallback
+
+    def generate_server_health_report(self):
+        """Build a latest-state report for SSH/WinRM monitored servers."""
+        servers, service_down, pending_reboot, disks = [], [], [], []
+        for device in self.db.get_all_devices():
+            if device.get('monitor_type') not in ('ssh', 'winrm', 'wmi'):
+                continue
+            server = {
+                'id': device.get('id'), 'name': device.get('name') or 'Unknown',
+                'ip_address': device.get('ip_address') or '',
+                'status': device.get('status') or 'unknown',
+                'cpu': device.get('cpu_usage'), 'ram': device.get('ram_usage'),
+                'disk': device.get('disk_usage'), 'swap': device.get('swap_usage'),
+                'pending_reboot': bool(device.get('pending_reboot')),
+            }
+            servers.append(server)
+            if server['pending_reboot']:
+                pending_reboot.append(server)
+            for service in self._json_value(device, 'service_status_json', []):
+                if not service.get('ok'):
+                    service_down.append({
+                        'device_name': server['name'], 'service': service.get('name') or 'Unknown',
+                        'status': service.get('status') or 'unknown',
+                    })
+            for disk in self._json_value(device, 'disk_details_json', []):
+                disks.append({
+                    'device_name': server['name'],
+                    'mount': disk.get('mount') or disk.get('name') or '-',
+                    'use_percent': disk.get('use_percent'),
+                })
+
+        def top(items, key):
+            def numeric(item):
+                try:
+                    return float(item.get(key))
+                except (TypeError, ValueError):
+                    return -1
+            return sorted((i for i in items if i.get(key) is not None), key=numeric, reverse=True)[:10]
+
+        return {
+            'generated_at': datetime.now().isoformat(),
+            'summary': {
+                'total': len(servers),
+                'up': sum(1 for s in servers if s['status'] == 'up'),
+                'slow': sum(1 for s in servers if s['status'] == 'slow'),
+                'down': sum(1 for s in servers if s['status'] == 'down'),
+                'service_down': len(service_down), 'pending_reboot': len(pending_reboot),
+            },
+            'top_cpu': top(servers, 'cpu'), 'top_ram': top(servers, 'ram'),
+            'top_disk': top(disks, 'use_percent'), 'service_down': service_down,
+            'pending_reboot': pending_reboot,
+        }
+
+    def generate_server_health_html(self, data):
+        """Render a compact server-health email without Flask dependencies."""
+        summary = data['summary']
+
+        def rows(items, value_key):
+            if not items:
+                return '<tr><td colspan="2">No data</td></tr>'
+            output = []
+            for item in items:
+                label = escape(str(item.get('device_name') or item.get('name') or 'Unknown'))
+                if item.get('mount'):
+                    label += ' - ' + escape(str(item['mount']))
+                output.append(f'<tr><td>{label}</td><td>{escape(str(item.get(value_key)))}%</td></tr>')
+            return ''.join(output)
+
+        service_rows = ''.join(
+            f'<tr><td>{escape(str(i["device_name"]))}</td><td>{escape(str(i["service"]))} ({escape(str(i["status"]))})</td></tr>'
+            for i in data['service_down']
+        ) or '<tr><td colspan="2">All monitored services are running</td></tr>'
+        reboot_rows = ''.join(
+            f'<tr><td>{escape(str(i["name"]))}</td><td>{escape(str(i["ip_address"]))}</td></tr>'
+            for i in data['pending_reboot']
+        ) or '<tr><td colspan="2">No pending reboot</td></tr>'
+
+        return f'''<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+body{{font-family:Segoe UI,Arial,sans-serif;background:#f4f6f8;color:#172033;padding:20px}}
+.wrap{{max-width:760px;margin:auto;background:#fff;border:1px solid #dce2e8;padding:24px}}
+.summary{{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}}.metric{{border-left:4px solid #238764;padding:8px 14px;min-width:80px}}
+.value{{font-size:24px;font-weight:700}}.label{{font-size:12px;color:#667085}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}
+table{{width:100%;border-collapse:collapse}}th,td{{padding:7px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:13px}}th{{background:#f8fafc}}
+h1{{font-size:22px}}h2{{font-size:16px;margin-top:22px}}.critical{{color:#b42318}}@media(max-width:620px){{.grid{{grid-template-columns:1fr}}}}
+</style></head><body><div class="wrap"><h1>Server Health Report</h1><div>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</div>
+<div class="summary"><div class="metric"><div class="value">{summary['total']}</div><div class="label">Servers</div></div>
+<div class="metric"><div class="value">{summary['up']}</div><div class="label">Up</div></div>
+<div class="metric"><div class="value critical">{summary['down']}</div><div class="label">Down</div></div>
+<div class="metric"><div class="value critical">{summary['service_down']}</div><div class="label">Services Down</div></div>
+<div class="metric"><div class="value">{summary['pending_reboot']}</div><div class="label">Pending Reboot</div></div></div>
+<div class="grid"><section><h2>Top CPU</h2><table><tr><th>Server</th><th>Usage</th></tr>{rows(data['top_cpu'], 'cpu')}</table></section>
+<section><h2>Top RAM</h2><table><tr><th>Server</th><th>Usage</th></tr>{rows(data['top_ram'], 'ram')}</table></section>
+<section><h2>Top Disk / Partition</h2><table><tr><th>Server / Disk</th><th>Usage</th></tr>{rows(data['top_disk'], 'use_percent')}</table></section>
+<section><h2>Service Down</h2><table><tr><th>Server</th><th>Service</th></tr>{service_rows}</table></section></div>
+<h2>Pending Reboot</h2><table><tr><th>Server</th><th>IP Address</th></tr>{reboot_rows}</table></div></body></html>'''
     
     def generate_html_report(self, report_data):
         """Generate HTML email content from report data"""
@@ -238,3 +343,38 @@ class ReportGenerator:
         except Exception as e:
             print(f"[Report] Error generating report: {e}")
             return {'success': False, 'error': str(e)}
+
+    def run_server_health_report(self):
+        """Generate and send the configured server-health report."""
+        try:
+            data = self.generate_server_health_report()
+            html_content = self.generate_server_health_html(data)
+            recipient = self._get_setting('server_report_recipient') or None
+            subject = f"Server Health Report ({datetime.now().strftime('%Y-%m-%d')})"
+            return self.send_report_email(html_content, subject=subject, to_email=recipient)
+        except Exception as exc:
+            print(f"[Report] Error generating server health report: {exc}")
+            return {'success': False, 'error': str(exc)}
+
+    def run_scheduled_reports(self, now=None):
+        """Dispatch due reports once, using settings for time and frequency."""
+        now = now or datetime.now()
+        if now.strftime('%H:%M') != self._get_setting('report_time', '08:00'):
+            return {'success': True, 'sent': []}
+        today = now.strftime('%Y-%m-%d')
+        sent = []
+        if self._get_setting('reports_enabled') == 'true' and self._get_setting('last_daily_report_date') != today:
+            result = self.run_daily_report()
+            if result.get('success'):
+                self.db.save_alert_setting('last_daily_report_date', today)
+                sent.append('network')
+        frequency = self._get_setting('server_report_frequency', 'daily')
+        weekday = int(self._get_setting('server_report_weekday', '0') or 0)
+        server_due = frequency == 'daily' or (frequency == 'weekly' and now.weekday() == weekday)
+        if (self._get_setting('server_reports_enabled') == 'true' and server_due
+                and self._get_setting('last_server_report_date') != today):
+            result = self.run_server_health_report()
+            if result.get('success'):
+                self.db.save_alert_setting('last_server_report_date', today)
+                sent.append('server_health')
+        return {'success': True, 'sent': sent}

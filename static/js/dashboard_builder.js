@@ -59,14 +59,15 @@ async function fetchData() {
         
         const bwUrl = bandwidthIds.length > 0 ? `/api/bandwidth/current?ids=${bandwidthIds.join(',')}` : '/api/bandwidth/current';
 
-        const [devices, stats, topology, bandwidth, subTopologies] = await Promise.all([
+        const [devices, stats, topology, bandwidth, subTopologies, serverHealth] = await Promise.all([
             fetch('/api/devices').then(r => r.json()),
             fetch('/api/statistics').then(r => r.json()),
             fetch('/api/topology').then(r => r.json()),
             fetch(bwUrl).then(r => r.json()).catch(() => ({ top_interfaces: [] })),
-            fetch('/api/sub-topologies').then(r => r.json()).catch(() => [])
+            fetch('/api/sub-topologies').then(r => r.json()).catch(() => []),
+            fetch('/api/server-health').then(r => r.json()).catch(() => ({ summary: {} }))
         ]);
-        cachedData = { devices, stats, connections: topology.connections, bandwidth };
+        cachedData = { devices, stats, connections: topology.connections, bandwidth, serverHealth };
         cachedSubTopologies = Array.isArray(subTopologies) ? subTopologies : [];
     } catch (error) {
         console.error('Error fetching data:', error);
@@ -104,7 +105,7 @@ function addWidget(type) {
         let defaultWidth = 4;
         if (type === 'stat_row') {
             defaultWidth = 12;
-        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie' || type === 'bandwidth' || type === 'system_metrics' || type === 'network_traffic') {
+        } else if (type === 'trends' || type === 'performance' || type === 'topology' || type === 'device_grid' || type === 'device_list' || type === 'alerts' || type === 'device_pie' || type === 'bandwidth' || type === 'system_metrics' || type === 'network_traffic' || type === 'server_health') {
             defaultWidth = 6;
         }
 
@@ -369,6 +370,7 @@ function getWidgetDefaultTitleLocal(type) {
         case 'bandwidth': return 'Top Bandwidth';
         case 'system_metrics': return 'System Performance';
         case 'network_traffic': return 'Network Traffic';
+        case 'server_health': return 'Server Health';
         default: return 'Widget';
     }
 }

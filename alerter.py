@@ -193,6 +193,13 @@ This is an automated message from Network Monitor.
                 
                 response = requests.post(url, data=data, timeout=10)
                 result = response.json()
+
+                # Alert text can contain device names or event keys with Markdown
+                # control characters. Retry as plain text instead of dropping it.
+                if response.status_code == 400 and "can't parse entities" in result.get('description', ''):
+                    data.pop('parse_mode', None)
+                    response = requests.post(url, data=data, timeout=10)
+                    result = response.json()
                 
                 if response.status_code == 200 and result.get('ok'):
                     success_count += 1
@@ -535,6 +542,47 @@ This is an automated message from Network Monitor.
         # (though escalation check often runs on a separate thread/interval)
         self._mark_alert_sent(device_id, 'escalation')
             
+        return sent_any
+
+    def trigger_resource_escalated_alert(self, condition, duration_minutes):
+        """Send a persistent resource condition to escalation recipients."""
+        device_id = condition.get('device_id')
+        device_name = condition.get('name', 'Unknown')
+        event_type = condition.get('event_type', 'resource')
+        detail = condition.get('message') or event_type
+        subject = f"ESCALATION: {device_name} resource alert"
+        message = (
+            f"ESCALATED RESOURCE ALERT\n\nDevice: {device_name}\n"
+            f"IP: {condition.get('ip_address', 'N/A')}\nType: {event_type}\n\n"
+            f"{detail}\n\nCondition remains active for over {duration_minutes} minutes."
+        )
+        sent_any = False
+        escalation_email = self._get_setting('escalation_email_recipient', '')
+        escalation_telegram = self._get_setting('escalation_telegram_chat_id', '')
+        self._get_settings()
+
+        if self._get_setting('escalation_channel_email', 'false').lower() == 'true' and escalation_email:
+            original = self._settings_cache.get('email_recipient', '')
+            self._settings_cache['email_recipient'] = escalation_email
+            result = self.send_email(subject, message)
+            self._settings_cache['email_recipient'] = original
+            self.db.log_alert(
+                device_id, 'resource_escalation', detail, 'email',
+                'sent' if result['success'] else 'failed', result.get('error')
+            )
+            sent_any = sent_any or result['success']
+
+        if self._get_setting('escalation_channel_telegram', 'false').lower() == 'true' and escalation_telegram:
+            original = self._settings_cache.get('telegram_chat_id', '')
+            self._settings_cache['telegram_chat_id'] = escalation_telegram
+            result = self.send_telegram(f"{subject}\n\n{message}")
+            self._settings_cache['telegram_chat_id'] = original
+            self.db.log_alert(
+                device_id, 'resource_escalation', detail, 'telegram',
+                'sent' if result['success'] else 'failed', result.get('error')
+            )
+            sent_any = sent_any or result['success']
+
         return sent_any
     
     def send_test_alert(self, channel):

@@ -224,9 +224,27 @@ class Database:
                 wmi_username TEXT,
                 wmi_password TEXT,
                 plugin_config_json TEXT,
+                monitored_services TEXT,
+                cpu_threshold REAL DEFAULT 85,
+                ram_threshold REAL DEFAULT 90,
+                disk_threshold REAL DEFAULT 90,
+                swap_threshold REAL DEFAULT 80,
+                threshold_duration_minutes INTEGER DEFAULT 5,
                 cpu_usage REAL,
                 ram_usage REAL,
                 disk_usage REAL,
+                swap_usage REAL,
+                inode_usage REAL,
+                load1 REAL,
+                load5 REAL,
+                load15 REAL,
+                pending_reboot INTEGER DEFAULT 0,
+                server_uptime_seconds BIGINT,
+                server_uptime_text TEXT,
+                last_boot_time TEXT,
+                disk_details_json TEXT,
+                service_status_json TEXT,
+                service_summary_json TEXT,
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -279,14 +297,32 @@ class Database:
             ('wmi_password', 'TEXT'),
             ('plugin_config_json', 'TEXT'),
             ('expected_ports', 'TEXT'),
+            ('monitored_services', 'TEXT'),
+            ('cpu_threshold', 'REAL DEFAULT 85'),
+            ('ram_threshold', 'REAL DEFAULT 90'),
+            ('disk_threshold', 'REAL DEFAULT 90'),
+            ('swap_threshold', 'REAL DEFAULT 80'),
+            ('threshold_duration_minutes', 'INTEGER DEFAULT 5'),
             ('cpu_usage', 'REAL'),
             ('ram_usage', 'REAL'),
             ('disk_usage', 'REAL'),
+            ('swap_usage', 'REAL'),
+            ('inode_usage', 'REAL'),
+            ('load1', 'REAL'),
+            ('load5', 'REAL'),
+            ('load15', 'REAL'),
+            ('pending_reboot', 'INTEGER DEFAULT 0'),
             ('network_in_bps', 'REAL'),
             ('network_out_bps', 'REAL'),
             ('last_network_in', 'BIGINT'),
             ('last_network_out', 'BIGINT'),
             ('last_metrics_time', 'TIMESTAMP'),
+            ('server_uptime_seconds', 'BIGINT'),
+            ('server_uptime_text', 'TEXT'),
+            ('last_boot_time', 'TEXT'),
+            ('disk_details_json', 'TEXT'),
+            ('service_status_json', 'TEXT'),
+            ('service_summary_json', 'TEXT'),
         ]
         for col_name, col_type in metrics_columns:
             self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
@@ -296,7 +332,14 @@ class Database:
             'escalation_enabled': 'false',
             'escalation_time_minutes': '15',
             'escalation_email_recipient': '',
-            'escalation_telegram_chat_id': ''
+            'escalation_telegram_chat_id': '',
+            'reports_enabled': 'false',
+            'report_time': '08:00',
+            'report_recipient': '',
+            'server_reports_enabled': 'false',
+            'server_report_frequency': 'daily',
+            'server_report_weekday': '0',
+            'server_report_recipient': ''
         }
         for k, v in default_escalation_settings.items():
             try:
@@ -822,6 +865,19 @@ class Database:
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         ''')
+
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS resource_alert_states (
+                device_id   INTEGER NOT NULL,
+                event_type  TEXT NOT NULL,
+                message     TEXT,
+                active_since TIMESTAMP DEFAULT {timestamp_default},
+                last_seen_at TIMESTAMP DEFAULT {timestamp_default},
+                escalated_at TIMESTAMP,
+                PRIMARY KEY (device_id, event_type),
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
         
         # Audit Logs table
         cursor.execute(f'''
@@ -961,6 +1017,8 @@ class Database:
                    latitude=None, longitude=None, is_enabled=True, parent_device_id=None,
                    ssh_username=None, ssh_password=None, ssh_port=22,
                    wmi_username=None, wmi_password=None, expected_ports=None,
+                   monitored_services=None, cpu_threshold=85, ram_threshold=90,
+                   disk_threshold=90, swap_threshold=80, threshold_duration_minutes=5,
                    plugin_config_json=None):
         """Add a new device"""
         conn = self.get_connection()
@@ -983,8 +1041,11 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password, expected_ports, plugin_config_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       wmi_username, wmi_password, expected_ports,
+                                       monitored_services, cpu_threshold, ram_threshold,
+                                       disk_threshold, swap_threshold, threshold_duration_minutes,
+                                       plugin_config_json)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
@@ -996,7 +1057,10 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, is_enabled, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password, expected_ports, plugin_config_json))
+                      wmi_username, wmi_password, expected_ports,
+                      monitored_services, cpu_threshold, ram_threshold,
+                      disk_threshold, swap_threshold, threshold_duration_minutes,
+                      plugin_config_json))
                 device_id = cursor.fetchone()['id']
             else:
                 status_init = 'disabled' if not is_enabled else 'unknown'
@@ -1010,8 +1074,11 @@ class Database:
                                        tcp_port, dns_query_domain, location_type,
                                        latitude, longitude, is_enabled, parent_device_id,
                                        ssh_username, ssh_password, ssh_port,
-                                       wmi_username, wmi_password, expected_ports, plugin_config_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       wmi_username, wmi_password, expected_ports,
+                                       monitored_services, cpu_threshold, ram_threshold,
+                                       disk_threshold, swap_threshold, threshold_duration_minutes,
+                                       plugin_config_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -1022,7 +1089,10 @@ class Database:
                       location_type or Config.DEFAULT_LOCATION_TYPE,
                       latitude, longitude, 1 if is_enabled else 0, parent_device_id,
                       ssh_username, ssh_password, ssh_port,
-                      wmi_username, wmi_password, expected_ports, plugin_config_json))
+                      wmi_username, wmi_password, expected_ports,
+                      monitored_services, cpu_threshold, ram_threshold,
+                      disk_threshold, swap_threshold, threshold_duration_minutes,
+                      plugin_config_json))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -1068,6 +1138,9 @@ class Database:
                      ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
                      ssh_port='__NOT_SET__',
                      wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__',
+                     monitored_services='__NOT_SET__', cpu_threshold='__NOT_SET__',
+                     ram_threshold='__NOT_SET__', disk_threshold='__NOT_SET__',
+                     swap_threshold='__NOT_SET__', threshold_duration_minutes='__NOT_SET__',
                      plugin_config_json='__NOT_SET__'):
         """Update device information"""
         # Strip whitespace from IP address and name
@@ -1160,6 +1233,24 @@ class Database:
             if expected_ports != '__NOT_SET__':
                 updates.append(f'expected_ports = {ph}')
                 params.append(expected_ports)
+            if monitored_services != '__NOT_SET__':
+                updates.append(f'monitored_services = {ph}')
+                params.append(monitored_services)
+            if cpu_threshold != '__NOT_SET__':
+                updates.append(f'cpu_threshold = {ph}')
+                params.append(cpu_threshold)
+            if ram_threshold != '__NOT_SET__':
+                updates.append(f'ram_threshold = {ph}')
+                params.append(ram_threshold)
+            if disk_threshold != '__NOT_SET__':
+                updates.append(f'disk_threshold = {ph}')
+                params.append(disk_threshold)
+            if swap_threshold != '__NOT_SET__':
+                updates.append(f'swap_threshold = {ph}')
+                params.append(swap_threshold)
+            if threshold_duration_minutes != '__NOT_SET__':
+                updates.append(f'threshold_duration_minutes = {ph}')
+                params.append(threshold_duration_minutes)
             if plugin_config_json != '__NOT_SET__':
                 updates.append(f'plugin_config_json = {ph}')
                 params.append(plugin_config_json)
@@ -1194,8 +1285,12 @@ class Database:
         finally:
             self.release_connection(conn)
             
-    def update_system_metrics(self, device_id, cpu=None, ram=None, disk=None, 
-                             network_in=None, network_out=None, raw_in=None, raw_out=None):
+    def update_system_metrics(self, device_id, cpu=None, ram=None, disk=None,
+                             network_in=None, network_out=None, raw_in=None, raw_out=None,
+                             swap=None, inode=None, uptime_seconds=None, uptime_text=None,
+                             last_boot_time=None, disk_details=None, service_status=None,
+                             load1=None, load5=None, load15=None, pending_reboot=None,
+                             service_summary=None):
         """Update current system metrics for a device and add to historical data"""
         conn = self.get_connection()
         try:
@@ -1214,6 +1309,24 @@ class Database:
             if disk is not None:
                 updates.append(f"disk_usage = {ph}")
                 params.append(disk)
+            if swap is not None:
+                updates.append(f"swap_usage = {ph}")
+                params.append(swap)
+            if inode is not None:
+                updates.append(f"inode_usage = {ph}")
+                params.append(inode)
+            if load1 is not None:
+                updates.append(f"load1 = {ph}")
+                params.append(load1)
+            if load5 is not None:
+                updates.append(f"load5 = {ph}")
+                params.append(load5)
+            if load15 is not None:
+                updates.append(f"load15 = {ph}")
+                params.append(load15)
+            if pending_reboot is not None:
+                updates.append(f"pending_reboot = {ph}")
+                params.append(1 if pending_reboot else 0)
             if network_in is not None:
                 updates.append(f"network_in_bps = {ph}")
                 params.append(network_in)
@@ -1226,6 +1339,24 @@ class Database:
             if raw_out is not None:
                 updates.append(f"last_network_out = {ph}")
                 params.append(raw_out)
+            if uptime_seconds is not None:
+                updates.append(f"server_uptime_seconds = {ph}")
+                params.append(uptime_seconds)
+            if uptime_text is not None:
+                updates.append(f"server_uptime_text = {ph}")
+                params.append(uptime_text)
+            if last_boot_time is not None:
+                updates.append(f"last_boot_time = {ph}")
+                params.append(last_boot_time)
+            if disk_details is not None:
+                updates.append(f"disk_details_json = {ph}")
+                params.append(json.dumps(disk_details, ensure_ascii=False))
+            if service_status is not None:
+                updates.append(f"service_status_json = {ph}")
+                params.append(json.dumps(service_status, ensure_ascii=False))
+            if service_summary is not None:
+                updates.append(f"service_summary_json = {ph}")
+                params.append(json.dumps(service_summary, ensure_ascii=False))
             
             if updates:
                 # Always update last_metrics_time when any metric is updated
@@ -1242,10 +1373,26 @@ class Database:
                     cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'ram', ram))
                 if disk is not None:
                     cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'disk', disk))
+                if swap is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'swap', swap))
+                if inode is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'inode', inode))
+                if load1 is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'load1', load1))
+                if load5 is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'load5', load5))
+                if load15 is not None:
+                    cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'load15', load15))
                 if network_in is not None:
                     cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'network_in', network_in))
                 if network_out is not None:
                     cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, 'network_out', network_out))
+                for disk_item in disk_details or []:
+                    mount = str(disk_item.get('mount') or disk_item.get('name') or '').strip()
+                    value = disk_item.get('use_percent')
+                    if mount and value is not None:
+                        metric_name = f"disk:{mount[:120]}"
+                        cursor.execute(f"INSERT INTO system_metrics_history (device_id, metric_type, value) VALUES ({self._ph(3)})", (device_id, metric_name, value))
                 
                 conn.commit()
             return True
@@ -2230,6 +2377,185 @@ class Database:
                 })
 
             return formatted
+        finally:
+            self.release_connection(conn)
+
+    def apply_server_thresholds_to_group(self, group_type, group_value, thresholds):
+        """Apply resource thresholds to SSH/WinRM servers in a location or device type."""
+        column = {'location': 'location', 'device_type': 'device_type'}.get(group_type)
+        if not column:
+            return {'success': False, 'error': 'Invalid group type', 'updated': 0}
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cursor.execute(f'''
+                UPDATE devices SET cpu_threshold = {ph}, ram_threshold = {ph},
+                    disk_threshold = {ph}, swap_threshold = {ph},
+                    threshold_duration_minutes = {ph}
+                WHERE {column} = {ph} AND monitor_type IN ('ssh', 'winrm', 'wmi')
+            ''', (
+                thresholds['cpu'], thresholds['ram'], thresholds['disk'],
+                thresholds['swap'], thresholds['duration_minutes'], group_value,
+            ))
+            updated = cursor.rowcount
+            conn.commit()
+            return {'success': True, 'updated': updated}
+        except Exception as exc:
+            conn.rollback()
+            return {'success': False, 'error': str(exc), 'updated': 0}
+        finally:
+            self.release_connection(conn)
+
+    def get_system_metric_values_since(self, device_id, metric_type, minutes=5):
+        """Get recent metric values for sustained threshold checks."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            minutes = max(1, int(minutes or 1))
+            if self.db_type == 'postgresql':
+                query = f"""
+                    SELECT value, timestamp
+                    FROM system_metrics_history
+                    WHERE device_id = {ph} AND metric_type = {ph}
+                    AND timestamp >= NOW() - INTERVAL '{minutes} minutes'
+                    ORDER BY timestamp ASC
+                """
+            else:
+                query = f"""
+                    SELECT value, timestamp
+                    FROM system_metrics_history
+                    WHERE device_id = {ph} AND metric_type = {ph}
+                    AND timestamp >= datetime('now', '-{minutes} minutes')
+                    ORDER BY timestamp ASC
+                """
+            cursor.execute(query, (device_id, metric_type))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_system_metric_values_since: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def sync_resource_alert_state(self, device_id, event_type, active, message=None):
+        """Persist an active resource condition and reset it after recovery."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            if not active:
+                cursor.execute(
+                    f'DELETE FROM resource_alert_states WHERE device_id = {ph} AND event_type = {ph}',
+                    (device_id, event_type),
+                )
+            elif self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    INSERT INTO resource_alert_states (device_id, event_type, message)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (device_id, event_type) DO UPDATE SET
+                        message = EXCLUDED.message, last_seen_at = CURRENT_TIMESTAMP
+                ''', (device_id, event_type, message))
+            else:
+                cursor.execute(f'''
+                    INSERT INTO resource_alert_states (device_id, event_type, message)
+                    VALUES ({ph}, {ph}, {ph})
+                    ON CONFLICT (device_id, event_type) DO UPDATE SET
+                        message = excluded.message, last_seen_at = CURRENT_TIMESTAMP
+                ''', (device_id, event_type, message))
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            print(f'[DB ERROR] sync_resource_alert_state: {exc}')
+        finally:
+            self.release_connection(conn)
+
+    def get_resource_alerts_for_escalation(self, minutes):
+        """Return active resource conditions that have not been escalated."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            minutes = max(1, int(minutes or 1))
+            if self.db_type == 'postgresql':
+                cursor.execute(f'''
+                    SELECT r.*, d.name, d.ip_address, d.status
+                    FROM resource_alert_states r
+                    JOIN devices d ON d.id = r.device_id
+                    WHERE r.escalated_at IS NULL AND d.status <> 'down'
+                    AND r.active_since <= CURRENT_TIMESTAMP - ({ph} * INTERVAL '1 minute')
+                ''', (minutes,))
+            else:
+                cursor.execute(f'''
+                    SELECT r.*, d.name, d.ip_address, d.status
+                    FROM resource_alert_states r
+                    JOIN devices d ON d.id = r.device_id
+                    WHERE r.escalated_at IS NULL AND d.status <> 'down'
+                    AND r.active_since <= datetime('now', '-' || {ph} || ' minutes')
+                ''', (minutes,))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as exc:
+            print(f'[DB ERROR] get_resource_alerts_for_escalation: {exc}')
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def mark_resource_alert_escalated(self, device_id, event_type):
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cursor.execute(f'''
+                UPDATE resource_alert_states SET escalated_at = CURRENT_TIMESTAMP
+                WHERE device_id = {ph} AND event_type = {ph}
+            ''', (device_id, event_type))
+            conn.commit()
+        finally:
+            self.release_connection(conn)
+
+    def get_disk_partition_history(self, device_id, hours=24):
+        """Return disk usage history grouped by mount/drive name."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            hours = max(1, int(hours or 1))
+            if self.db_type == 'postgresql':
+                query = f"""
+                    SELECT metric_type, value, timestamp
+                    FROM system_metrics_history
+                    WHERE device_id = {ph}
+                    AND metric_type LIKE 'disk:%%'
+                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    ORDER BY timestamp ASC
+                """
+            else:
+                query = f"""
+                    SELECT metric_type, value, timestamp
+                    FROM system_metrics_history
+                    WHERE device_id = {ph}
+                    AND metric_type LIKE 'disk:%'
+                    AND timestamp >= datetime('now', '-{hours} hours')
+                    ORDER BY timestamp ASC
+                """
+            cursor.execute(query, (device_id,))
+            grouped = {}
+            for row in self._rows_to_dicts(cursor.fetchall()):
+                metric_type = str(row.get('metric_type') or '')
+                mount = metric_type[5:] if metric_type.startswith('disk:') else metric_type
+                if mount.startswith('/sys/firmware/efi/efivars'):
+                    continue
+                grouped.setdefault(mount, []).append({
+                    'value': row.get('value'),
+                    'timestamp': row.get('timestamp')
+                })
+            return [
+                {'mount': mount, 'history': history}
+                for mount, history in sorted(grouped.items(), key=lambda item: item[0].lower())
+            ]
+        except Exception as e:
+            print(f"[DB ERROR] get_disk_partition_history: {e}")
+            return []
         finally:
             self.release_connection(conn)
 
@@ -3672,6 +3998,10 @@ class Database:
             bw_cutoff = (datetime.now() - timedelta(days=7)).isoformat()
             cursor.execute(f'DELETE FROM bandwidth_history WHERE sampled_at < {ph}', (bw_cutoff,))
             deleted_bw = cursor.rowcount
+
+            # Delete old server performance samples using the global retention policy.
+            cursor.execute(f'DELETE FROM system_metrics_history WHERE timestamp < {ph}', (cutoff_date,))
+            deleted_metrics = cursor.rowcount
             
             conn.commit()
             
@@ -3680,9 +4010,15 @@ class Database:
                 conn.autocommit = True
                 cursor.execute('VACUUM ANALYZE status_history')
                 cursor.execute('VACUUM ANALYZE alert_history')
+                cursor.execute('VACUUM ANALYZE system_metrics_history')
                 conn.autocommit = False
             
-            print(f"[DB Cleanup] Deleted {deleted_history} old status records, {deleted_alerts} old alerts, {deleted_bw} old bandwidth samples (retention: {Config.RETENTION_DAYS} days)")
+            print(
+                f"[DB Cleanup] Deleted {deleted_history} old status records, "
+                f"{deleted_alerts} old alerts, {deleted_bw} old bandwidth samples, "
+                f"{deleted_metrics} old system metric samples "
+                f"(retention: {Config.RETENTION_DAYS} days)"
+            )
             
         except Exception as e:
             self._safe_rollback(conn)

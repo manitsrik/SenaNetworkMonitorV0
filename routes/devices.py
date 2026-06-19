@@ -568,35 +568,60 @@ def export_server_health_csv():
 @devices_bp.route('/api/server-health/export.pdf', methods=['GET'])
 def export_server_health_pdf():
     """Download the latest server-health snapshot as a PDF file."""
-    lines = ['SERVER HEALTH REPORT', datetime.now().strftime('Generated: %Y-%m-%d %H:%M:%S'), '']
+    def percent(value):
+        try:
+            return f'{float(value):.1f}%'
+        except (TypeError, ValueError):
+            return '-'
+
+    lines = [
+        'SERVER HEALTH REPORT',
+        datetime.now().strftime('Generated: %Y-%m-%d %H:%M:%S'),
+        '=' * 72,
+    ]
     servers = [
         device for device in _get_db().get_all_devices()
         if device.get('monitor_type') in ('ssh', 'winrm', 'wmi')
     ]
-    lines.append(f'Total servers: {len(servers)}')
-    lines.append(f'Down: {sum(1 for device in servers if device.get("status") == "down")}')
-    lines.extend(['', 'SERVER DETAILS'])
-    for device in servers:
-        lines.append(
-            f'{device.get("name", "Unknown")} | {device.get("ip_address", "")} | '
-            f'{str(device.get("status", "unknown")).upper()} | CPU {device.get("cpu_usage", "-")}% | '
-            f'RAM {device.get("ram_usage", "-")}% | Disk {device.get("disk_usage", "-")}%'
-        )
+    up = sum(1 for device in servers if device.get('status') == 'up')
+    slow = sum(1 for device in servers if device.get('status') == 'slow')
+    down = sum(1 for device in servers if device.get('status') == 'down')
+    reboots = sum(1 for device in servers if device.get('pending_reboot'))
+    lines.extend([
+        f'SUMMARY   Total: {len(servers)}   Up: {up}   Slow: {slow}   Down: {down}   Pending reboot: {reboots}',
+        '', 'SERVER DETAILS',
+    ])
+    status_order = {'down': 0, 'slow': 1, 'unknown': 2, 'up': 3}
+    for number, device in enumerate(sorted(
+            servers, key=lambda item: (status_order.get(item.get('status'), 2), str(item.get('name', '')).lower())), 1):
+        status = str(device.get('status') or 'unknown').upper()
+        lines.extend([
+            '', f'{number}. {device.get("name") or "Unknown"} [{status}]',
+            f'   IP: {device.get("ip_address") or "-"}   Monitor: {str(device.get("monitor_type") or "-").upper()}',
+            f'   CPU: {percent(device.get("cpu_usage"))}   RAM: {percent(device.get("ram_usage"))}   '
+            f'Disk max: {percent(device.get("disk_usage"))}   Swap: {percent(device.get("swap_usage"))}',
+            f'   Uptime: {device.get("server_uptime_text") or "-"}   Last boot: {device.get("last_boot_time") or "-"}',
+        ])
         try:
             disks = json.loads(device.get('disk_details_json') or '[]')
         except (TypeError, ValueError):
             disks = []
+        if disks:
+            lines.append('   Disks / partitions:')
         for disk in disks:
-            lines.append(f'  Disk {disk.get("mount") or disk.get("name")}: {disk.get("use_percent", "-")}%')
+            mount = disk.get('mount') or disk.get('name') or '-'
+            lines.append(f'     {mount}: {percent(disk.get("use_percent"))}')
         try:
             services = json.loads(device.get('service_status_json') or '[]')
         except (TypeError, ValueError):
             services = []
         stopped = [service for service in services if not service.get('ok')]
+        if services and not stopped:
+            lines.append(f'   Services: {len(services)}/{len(services)} running')
         for service in stopped:
-            lines.append(f'  SERVICE DOWN: {service.get("name")} ({service.get("status", "unknown")})')
+            lines.append(f'   SERVICE DOWN: {service.get("name")} ({service.get("status", "unknown")})')
         if device.get('pending_reboot'):
-            lines.append('  PENDING REBOOT')
+            lines.append('   ACTION REQUIRED: PENDING REBOOT')
     return Response(
         _simple_pdf(lines), mimetype='application/pdf',
         headers={'Content-Disposition': 'attachment; filename=server_health.pdf'},

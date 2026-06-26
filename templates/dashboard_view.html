@@ -555,7 +555,7 @@
         // Apply Status Filter
         if (activeFilters.status !== 'all') {
             if (activeFilters.status === 'slow') {
-                filteredDevices = filteredDevices.filter(d => d.status === 'slow' || (d.status === 'up' && parseFloat(d.response_time) > 500));
+                filteredDevices = filteredDevices.filter(d => window.NM_IS_DEVICE_SLOW ? window.NM_IS_DEVICE_SLOW(d) : d.status === 'slow');
             } else {
                 filteredDevices = filteredDevices.filter(d => d.status === activeFilters.status);
             }
@@ -571,7 +571,7 @@
         const total_devices = filteredDevices.length;
         const devices_up = filteredDevices.filter(d => d.status === 'up').length;
         const devices_down = filteredDevices.filter(d => d.status === 'down').length;
-        const devices_slow = filteredDevices.filter(d => d.status === 'slow' || (d.status === 'up' && parseFloat(d.response_time) > 500)).length;
+        const devices_slow = filteredDevices.filter(d => window.NM_IS_DEVICE_SLOW ? window.NM_IS_DEVICE_SLOW(d) : d.status === 'slow').length;
         
         let uptime_percentage = 0;
         let average_response_time = 0;

@@ -63,6 +63,13 @@ def server_health():
     return render_template('server_health.html')
 
 
+@pages_bp.route('/server-dashboard/<int:device_id>')
+@login_required
+def server_dashboard(device_id):
+    """Single-server performance dashboard."""
+    return render_template('server_dashboard.html', device_id=device_id)
+
+
 @pages_bp.route('/history')
 @login_required
 def history():

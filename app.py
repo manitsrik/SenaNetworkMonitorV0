@@ -99,6 +99,13 @@ from routes import ALL_BLUEPRINTS
 for bp in ALL_BLUEPRINTS:
     app.register_blueprint(bp)
 
+@app.context_processor
+def inject_monitor_thresholds():
+    return {
+        'monitor_thresholds': Config.MONITOR_THRESHOLDS,
+        'default_slow_threshold': Config.DEFAULT_SLOW_THRESHOLD,
+    }
+
 if Config.ENABLE_SWAGGER_UI:
     # Swagger API Documentation UI
     from flask_swagger_ui import get_swaggerui_blueprint

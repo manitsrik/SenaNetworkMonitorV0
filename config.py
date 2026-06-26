@@ -102,8 +102,9 @@ class Config:
         'tcp': 500,       # Port checks should be fast
         'dns': 500,       # DNS lookups should be fast
         'snmp': 2000,     # SNMP queries are slightly heavier
-        'ssh': 5000,      # Agent checks are heavy
-        'winrm': 5000,    # WinRM/PowerShell is heaviest
+        'ssh': 10000,     # Agent checks are heavy
+        'winrm': 10000,   # WinRM/PowerShell is heaviest
+        'wmi': 5000,      # WMI uses the same heavy Windows agent path as WinRM
     }
     
     # Default fallback threshold

@@ -1,0 +1,1524 @@
+{% extends "layout.html" %}
+{% set active_page = 'server_health' %}
+
+{% block title %}Server Dashboard{% endblock %}
+{% block page_title %}Server Dashboard{% endblock %}
+
+{% block header_actions %}
+<div class="server-dashboard-actions">
+    <a href="/server-health" class="btn btn-xs btn-secondary">
+        <i class="fa-solid fa-arrow-left"></i> Server Health
+    </a>
+    <select id="server-switcher" class="server-switcher" title="Switch server">
+        <option value="">Loading servers...</option>
+    </select>
+    <a id="compare-link" href="/history?device_ids={{ device_id }}" class="btn btn-xs btn-secondary" title="Compare with another server">
+        <i class="fa-solid fa-code-compare"></i> Compare
+    </a>
+    <div class="server-range-group" aria-label="Time range">
+        <button type="button" class="server-range-btn" data-hours="1">1h</button>
+        <button type="button" class="server-range-btn active" data-hours="6">6h</button>
+        <button type="button" class="server-range-btn" data-hours="12">12h</button>
+        <button type="button" class="server-range-btn" data-hours="24">24h</button>
+        <button type="button" class="server-range-btn" data-hours="168">7d</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+    .server-dashboard-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+    .server-switcher {
+        min-height: 28px;
+        min-width: 230px;
+        padding: 0.24rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 7px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 0.72rem;
+    }
+
+    .server-range-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        padding: 0.18rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+    }
+
+    .server-range-btn {
+        min-width: 34px;
+        min-height: 24px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .server-range-btn.active {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    .single-server-page {
+        --server-line: rgba(148, 163, 184, 0.22);
+        --server-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    [data-theme="dark"] .single-server-page {
+        --server-line: rgba(148, 163, 184, 0.18);
+        --server-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+    }
+
+    .server-hero,
+    .server-stat-card,
+    .server-chart-card,
+    .server-detail-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--server-shadow);
+    }
+
+    .server-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(118px, 0.48fr));
+        gap: 0.5rem;
+        align-items: stretch;
+    }
+
+    .server-identity {
+        padding: 0.8rem 0.9rem;
+        background:
+            linear-gradient(135deg, rgba(45, 106, 79, 0.12), rgba(59, 130, 246, 0.05)),
+            var(--bg-secondary);
+    }
+
+    .server-kicker {
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .server-title-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem;
+        margin-top: 0.16rem;
+    }
+
+    .server-title {
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 1.25rem;
+        line-height: 1.15;
+    }
+
+    .server-meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.55rem;
+    }
+
+    .server-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        min-height: 23px;
+        padding: 0.18rem 0.45rem;
+        border: 1px solid var(--server-line);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        font-weight: 700;
+    }
+
+    .server-chart-pills {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.3rem;
+    }
+
+    .server-pill.is-warning {
+        border-color: rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--warning);
+    }
+
+    .server-pill.is-critical {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+    }
+
+    .server-stat-card {
+        padding: 0.72rem;
+        position: relative;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.6rem;
+        align-items: center;
+    }
+
+    .server-stat-card::after {
+        content: "";
+        position: absolute;
+        inset: auto 0 0;
+        height: 3px;
+        background: var(--stat-color, var(--primary));
+    }
+
+    .server-stat-label {
+        color: var(--text-muted);
+        font-size: 0.66rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .server-stat-value {
+        margin-top: 0.18rem;
+        color: var(--text-primary);
+        font-size: 1.45rem;
+        font-weight: 850;
+        line-height: 1;
+    }
+
+    .server-stat-note {
+        margin-top: 0.32rem;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        line-height: 1.25;
+    }
+
+    .server-stat-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(45, 106, 79, 0.1);
+        color: var(--stat-color, var(--primary));
+        font-size: 1.1rem;
+    }
+
+    .server-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(280px, 1fr));
+        gap: 0.6rem;
+    }
+
+    .server-chart-card {
+        min-height: 265px;
+        overflow: hidden;
+    }
+
+    .server-chart-card.wide {
+        grid-column: span 2;
+    }
+
+    .server-chart-card.full {
+        grid-column: 1 / -1;
+    }
+
+    .server-partition-card {
+        min-height: auto;
+    }
+
+    .server-partition-card .server-detail-body {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .server-chart-header,
+    .server-detail-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+        padding: 0.62rem 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .server-chart-title,
+    .server-detail-title {
+        display: flex;
+        align-items: center;
+        gap: 0.42rem;
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 0.86rem;
+    }
+
+    .server-chart-title i,
+    .server-detail-title i {
+        color: var(--primary);
+    }
+
+    .server-chart-body {
+        position: relative;
+        height: 190px;
+        padding: 0.65rem 0.75rem;
+    }
+
+    .server-chart-body canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    .server-empty {
+        padding: 1rem;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+    }
+
+    .server-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(280px, 1fr));
+        gap: 0.6rem;
+    }
+
+    .server-detail-body {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .server-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.8rem;
+        padding: 0.42rem 0;
+        border-bottom: 1px solid var(--server-line);
+        color: var(--text-secondary);
+        font-size: 0.78rem;
+    }
+
+    .server-row:last-child {
+        border-bottom: 0;
+    }
+
+    .server-row strong {
+        color: var(--text-primary);
+        text-align: right;
+    }
+
+    .service-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(150px, 1fr));
+        gap: 0.45rem;
+    }
+
+    .service-summary-card {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.55rem;
+        border: 1px solid var(--server-line);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.02);
+    }
+
+    [data-theme="dark"] .service-summary-card {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .service-summary-label {
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .service-summary-value {
+        margin-top: 0.18rem;
+        color: var(--text-primary);
+        font-size: 1.15rem;
+        font-weight: 850;
+    }
+
+    .service-summary-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--info);
+        font-size: 0.9rem;
+    }
+
+    .service-summary-icon.is-running {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
+    }
+
+    .service-summary-icon.is-stopped {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+    }
+
+    .service-summary-icon.is-windows {
+        background: rgba(37, 99, 235, 0.1);
+        color: #2563eb;
+    }
+
+    .server-note {
+        margin-top: 0.5rem;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.35;
+    }
+
+    .event-list {
+        display: grid;
+        gap: 0;
+        max-height: 150px;
+        overflow-y: auto;
+    }
+
+    .event-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.34rem 0;
+        border-bottom: 1px solid var(--server-line);
+    }
+
+    .event-row:last-child {
+        border-bottom: 0;
+    }
+
+    .event-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(45, 106, 79, 0.1);
+        color: var(--primary);
+        font-size: 0.68rem;
+    }
+
+    .event-icon.is-alert {
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--warning);
+    }
+
+    .event-icon.is-up {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
+    }
+
+    .event-icon.is-slow {
+        background: rgba(245, 158, 11, 0.14);
+        color: var(--warning);
+    }
+
+    .event-icon.is-down,
+    .event-icon.is-failed {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+    }
+
+    .event-title {
+        color: var(--text-primary);
+        font-size: 0.72rem;
+        font-weight: 800;
+        line-height: 1.15;
+    }
+
+    .event-message {
+        margin-top: 0.06rem;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .event-time {
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        font-weight: 700;
+        white-space: nowrap;
+        text-align: right;
+    }
+
+    .event-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(72px, 1fr));
+        gap: 0.35rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .event-summary-card {
+        padding: 0.34rem 0.42rem;
+        border: 1px solid var(--server-line);
+        border-radius: 8px;
+        background: rgba(15, 23, 42, 0.02);
+    }
+
+    .event-summary-card.is-up {
+        border-color: rgba(16, 185, 129, 0.28);
+        background: rgba(16, 185, 129, 0.06);
+    }
+
+    .event-summary-card.is-slow {
+        border-color: rgba(245, 158, 11, 0.32);
+        background: rgba(245, 158, 11, 0.08);
+    }
+
+    .event-summary-card.is-down {
+        border-color: rgba(239, 68, 68, 0.32);
+        background: rgba(239, 68, 68, 0.07);
+    }
+
+    .event-summary-card.is-alert {
+        border-color: rgba(124, 58, 237, 0.28);
+        background: rgba(124, 58, 237, 0.06);
+    }
+
+    [data-theme="dark"] .event-summary-card {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .event-summary-label {
+        color: var(--text-muted);
+        font-size: 0.6rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .event-summary-value {
+        margin-top: 0.12rem;
+        color: var(--text-primary);
+        font-size: 0.86rem;
+        font-weight: 850;
+        line-height: 1;
+    }
+
+    .event-more-note {
+        margin-top: 0.42rem;
+        color: var(--text-muted);
+        font-size: 0.66rem;
+        text-align: right;
+    }
+
+    .partition-card-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 0.6rem;
+    }
+
+    .partition-card {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.78rem 0.9rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--server-shadow);
+    }
+
+    .partition-donut {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background:
+            conic-gradient(var(--partition-color, var(--primary)) calc(var(--partition-pct, 0) * 1%), var(--bg-tertiary) 0);
+        display: grid;
+        place-items: center;
+        position: relative;
+    }
+
+    .partition-donut::after {
+        content: "";
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: var(--bg-secondary);
+    }
+
+    .partition-title {
+        color: var(--text-primary);
+        font-size: 0.76rem;
+        font-weight: 850;
+    }
+
+    .partition-percent {
+        margin-top: 0.14rem;
+        color: var(--text-primary);
+        font-size: 1.02rem;
+        font-weight: 850;
+        line-height: 1;
+    }
+
+    .partition-meta {
+        margin-top: 0.18rem;
+        color: var(--text-secondary);
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 0.16rem 0.45rem;
+        border-radius: 999px;
+        font-size: 0.64rem;
+        font-weight: 800;
+        line-height: 1;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    @media (max-width: 1280px) {
+        .server-hero {
+            grid-template-columns: repeat(2, minmax(150px, 1fr));
+        }
+
+        .server-identity {
+            grid-column: 1 / -1;
+        }
+    }
+
+    @media (max-width: 840px) {
+        .server-dashboard-actions {
+            flex-wrap: wrap;
+        }
+
+        .server-switcher {
+            min-width: 180px;
+            flex: 1;
+        }
+
+        .server-hero,
+        .server-chart-grid,
+        .server-detail-grid,
+        .partition-card-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .server-chart-card.wide {
+            grid-column: 1;
+        }
+    }
+</style>
+
+<div class="single-server-page" data-device-id="{{ device_id }}">
+    <section class="server-hero">
+        <div class="server-identity">
+            <div>
+                <div class="server-kicker">Single Server Dashboard</div>
+                <div class="server-title-row">
+                    <h2 id="server-name" class="server-title">Loading server...</h2>
+                    <span id="server-status" class="status-badge status-unknown">unknown</span>
+                </div>
+                <div id="server-meta" class="server-meta-row">
+                    <span class="server-pill"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading metrics</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="server-stat-card" style="--stat-color: var(--primary);">
+            <div class="server-stat-icon"><i class="fa-solid fa-microchip"></i></div>
+            <div>
+                <div class="server-stat-label">CPU Load</div>
+                <div id="stat-cpu" class="server-stat-value">-</div>
+                <div id="stat-load" class="server-stat-note">Load -</div>
+            </div>
+        </div>
+        <div class="server-stat-card" style="--stat-color: var(--info);">
+            <div class="server-stat-icon"><i class="fa-solid fa-memory"></i></div>
+            <div>
+                <div class="server-stat-label">RAM Usage</div>
+                <div id="stat-ram" class="server-stat-value">-</div>
+                <div id="stat-swap" class="server-stat-note">Swap -</div>
+            </div>
+        </div>
+        <div class="server-stat-card" style="--stat-color: var(--warning);">
+            <div class="server-stat-icon"><i class="fa-solid fa-hard-drive"></i></div>
+            <div>
+                <div class="server-stat-label">Disk Usage</div>
+                <div id="stat-disk" class="server-stat-value">-</div>
+                <div id="stat-inode" class="server-stat-note">Inode -</div>
+            </div>
+        </div>
+        <div class="server-stat-card" style="--stat-color: var(--success);">
+            <div class="server-stat-icon"><i class="fa-solid fa-clock"></i></div>
+            <div>
+                <div class="server-stat-label">Response Time</div>
+                <div id="stat-response" class="server-stat-value">-</div>
+                <div id="stat-response-sub" class="server-stat-note">Current</div>
+            </div>
+        </div>
+        <div class="server-stat-card" style="--stat-color: var(--danger);">
+            <div class="server-stat-icon"><i class="fa-solid fa-wave-square"></i></div>
+            <div>
+                <div class="server-stat-label">Services Down</div>
+                <div id="stat-service-down" class="server-stat-value">-</div>
+                <div id="stat-service-sub" class="server-stat-note">Affected services</div>
+            </div>
+        </div>
+        <div class="server-stat-card" style="--stat-color: var(--warning);">
+            <div class="server-stat-icon"><i class="fa-solid fa-rotate-left"></i></div>
+            <div>
+                <div class="server-stat-label">Reboot Required</div>
+                <div id="stat-reboot" class="server-stat-value">-</div>
+                <div id="stat-reboot-sub" class="server-stat-note">Pending reboot</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="server-chart-grid">
+        <div class="server-chart-card full server-partition-card">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-hard-drive"></i> Disk Partitions</h3>
+                <span id="partition-count" class="server-pill">0 partitions</span>
+            </div>
+            <div id="partition-section" class="server-detail-body partition-card-grid"></div>
+        </div>
+        <div class="server-chart-card">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-microchip"></i> CPU Usage</h3>
+                <span id="cpu-count" class="server-pill">0 samples</span>
+            </div>
+            <div class="server-chart-body"><canvas id="cpu-chart"></canvas></div>
+        </div>
+        <div class="server-chart-card">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-memory"></i> RAM Usage</h3>
+                <span id="ram-count" class="server-pill">0 samples</span>
+            </div>
+            <div class="server-chart-body"><canvas id="ram-chart"></canvas></div>
+        </div>
+        <div class="server-chart-card">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-hard-drive"></i> Disk Usage</h3>
+                <span id="disk-count" class="server-pill">0 samples</span>
+            </div>
+            <div class="server-chart-body"><canvas id="disk-chart"></canvas></div>
+        </div>
+        <div class="server-chart-card">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-network-wired"></i> Network Traffic</h3>
+                <span id="network-count" class="server-pill">0 samples</span>
+            </div>
+            <div class="server-chart-body"><canvas id="network-chart"></canvas></div>
+        </div>
+        <div class="server-chart-card wide">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-wave-square"></i> Response Time</h3>
+                <div class="server-chart-pills">
+                    <span id="response-current" class="server-pill">Current -</span>
+                    <span id="response-avg" class="server-pill">Avg -</span>
+                    <span id="response-max" class="server-pill">Max -</span>
+                    <span id="response-count" class="server-pill">0 samples</span>
+                </div>
+            </div>
+            <div class="server-chart-body"><canvas id="response-chart"></canvas></div>
+        </div>
+        <div id="load-chart-card" class="server-chart-card wide" style="display: none;">
+            <div class="server-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-gauge"></i> Load Average</h3>
+                <span id="load-count" class="server-pill">0 samples</span>
+            </div>
+            <div class="server-chart-body"><canvas id="load-chart"></canvas></div>
+        </div>
+    </section>
+
+    <section class="server-detail-grid">
+        <div class="server-detail-card">
+            <div class="server-detail-header">
+                <h3 class="server-detail-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent Events</h3>
+                <span id="event-count" class="server-pill">0 events</span>
+            </div>
+            <div id="recent-events" class="server-detail-body server-empty">Loading...</div>
+        </div>
+        <div class="server-detail-card">
+            <div class="server-detail-header">
+                <h3 class="server-detail-title"><i class="fa-solid fa-screwdriver-wrench"></i> Services Summary</h3>
+            </div>
+            <div id="service-details" class="server-detail-body server-empty">Loading...</div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+const deviceId = Number('{{ device_id }}');
+let currentHours = 6;
+const charts = {};
+const partitionCharts = [];
+const RESPONSE_WARNING_MS = 10000;
+const RESPONSE_CRITICAL_MS = 30000;
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function pct(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(1)}%` : '-';
+}
+
+function formatBps(value) {
+    let num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return '0 bps';
+    const units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+    let unit = 0;
+    while (num >= 1000 && unit < units.length - 1) {
+        num /= 1000;
+        unit += 1;
+    }
+    return unit === 0 ? `${num.toFixed(0)} ${units[unit]}` : `${num.toFixed(1)} ${units[unit]}`;
+}
+
+function formatMs(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-';
+}
+
+function formatDateTime(value) {
+    const text = String(value || '');
+    if (!text) return '-';
+    const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return text;
+    return date.toLocaleString([], {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function timestampPoint(row) {
+    const raw = row?.timestamp || row?.sampled_at || row?.checked_at;
+    const text = String(raw || '');
+    const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
+    const date = new Date(normalized);
+    const y = Number(row?.value ?? row?.avg_response_time);
+    if (Number.isNaN(date.getTime()) || !Number.isFinite(y)) return null;
+    return { x: date, y };
+}
+
+function chartColors() {
+    const theme = document.documentElement.getAttribute('data-theme') || 'light';
+    return {
+        text: theme === 'light' ? '#64748b' : 'rgba(255,255,255,0.65)',
+        grid: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+    };
+}
+
+function setCount(id, count) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = `${count || 0} samples`;
+}
+
+function responseSeverityClass(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    if (num > RESPONSE_CRITICAL_MS) return 'is-critical';
+    if (num > RESPONSE_WARNING_MS) return 'is-warning';
+    return '';
+}
+
+function setPillValue(id, label, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('is-warning', 'is-critical');
+    el.classList.add(...responseSeverityClass(value).split(' ').filter(Boolean));
+    el.textContent = `${label} ${formatMs(value)}`;
+}
+
+function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tickCallback = value => `${value}%`) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const colors = chartColors();
+    const points = (rows || []).map(timestampPoint).filter(Boolean);
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            },
+            y: {
+                min: 0,
+                max: maxValue,
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 }, callback: tickCallback }
+            }
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: context => `${label}: ${tickCallback(context.parsed.y)}`
+                }
+            }
+        }
+    };
+    const data = {
+        datasets: [{
+            label,
+            data: points,
+            borderColor: color,
+            backgroundColor: `${color}22`,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.18,
+            fill: true
+        }]
+    };
+    if (charts[key]) {
+        charts[key].data = data;
+        charts[key].options = options;
+        charts[key].update('none');
+    } else {
+        charts[key] = new Chart(canvas.getContext('2d'), { type: 'line', data, options });
+    }
+}
+
+function renderNetworkChart(data) {
+    const canvas = document.getElementById('network-chart');
+    if (!canvas) return;
+    const colors = chartColors();
+    const inPoints = (data.network_in || []).map(timestampPoint).filter(Boolean);
+    const outPoints = (data.network_out || []).map(timestampPoint).filter(Boolean);
+    const maxValue = Math.max(1000, ...inPoints.map(p => p.y), ...outPoints.map(p => p.y));
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            },
+            y: {
+                min: 0,
+                suggestedMax: maxValue,
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 }, callback: formatBps }
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'bottom',
+                labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 10 } }
+            },
+            tooltip: {
+                callbacks: { label: context => `${context.dataset.label}: ${formatBps(context.parsed.y)}` }
+            }
+        }
+    };
+    const chartData = {
+        datasets: [
+            { label: 'Incoming', data: inPoints, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.12)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18 },
+            { label: 'Outgoing', data: outPoints, borderColor: '#be123c', backgroundColor: 'rgba(190,18,60,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18 }
+        ]
+    };
+    if (charts.network) {
+        charts.network.data = chartData;
+        charts.network.options = options;
+        charts.network.update('none');
+    } else {
+        charts.network = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
+    }
+}
+
+function renderLoadChart(data) {
+    const card = document.getElementById('load-chart-card');
+    const canvas = document.getElementById('load-chart');
+    if (!card || !canvas) return;
+
+    const load1 = (data.load1 || []).map(timestampPoint).filter(Boolean);
+    const load5 = (data.load5 || []).map(timestampPoint).filter(Boolean);
+    const load15 = (data.load15 || []).map(timestampPoint).filter(Boolean);
+    const hasData = load1.length || load5.length || load15.length;
+    card.style.display = hasData ? '' : 'none';
+    setCount('load-count', Math.max(load1.length, load5.length, load15.length));
+    if (!hasData) {
+        if (charts.load) {
+            charts.load.destroy();
+            delete charts.load;
+        }
+        return;
+    }
+
+    const colors = chartColors();
+    const maxValue = Math.max(1, ...load1.map(p => p.y), ...load5.map(p => p.y), ...load15.map(p => p.y));
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            },
+            y: {
+                min: 0,
+                suggestedMax: Math.ceil(maxValue * 1.25),
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'bottom',
+                labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 10 } }
+            },
+            tooltip: {
+                callbacks: { label: context => `${context.dataset.label}: ${Number(context.parsed.y).toFixed(2)}` }
+            }
+        }
+    };
+    const chartData = {
+        datasets: [
+            { label: 'Load 1m', data: load1, borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false },
+            { label: 'Load 5m', data: load5, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false },
+            { label: 'Load 15m', data: load15, borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false }
+        ]
+    };
+
+    if (charts.load) {
+        charts.load.data = chartData;
+        charts.load.options = options;
+        charts.load.update('none');
+    } else {
+        charts.load = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
+    }
+}
+
+const responseThresholdPlugin = {
+    id: 'singleServerResponseThresholds',
+    beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const yScale = scales.y;
+        if (!chartArea || !yScale) return;
+        const warningY = yScale.getPixelForValue(RESPONSE_WARNING_MS);
+        const criticalY = yScale.getPixelForValue(RESPONSE_CRITICAL_MS);
+
+        ctx.save();
+        if (warningY > chartArea.top && warningY < chartArea.bottom) {
+            ctx.fillStyle = 'rgba(245, 158, 11, 0.07)';
+            ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, warningY - chartArea.top);
+        }
+        if (criticalY > chartArea.top && criticalY < chartArea.bottom) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+            ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, criticalY - chartArea.top);
+        }
+        ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const yScale = scales.y;
+        if (!chartArea || !yScale) return;
+
+        [
+            { value: RESPONSE_WARNING_MS, label: 'Warning 10s', color: '#f59e0b' },
+            { value: RESPONSE_CRITICAL_MS, label: 'Critical 30s', color: '#ef4444' }
+        ].forEach(item => {
+            const y = yScale.getPixelForValue(item.value);
+            if (y < chartArea.top || y > chartArea.bottom) return;
+            ctx.save();
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(chartArea.left, y);
+            ctx.lineTo(chartArea.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = item.color;
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(item.label, chartArea.right - 4, y - 5);
+            ctx.restore();
+        });
+    }
+};
+
+function renderResponseChart(serverHealthResponse, server) {
+    const canvas = document.getElementById('response-chart');
+    if (!canvas) return;
+    const colors = chartColors();
+    const series = (serverHealthResponse.series || []).find(item => Number(item.device_id) === deviceId);
+    const labels = serverHealthResponse.labels || [];
+    const rows = labels.map((label, index) => ({
+        checked_at: label,
+        value: series ? series.values[index] : null
+    })).filter(row => row.value !== null && row.value !== undefined);
+    const points = rows.map(timestampPoint).filter(Boolean);
+    const values = points.map(point => point.y).filter(value => Number.isFinite(value));
+    const currentValue = Number(server?.response_time);
+    const lastValue = Number.isFinite(currentValue) ? currentValue : values[values.length - 1];
+    const avgValue = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const maxValue = values.length ? Math.max(...values) : null;
+    const responseColor = maxValue > RESPONSE_CRITICAL_MS ? '#dc2626' : (maxValue > RESPONSE_WARNING_MS ? '#d97706' : '#0f766e');
+
+    setPillValue('response-current', 'Current', lastValue);
+    setPillValue('response-avg', 'Avg', avgValue);
+    setPillValue('response-max', 'Max', maxValue);
+    setCount('response-count', rows.length);
+
+    const suggestedMax = Math.max(
+        RESPONSE_WARNING_MS,
+        Math.ceil((maxValue || RESPONSE_WARNING_MS) * 1.2 / 1000) * 1000
+    );
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            },
+            y: {
+                min: 0,
+                suggestedMax,
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 }, callback: formatMs }
+            }
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: { label: context => `Response Time: ${formatMs(context.parsed.y)}` }
+            }
+        }
+    };
+    const chartData = {
+        datasets: [{
+            label: 'Response Time',
+            data: points,
+            borderColor: responseColor,
+            backgroundColor: `${responseColor}1f`,
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.18,
+            fill: true
+        }]
+    };
+
+    if (charts.response) {
+        charts.response.data = chartData;
+        charts.response.options = options;
+        charts.response.update('none');
+    } else {
+        charts.response = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: chartData,
+            options,
+            plugins: [responseThresholdPlugin]
+        });
+    }
+}
+
+function formatDiskCapacityFromDetail(detail) {
+    const sizeKb = Number(detail?.size_kb);
+    const usePercent = Number(detail?.use_percent);
+    if (!Number.isFinite(sizeKb) || sizeKb <= 0 || !Number.isFinite(usePercent)) return null;
+    const totalGb = sizeKb / 1024 / 1024;
+    const usedGb = totalGb * (usePercent / 100);
+    const format = value => value >= 1024 ? `${(value / 1024).toFixed(1)} TB` : `${value.toFixed(1)} GB`;
+    return `${format(usedGb)} / ${format(totalGb)}`;
+}
+
+function renderPartitionCharts(partitions, diskDetails = []) {
+    const section = document.getElementById('partition-section');
+    const count = document.getElementById('partition-count');
+    section.innerHTML = '';
+
+    const available = (partitions || []).filter(item => Array.isArray(item.history) && item.history.length);
+    if (count) count.textContent = `${available.length} partitions`;
+    if (!available.length) {
+        section.classList.add('server-empty');
+        section.textContent = 'No disk partition history yet.';
+        return;
+    }
+    section.classList.remove('server-empty');
+
+    const colors = ['#0f766e', '#2563eb', '#7c3aed', '#0891b2', '#d97706', '#be123c'];
+    section.innerHTML = available.map((partition, index) => {
+        const latest = [...partition.history].reverse().find(item => item.value !== null && item.value !== undefined);
+        const used = Number(latest?.value);
+        const usePercent = Number.isFinite(used) ? Math.max(0, Math.min(100, used)) : 0;
+        const color = colors[index % colors.length];
+        const mount = partition.mount || 'Disk';
+        const detail = (diskDetails || []).find(item => String(item.mount || item.name || '').toLowerCase() === String(mount).toLowerCase());
+        const capacity = formatDiskCapacityFromDetail(detail) || `${partition.history.length} samples`;
+        return `
+            <div class="partition-card" style="--partition-color:${color}; --partition-pct:${usePercent};">
+                <div class="partition-donut" aria-hidden="true"></div>
+                <div>
+                    <div class="partition-title">${esc(mount)}</div>
+                    <div class="partition-percent">${pct(usePercent)}</div>
+                    <div class="partition-meta">${esc(capacity)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderDetails(data, server) {
+    const current = data.current || {};
+    const services = current.service_status || [];
+    const summary = current.service_summary || {};
+    const serviceWrap = document.getElementById('service-details');
+
+    if (serviceWrap) {
+        serviceWrap.classList.remove('server-empty');
+        if (services.length) {
+            const sortedServices = [...services].sort((a, b) => Number(!!a.ok) - Number(!!b.ok));
+            const stoppedCount = sortedServices.filter(service => !service.ok).length;
+            serviceWrap.innerHTML = `
+                <div class="service-summary-grid">
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon"><i class="fa-solid fa-server"></i></div>
+                        <div>
+                            <div class="service-summary-label">Monitored</div>
+                            <div class="service-summary-value">${esc(sortedServices.length)}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-running"><i class="fa-solid fa-circle-check"></i></div>
+                        <div>
+                            <div class="service-summary-label">Running</div>
+                            <div class="service-summary-value">${esc(sortedServices.length - stoppedCount)}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-stopped"><i class="fa-solid fa-octagon-exclamation"></i></div>
+                        <div>
+                            <div class="service-summary-label">Stopped</div>
+                            <div class="service-summary-value">${esc(stoppedCount)}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-windows"><i class="fa-solid fa-list-check"></i></div>
+                        <div>
+                            <div class="service-summary-label">Detailed List</div>
+                            <div class="service-summary-value">Yes</div>
+                        </div>
+                    </div>
+                </div>
+                ${stoppedCount ? `<div class="server-note">${esc(stoppedCount)} monitored service(s) are not running. Configure critical services only to keep this view actionable.</div>` : ''}
+            `;
+        } else if (Object.keys(summary).length) {
+            const total = Number(summary.total ?? summary.monitored ?? 0);
+            const running = Number(summary.running ?? 0);
+            const stopped = Number(summary.stopped ?? 0);
+            const autoStopped = Number(summary.auto_stopped ?? 0);
+            serviceWrap.innerHTML = `
+                <div class="service-summary-grid">
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon"><i class="fa-solid fa-server"></i></div>
+                        <div>
+                            <div class="service-summary-label">Total Services</div>
+                            <div class="service-summary-value">${esc(total || '-')}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-running"><i class="fa-solid fa-circle-check"></i></div>
+                        <div>
+                            <div class="service-summary-label">Running</div>
+                            <div class="service-summary-value">${esc(running || '-')}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-stopped"><i class="fa-solid fa-stop"></i></div>
+                        <div>
+                            <div class="service-summary-label">Stopped</div>
+                            <div class="service-summary-value">${esc(stopped || '-')}</div>
+                        </div>
+                    </div>
+                    <div class="service-summary-card">
+                        <div class="service-summary-icon is-windows"><i class="fa-brands fa-windows"></i></div>
+                        <div>
+                            <div class="service-summary-label">Windows Services</div>
+                            <div class="service-summary-value">${summary.source === 'windows' ? 'Yes' : esc(summary.source || 'Summary')}</div>
+                        </div>
+                    </div>
+                </div>
+                ${autoStopped ? `<div class="server-row"><span>Auto stopped services</span><strong>${esc(autoStopped)}</strong></div>` : ''}
+                <div class="server-note">
+                    This is a Windows service summary. To show exact stopped service names here, add monitored service names in the device configuration.
+                </div>
+            `;
+        } else {
+            serviceWrap.innerHTML = '<div class="server-empty">No monitored services configured.</div>';
+        }
+    }
+
+    const meta = document.getElementById('server-meta');
+    const metaItems = [
+        server?.ip_address ? `<i class="fa-solid fa-network-wired"></i> ${esc(server.ip_address)}` : null,
+        `<i class="fa-solid fa-plug"></i> ${esc(inferPlatform(current, server))}`,
+        current.last_check ? `<i class="fa-solid fa-satellite-dish"></i> Last check ${esc(formatDateTime(current.last_check))}` : null,
+        current.uptime_text ? `<i class="fa-solid fa-clock"></i> Uptime ${esc(current.uptime_text)}` : null,
+        current.last_boot_time ? `<i class="fa-solid fa-power-off"></i> Boot ${esc(current.last_boot_time)}` : null,
+        current.pending_reboot ? `<i class="fa-solid fa-rotate"></i> Pending reboot` : null
+    ].filter(Boolean);
+    meta.innerHTML = metaItems.map(item => `<span class="server-pill">${item}</span>`).join('');
+}
+
+function eventIcon(event) {
+    if (event.kind === 'alert') return 'fa-triangle-exclamation';
+    if (event.status === 'down') return 'fa-circle-xmark';
+    if (event.status === 'slow') return 'fa-gauge-high';
+    if (event.status === 'up') return 'fa-circle-check';
+    return 'fa-circle-info';
+}
+
+function eventIconClass(event) {
+    if (event.kind === 'alert') return 'is-alert';
+    if (event.status === 'up') return 'is-up';
+    if (event.status === 'slow') return 'is-slow';
+    if (event.status === 'down') return 'is-down';
+    if (event.status === 'failed' || event.status === 'error') return 'is-failed';
+    return '';
+}
+
+function renderEvents(data) {
+    const target = document.getElementById('recent-events');
+    const count = document.getElementById('event-count');
+    if (!target) return;
+    const events = data?.events || [];
+    const visibleEvents = events.slice(0, 8);
+    const statusEvents = events.filter(event => event.kind === 'status');
+    const alertEvents = events.filter(event => event.kind === 'alert');
+    const slowEvents = statusEvents.filter(event => event.status === 'slow');
+    const downEvents = statusEvents.filter(event => event.status === 'down');
+    if (count) count.textContent = `${visibleEvents.length}/${events.length} shown`;
+
+    if (!events.length) {
+        target.classList.add('server-empty');
+        target.innerHTML = 'No recent status or alert events.';
+        return;
+    }
+
+    target.classList.remove('server-empty');
+    const latestClass = eventIconClass(events[0]);
+    target.innerHTML = `
+        <div class="event-summary-grid">
+            <div class="event-summary-card ${latestClass}">
+                <div class="event-summary-label">Latest</div>
+                <div class="event-summary-value">${esc(events[0]?.status || events[0]?.kind || '-')}</div>
+            </div>
+            <div class="event-summary-card is-slow">
+                <div class="event-summary-label">Slow</div>
+                <div class="event-summary-value">${esc(slowEvents.length)}</div>
+            </div>
+            <div class="event-summary-card is-down">
+                <div class="event-summary-label">Down</div>
+                <div class="event-summary-value">${esc(downEvents.length)}</div>
+            </div>
+            <div class="event-summary-card is-alert">
+                <div class="event-summary-label">Alerts</div>
+                <div class="event-summary-value">${esc(alertEvents.length)}</div>
+            </div>
+        </div>
+        <div class="event-list">
+            ${visibleEvents.map(event => {
+                const kind = event.kind === 'alert' ? 'Alert' : 'Status';
+                const title = event.kind === 'alert'
+                    ? `${kind}: ${event.title || 'alert'}`
+                    : `${kind}: ${event.status || 'unknown'}`;
+                const message = event.kind === 'alert'
+                    ? `${event.channel ? `[${event.channel}] ` : ''}${event.message || ''}`
+                    : `${event.message || ''}`;
+                return `
+                    <div class="event-row">
+                        <div class="event-icon ${eventIconClass(event)}"><i class="fa-solid ${eventIcon(event)}"></i></div>
+                        <div>
+                            <div class="event-title">${esc(title)}</div>
+                            <div class="event-message">${esc(message || '-')}</div>
+                        </div>
+                        <div class="event-time">${esc(formatDateTime(event.time))}</div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+        ${events.length > visibleEvents.length ? `<div class="event-more-note">Showing latest ${visibleEvents.length} of ${events.length} events for this range.</div>` : ''}
+    `;
+}
+
+function formatDiskSize(kb) {
+    const num = Number(kb);
+    if (!Number.isFinite(num)) return 'N/A';
+    const gb = num / 1024 / 1024;
+    if (gb >= 1024) return `${(gb / 1024).toFixed(2)} TB`;
+    return `${gb.toFixed(1)} GB`;
+}
+
+function inferPlatform(current, server) {
+    const monitorType = String(current.monitor_type || server?.monitor_type || '').toLowerCase();
+    if (monitorType === 'winrm' || monitorType === 'wmi') return `Windows / ${monitorType.toUpperCase()}`;
+    if (monitorType === 'ssh') return 'Linux/Unix / SSH';
+    return monitorType ? monitorType.toUpperCase() : 'Unknown protocol';
+}
+
+function serviceDownCount(current) {
+    const services = current.service_status || [];
+    if (services.length) return services.filter(service => !service.ok).length;
+    const summary = current.service_summary || {};
+    const stopped = Number(summary.stopped);
+    return Number.isFinite(stopped) ? stopped : 0;
+}
+
+function updateSummary(data, server) {
+    const current = data.current || {};
+    document.getElementById('server-name').textContent = server?.name || `Server ${deviceId}`;
+    const status = document.getElementById('server-status');
+    const statusText = current.status || server?.status || 'unknown';
+    const responseValue = Number(current.response_time ?? server?.response_time);
+    const serviceDown = serviceDownCount(current);
+    const pendingReboot = !!current.pending_reboot;
+    status.textContent = statusText;
+    status.className = `status-badge status-${esc(statusText)}`;
+    document.getElementById('stat-cpu').textContent = pct(current.cpu);
+    document.getElementById('stat-ram').textContent = pct(current.ram);
+    document.getElementById('stat-disk').textContent = pct(current.disk);
+    document.getElementById('stat-load').textContent = current.load1 !== null && current.load1 !== undefined
+        ? `Load ${Number(current.load1).toFixed(2)} / ${Number(current.load5 || 0).toFixed(2)} / ${Number(current.load15 || 0).toFixed(2)}`
+        : 'Load -';
+    document.getElementById('stat-swap').textContent = `Swap ${pct(current.swap)}`;
+    document.getElementById('stat-inode').textContent = `Inode ${pct(current.inode)}`;
+    document.getElementById('stat-response').textContent = formatMs(responseValue);
+    document.getElementById('stat-response-sub').textContent = responseSeverityClass(responseValue) === 'is-critical'
+        ? 'Critical'
+        : (responseSeverityClass(responseValue) === 'is-warning' ? 'Warning' : 'Current');
+    document.getElementById('stat-service-down').textContent = serviceDown;
+    document.getElementById('stat-service-sub').textContent = current.service_status?.length
+        ? `${current.service_status.length} monitored`
+        : 'Windows summary';
+    document.getElementById('stat-reboot').textContent = pendingReboot ? 'Yes' : 'No';
+    document.getElementById('stat-reboot-sub').textContent = pendingReboot ? 'Restart required' : 'No pending reboot';
+}
+
+async function loadServerList() {
+    const res = await fetch(`/api/server-health?_t=${Date.now()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const servers = data.servers || [];
+    const switcher = document.getElementById('server-switcher');
+    switcher.innerHTML = servers.map(server => `
+        <option value="${esc(server.id)}" ${Number(server.id) === deviceId ? 'selected' : ''}>
+            ${esc(server.name || 'Unknown')} (${esc(server.ip_address || '-')})
+        </option>
+    `).join('');
+    return servers.find(server => Number(server.id) === deviceId);
+}
+
+async function loadDashboard() {
+    try {
+        const [server, performanceRes, responseRes, eventsRes] = await Promise.all([
+            loadServerList(),
+            fetch(`/api/devices/${deviceId}/performance?hours=${currentHours}&_t=${Date.now()}`),
+            fetch(`/api/server-health/response-time?minutes=${currentHours * 60}&sample=72&_t=${Date.now()}`),
+            fetch(`/api/devices/${deviceId}/events?minutes=${currentHours * 60}&limit=30&_t=${Date.now()}`)
+        ]);
+        if (!performanceRes.ok) throw new Error(`Performance HTTP ${performanceRes.status}`);
+        if (!responseRes.ok) throw new Error(`Response HTTP ${responseRes.status}`);
+        if (!eventsRes.ok) throw new Error(`Events HTTP ${eventsRes.status}`);
+        const performance = await performanceRes.json();
+        const response = await responseRes.json();
+        const events = await eventsRes.json();
+        if (performance.error) throw new Error(performance.error);
+        if (events.success === false) throw new Error(events.error || 'Unable to load events');
+
+        updateSummary(performance, server);
+        renderDetails(performance, server);
+        renderEvents(events);
+        setCount('cpu-count', (performance.cpu || []).length);
+        setCount('ram-count', (performance.ram || []).length);
+        setCount('disk-count', (performance.disk || []).length);
+        setCount('network-count', Math.max((performance.network_in || []).length, (performance.network_out || []).length));
+        renderLineChart('cpu', 'cpu-chart', 'CPU Usage', performance.cpu || [], '#0f766e');
+        renderLineChart('ram', 'ram-chart', 'RAM Usage', performance.ram || [], '#2563eb');
+        renderLineChart('disk', 'disk-chart', 'Disk Usage', performance.disk || [], '#d97706');
+        renderNetworkChart(performance);
+        renderResponseChart(response, server);
+        renderLoadChart(performance);
+        renderPartitionCharts(performance.disk_partitions || [], performance.current?.disk_details || []);
+    } catch (error) {
+        document.getElementById('server-name').textContent = 'Unable to load server';
+        document.getElementById('server-meta').innerHTML = `<span class="server-pill">${esc(error.message)}</span>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.server-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.server-range-btn').forEach(item => item.classList.remove('active'));
+            btn.classList.add('active');
+            currentHours = Number(btn.dataset.hours || 6);
+            loadDashboard();
+        });
+    });
+    document.getElementById('server-switcher').addEventListener('change', event => {
+        const id = event.target.value;
+        if (id) window.location.href = `/server-dashboard/${encodeURIComponent(id)}`;
+    });
+    loadDashboard();
+    setInterval(loadDashboard, 30000);
+});
+</script>
+{% endblock %}

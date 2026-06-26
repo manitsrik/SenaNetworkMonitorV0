@@ -1893,6 +1893,90 @@ class Database:
             return history
         finally:
             self.release_connection(conn)
+
+    def get_server_response_time_series(self, minutes=360, sample_count=60):
+        """Get response time buckets per SSH/WinRM/WMI server device."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            minutes = max(5, int(minutes or 360))
+            sample_count = max(12, min(240, int(sample_count or 60)))
+            bucket_size_sec = max(1, int((minutes * 60) / sample_count))
+
+            if self.db_type == 'postgresql':
+                time_group = f"FLOOR(EXTRACT(EPOCH FROM h.checked_at::timestamp) / {bucket_size_sec})"
+                time_select = "to_char(MIN(h.checked_at::timestamp), 'YYYY-MM-DD HH24:MI:SS')"
+                time_filter = f"NOW() - INTERVAL '{minutes} minutes'"
+            else:
+                time_group = f"CAST(strftime('%s', h.checked_at) / {bucket_size_sec} AS INTEGER)"
+                time_select = "datetime(MIN(h.checked_at))"
+                time_filter = f"datetime('now', '-{minutes} minutes')"
+
+            query = f'''
+                SELECT
+                    d.id as device_id,
+                    d.name as device_name,
+                    {time_select} as checked_at,
+                    AVG(h.response_time) as avg_response_time,
+                    MIN(h.response_time) as min_response_time,
+                    MAX(h.response_time) as max_response_time,
+                    COUNT(h.response_time) as sample_count,
+                    {time_group} as bucket_id
+                FROM status_history h
+                JOIN devices d ON h.device_id = d.id
+                WHERE h.checked_at >= {time_filter}
+                  AND h.response_time IS NOT NULL
+                  AND h.status IN ('up', 'slow')
+                  AND d.monitor_type IN ('ssh', 'winrm', 'wmi')
+                GROUP BY d.id, d.name, {time_group}
+                ORDER BY bucket_id ASC, d.name ASC
+            '''
+            cursor.execute(query)
+            rows = self._rows_to_dicts(cursor.fetchall())
+
+            cursor.execute('''
+                SELECT id, name
+                FROM devices
+                WHERE monitor_type IN ('ssh', 'winrm', 'wmi')
+                ORDER BY name ASC
+            ''')
+            servers = self._rows_to_dicts(cursor.fetchall())
+
+            data_map = {}
+            for row in rows:
+                data_map[(int(row['bucket_id']), row['device_id'])] = row
+
+            import calendar
+            now_ts = int(calendar.timegm(datetime.now().timetuple()))
+            current_bucket_id = int(now_ts / bucket_size_sec)
+            start_bucket_id = current_bucket_id - sample_count + 1
+
+            labels = []
+            for bucket_id in range(start_bucket_id, current_bucket_id + 1):
+                first_row = next((data_map.get((bucket_id, server.get('id'))) for server in servers if data_map.get((bucket_id, server.get('id')))), None)
+                labels.append(first_row.get('checked_at') if first_row else datetime.utcfromtimestamp(bucket_id * bucket_size_sec).isoformat())
+
+            series = []
+            for server in servers:
+                values = []
+                samples = 0
+                for bucket_id in range(start_bucket_id, current_bucket_id + 1):
+                    row = data_map.get((bucket_id, server.get('id')))
+                    if row and row.get('avg_response_time') is not None:
+                        values.append(round(float(row['avg_response_time']), 2))
+                        samples += int(row.get('sample_count') or 0)
+                    else:
+                        values.append(None)
+                if any(value is not None for value in values):
+                    series.append({
+                        'device_id': server.get('id'),
+                        'device_name': server.get('name'),
+                        'values': values,
+                        'sample_count': samples,
+                    })
+            return {'labels': labels, 'series': series}
+        finally:
+            self.release_connection(conn)
     
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
         """Get historical data with optional filters"""
@@ -2140,6 +2224,23 @@ class Database:
             ORDER BY ah.created_at DESC
             LIMIT {self._ph()}
         ''', (limit,))
+        history = self._rows_to_dicts(cursor.fetchall())
+        self.release_connection(conn)
+        return history
+
+    def get_device_alert_history(self, device_id, limit=50):
+        """Get alert history for a single device."""
+        conn = self.get_connection()
+        cursor = self._cursor(conn)
+        ph = self._ph()
+        cursor.execute(f'''
+            SELECT ah.*, d.name as device_name, d.ip_address
+            FROM alert_history ah
+            LEFT JOIN devices d ON ah.device_id = d.id
+            WHERE ah.device_id = {ph}
+            ORDER BY ah.created_at DESC
+            LIMIT {ph}
+        ''', (device_id, limit))
         history = self._rows_to_dicts(cursor.fetchall())
         self.release_connection(conn)
         return history

@@ -5,126 +5,1043 @@
 {% block page_title %}Server Health{% endblock %}
 
 {% block header_actions %}
-<a href="/api/server-health/export.pdf" class="btn btn-xs btn-secondary" title="Download PDF">
-    <i class="fa-solid fa-file-pdf"></i> Export PDF
-</a>
-<a href="/api/server-health/export.csv" class="btn btn-xs btn-secondary">
-    <i class="fa-solid fa-file-csv"></i> Export CSV
-</a>
+<div class="server-health-header-actions">
+    <div class="server-health-export-actions">
+        <a href="/api/server-health/export.pdf" class="btn btn-xs btn-secondary" title="Download PDF">
+            <i class="fa-solid fa-file-pdf"></i> Export PDF
+        </a>
+        <a href="/api/server-health/export.csv" class="btn btn-xs btn-secondary" title="Download CSV">
+            <i class="fa-solid fa-file-csv"></i> Export CSV
+        </a>
+    </div>
+    <div class="health-filter-card health-filter-header">
+        <label class="health-filter-label" for="server-filter-select">
+            <i class="fa-solid fa-filter"></i>
+            Server filter
+        </label>
+        <select id="server-filter-select" class="health-filter-control">
+            <option value="all">All Servers</option>
+        </select>
+        <input id="server-filter-search" class="health-filter-control" list="server-filter-options" placeholder="Search name or IP">
+        <datalist id="server-filter-options"></datalist>
+        <span id="server-filter-status" class="health-filter-status">Showing all servers</span>
+        <button type="button" id="server-filter-clear" class="btn btn-xs btn-secondary health-filter-clear">
+            <i class="fa-solid fa-xmark"></i> Clear
+        </button>
+    </div>
+</div>
 {% endblock %}
 
 {% block content %}
 <style>
-    .server-health-grid {
+    .server-health-page {
+        --health-surface: var(--bg-secondary);
+        --health-soft: rgba(45, 106, 79, 0.08);
+        --health-line: rgba(148, 163, 184, 0.22);
+        --health-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+    }
+
+    [data-theme="dark"] .server-health-page {
+        --health-soft: rgba(82, 183, 136, 0.12);
+        --health-line: rgba(148, 163, 184, 0.18);
+        --health-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+    }
+
+    .server-health-page .card {
+        box-shadow: none;
+        transform: none;
+    }
+
+    .server-health-page .card:hover {
+        box-shadow: none;
+        transform: none;
+    }
+
+    .health-overview {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1rem;
+        grid-template-columns: 1.4fr repeat(4, minmax(150px, 1fr));
+        gap: 0.45rem;
+        align-items: stretch;
     }
-    .server-health-table {
-        width: 100%;
-        border-collapse: collapse;
+
+    .health-hero,
+    .health-summary-card,
+    .health-panel,
+    .health-table-card {
+        background: var(--health-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--health-shadow);
     }
-    .server-health-table th,
-    .server-health-table td {
+
+    .health-hero {
         padding: 0.65rem 0.75rem;
-        border-bottom: 1px solid var(--border-color);
-        text-align: left;
-        vertical-align: top;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 84px;
+        background:
+            linear-gradient(135deg, rgba(45, 106, 79, 0.12), rgba(59, 130, 246, 0.05)),
+            var(--health-surface);
     }
-    .server-health-table th {
+
+    .health-hero-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .health-eyebrow {
         color: var(--text-muted);
-        font-size: 0.78rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
         text-transform: uppercase;
     }
-    .health-panels {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-        gap: 1rem;
+
+    .health-title {
+        margin: 0.08rem 0 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+        line-height: 1.2;
     }
-    .metric-pill {
+
+    .health-subtitle {
+        margin-top: 0.18rem;
+        color: var(--text-secondary);
+        font-size: 0.74rem;
+        line-height: 1.25;
+        max-width: 520px;
+    }
+
+    .health-live-pill {
         display: inline-flex;
         align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.55rem;
+        border: 1px solid rgba(16, 185, 129, 0.25);
         border-radius: 999px;
-        padding: 0.2rem 0.55rem;
-        background: rgba(15, 23, 42, 0.06);
-        color: var(--text);
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
         font-size: 0.78rem;
-        margin: 0.1rem;
+        font-weight: 700;
+        white-space: nowrap;
     }
+
+    .health-live-dot {
+        width: 0.45rem;
+        height: 0.45rem;
+        border-radius: 50%;
+        background: var(--success);
+        box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.12);
+    }
+
+    .health-meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.32rem;
+        margin-top: 0.42rem;
+    }
+
+    .health-meta-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 22px;
+        padding: 0.18rem 0.42rem;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.42);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+    }
+
+    [data-theme="dark"] .health-meta-chip {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .health-filter-card {
+        display: grid;
+        grid-template-columns: auto minmax(320px, 1.2fr) minmax(180px, 0.6fr) auto auto;
+        gap: 0.45rem;
+        align-items: center;
+        padding: 0.55rem 0.65rem;
+        background: var(--health-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--health-shadow);
+    }
+
+    .health-filter-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: var(--text-primary);
+        font-size: 0.78rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .health-filter-label i {
+        color: var(--primary);
+    }
+
+    .health-filter-control {
+        width: 100%;
+        min-height: 32px;
+        padding: 0.35rem 0.55rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: 0.78rem;
+    }
+
+    .health-filter-control:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.1);
+    }
+
+    .health-filter-status {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0.22rem 0.5rem;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        font-size: 0.72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .health-filter-clear {
+        min-height: 32px;
+        padding: 0.35rem 0.65rem;
+        justify-content: center;
+        white-space: nowrap;
+    }
+
+    .server-health-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+    }
+
+    .server-health-export-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex: 0 0 auto;
+    }
+
+    .health-filter-header {
+        width: min(980px, 56vw);
+        min-width: 560px;
+        grid-template-columns: auto minmax(220px, 1fr) minmax(145px, 0.55fr) auto auto;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+    }
+
+    .health-filter-header .health-filter-label {
+        font-size: 0.72rem;
+    }
+
+    .health-filter-header .health-filter-control {
+        min-height: 28px;
+        padding: 0.24rem 0.45rem;
+        border-radius: 7px;
+        font-size: 0.72rem;
+    }
+
+    .health-filter-header .health-filter-status {
+        min-height: 26px;
+        padding: 0.18rem 0.45rem;
+        font-size: 0.68rem;
+        background: var(--bg-secondary);
+    }
+
+    .health-filter-header .health-filter-clear {
+        min-height: 28px;
+        padding: 0.24rem 0.5rem;
+    }
+
+    .health-summary-card {
+        padding: 0.58rem 0.7rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 84px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .health-summary-card::after {
+        content: "";
+        position: absolute;
+        inset: auto 0 0;
+        height: 3px;
+        background: var(--summary-color, var(--primary));
+        opacity: 0.9;
+    }
+
+    .health-summary-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .health-summary-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--summary-bg, var(--health-soft));
+        color: var(--summary-color, var(--primary));
+        flex: 0 0 auto;
+    }
+
+    .health-summary-label {
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    .health-summary-value {
+        margin-top: 0.08rem;
+        color: var(--summary-color, var(--text-primary));
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 0.95;
+    }
+
+    .health-summary-note {
+        margin-top: 0.24rem;
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+        line-height: 1.25;
+    }
+
+    .health-summary-card.is-total {
+        --summary-color: var(--primary);
+        --summary-bg: rgba(45, 106, 79, 0.1);
+    }
+
+    .health-summary-card.is-down {
+        --summary-color: var(--danger);
+        --summary-bg: rgba(239, 68, 68, 0.1);
+    }
+
+    .health-summary-card.is-service,
+    .health-summary-card.is-reboot {
+        --summary-color: var(--warning);
+        --summary-bg: rgba(245, 158, 11, 0.12);
+    }
+
+    .health-panels {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(190px, 1fr));
+        gap: 0.45rem;
+    }
+
+    .health-chart-card {
+        background: var(--health-surface);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: var(--health-shadow);
+        overflow: hidden;
+    }
+
+    .health-chart-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.48rem 0.65rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .health-chart-title {
+        display: flex;
+        align-items: center;
+        gap: 0.42rem;
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        line-height: 1.2;
+    }
+
+    .health-chart-title i {
+        color: var(--primary);
+    }
+
+    .health-chart-stats {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+    }
+
+    .health-chart-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.24rem;
+        padding: 0.16rem 0.42rem;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .health-chart-body {
+        position: relative;
+        height: 170px;
+        padding: 0.5rem 0.7rem 0.55rem;
+    }
+
+    .health-chart-body canvas {
+        width: 100% !important;
+        height: 100% !important;
+    }
+
+    .health-panel {
+        min-height: 0;
+        max-height: 312px;
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .health-panel-header,
+    .health-table-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.55rem;
+        padding: 0.48rem 0.65rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .health-panel-title,
+    .health-table-title {
+        display: flex;
+        align-items: center;
+        gap: 0.42rem;
+        margin: 0;
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        line-height: 1.2;
+    }
+
+    .health-panel-title i,
+    .health-table-title i {
+        color: var(--primary);
+    }
+
+    .health-panel-count {
+        color: var(--text-muted);
+        font-size: 0.66rem;
+        font-weight: 700;
+    }
+
+    .health-list {
+        padding: 0.2rem 0.55rem 0.45rem;
+        overflow-y: auto;
+        min-height: 0;
+    }
+
+    .health-list-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.38rem 0;
+        border-bottom: 1px solid var(--health-line);
+    }
+
+    .health-list-row:last-child {
+        border-bottom: 0;
+    }
+
+    .health-item-name {
+        min-width: 0;
+    }
+
+    .health-item-name a,
+    .server-name-link {
+        color: var(--text-primary);
+        font-weight: 700;
+        font-size: 0.78rem;
+        text-decoration: none;
+    }
+
+    .health-item-name a:hover,
+    .server-name-link:hover {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    .health-item-meta {
+        margin-top: 0.1rem;
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .health-value {
+        min-width: 76px;
+        text-align: right;
+    }
+
+    .health-value strong {
+        color: var(--text-primary);
+        font-size: 0.74rem;
+    }
+
+    .health-bar-track {
+        width: 76px;
+        height: 4px;
+        margin-top: 0.25rem;
+        border-radius: 999px;
+        overflow: hidden;
+        background: var(--bg-tertiary);
+    }
+
+    .health-bar-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: var(--bar-color, var(--success));
+    }
+
+    .health-empty,
+    .health-loading,
+    .health-error {
+        padding: 0.85rem;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+    }
+
+    .health-error {
+        color: var(--danger);
+    }
+
+    .health-table-card {
+        overflow: hidden;
+    }
+
+    .health-table-wrap {
+        overflow: auto;
+    }
+
+    .server-health-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        min-width: 1120px;
+    }
+
+    .server-health-table thead {
+        background: var(--bg-tertiary);
+    }
+
+    .server-health-table th {
+        padding: 0.48rem 0.65rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-muted);
+        font-size: 0.62rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .server-sort-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        width: 100%;
+        min-height: 22px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        text-transform: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .server-sort-button:hover,
+    .server-sort-button:focus-visible {
+        color: var(--text-primary);
+    }
+
+    .server-sort-button:focus-visible {
+        outline: 2px solid rgba(59, 130, 246, 0.35);
+        outline-offset: 2px;
+        border-radius: 4px;
+    }
+
+    .server-sort-icon {
+        width: 0.72rem;
+        color: var(--text-muted);
+        font-size: 0.58rem;
+        opacity: 0.6;
+    }
+
+    .server-sort-button.is-active .server-sort-icon {
+        color: var(--primary);
+        opacity: 1;
+    }
+
+    .server-health-table td {
+        padding: 0.48rem 0.65rem;
+        border-bottom: 1px solid var(--health-line);
+        color: var(--text-secondary);
+        vertical-align: middle;
+    }
+
+    .server-health-table tbody tr:hover {
+        background: var(--health-soft);
+    }
+
+    .server-health-table tbody tr:last-child td {
+        border-bottom: 0;
+    }
+
+    .server-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.48rem;
+        min-width: 200px;
+    }
+
+    .server-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--info);
+        flex: 0 0 auto;
+    }
+
+    .server-meta {
+        margin-top: 0.08rem;
+        color: var(--text-muted);
+        font-size: 0.63rem;
+    }
+
+    .metric-cell {
+        min-width: 104px;
+    }
+
+    .traffic-cell {
+        min-width: 132px;
+    }
+
+    .traffic-pair,
+    .response-pair {
+        display: grid;
+        gap: 0.18rem;
+        color: var(--text-primary);
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .traffic-pair span,
+    .response-pair span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.28rem;
+        white-space: nowrap;
+    }
+
+    .traffic-in {
+        color: var(--success);
+    }
+
+    .traffic-out {
+        color: var(--info);
+    }
+
+    .response-cell {
+        min-width: 118px;
+    }
+
+    .response-good {
+        color: var(--success);
+    }
+
+    .response-warning {
+        color: var(--warning);
+    }
+
+    .response-critical {
+        color: var(--danger);
+    }
+
+    .metric-cell-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.45rem;
+        color: var(--text-primary);
+        font-weight: 700;
+        font-size: 0.72rem;
+    }
+
+    .metric-cell .health-bar-track {
+        width: 100%;
+        margin-top: 0.24rem;
+    }
+
+    .uptime-cell {
+        min-width: 140px;
+        color: var(--text-primary);
+        font-size: 0.74rem;
+        font-weight: 600;
+    }
+
+    .service-cell {
+        min-width: 120px;
+    }
+
+    .server-action-cell {
+        min-width: 96px;
+        text-align: right;
+    }
+
+    .server-dashboard-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.32rem;
+        min-height: 28px;
+        padding: 0.28rem 0.55rem;
+        border: 1px solid rgba(45, 106, 79, 0.25);
+        border-radius: 7px;
+        background: rgba(45, 106, 79, 0.08);
+        color: var(--primary);
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .server-dashboard-link:hover {
+        background: rgba(45, 106, 79, 0.14);
+        color: var(--primary);
+        text-decoration: none;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 0.16rem 0.45rem;
+        border-radius: 999px;
+        font-size: 0.64rem;
+        font-weight: 800;
+        line-height: 1;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .health-table-wrap {
+        max-height: calc(100vh - 415px);
+        min-height: 264px;
+    }
+
+    .server-health-table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: var(--bg-tertiary);
+    }
+
+    .status-unknown {
+        background: rgba(107, 114, 128, 0.1);
+        color: var(--text-muted);
+        border: 1px solid rgba(107, 114, 128, 0.35);
+    }
+
+    @media (max-width: 1440px) {
+        .health-overview {
+            grid-template-columns: repeat(4, minmax(150px, 1fr));
+        }
+
+        .health-hero {
+            grid-column: 1 / -1;
+            min-height: auto;
+        }
+
+        .health-panels {
+            grid-template-columns: repeat(2, minmax(280px, 1fr));
+        }
+
+        .health-filter-header {
+            width: min(760px, 46vw);
+            min-width: 420px;
+            grid-template-columns: minmax(190px, 1fr) minmax(130px, 0.55fr) auto;
+        }
+
+        .health-filter-header .health-filter-label,
+        .health-filter-header .health-filter-status {
+            display: none;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .health-overview,
+        .health-panels {
+            grid-template-columns: 1fr;
+        }
+
+        .health-hero-top {
+            flex-direction: column;
+        }
+
+        .health-summary-card,
+        .health-panel,
+        .health-hero {
+            min-height: auto;
+        }
+
+        .health-chart-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .health-filter-card {
+            grid-template-columns: 1fr;
+        }
+
+        .server-health-header-actions {
+            gap: 0.35rem;
+        }
+
+        .health-filter-header {
+            display: none;
+        }
+    }
+
     @media print {
-        .sidebar, .top-header, .header-actions { display: none !important; }
+        .sidebar, .top-header, .header-actions, .assistant-fab, .assistant-panel { display: none !important; }
         .main-content, .content-area { margin: 0 !important; padding: 0 !important; }
         body { background: #fff !important; color: #111 !important; }
-        .card { box-shadow: none !important; break-inside: avoid; border: 1px solid #bbb !important; }
-        .health-panels { grid-template-columns: 1fr 1fr; }
+        .health-overview, .health-panels { grid-template-columns: 1fr 1fr !important; }
+        .health-hero, .health-summary-card, .health-panel, .health-table-card {
+            box-shadow: none !important;
+            break-inside: avoid;
+            border: 1px solid #bbb !important;
+        }
         a { color: #111 !important; text-decoration: none !important; }
     }
 </style>
 
-<div class="server-health-grid">
-    <div class="card" style="padding: 1rem;">
-        <div class="text-muted">Servers</div>
-        <div id="sum-total" style="font-size: 1.75rem; font-weight: 700;">-</div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <div class="text-muted">Down</div>
-        <div id="sum-down" style="font-size: 1.75rem; font-weight: 700; color: var(--danger);">-</div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <div class="text-muted">Service Down</div>
-        <div id="sum-service" style="font-size: 1.75rem; font-weight: 700; color: var(--warning);">-</div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <div class="text-muted">Pending Reboot</div>
-        <div id="sum-reboot" style="font-size: 1.75rem; font-weight: 700; color: var(--warning);">-</div>
-    </div>
-</div>
+<div class="server-health-page">
+    <section class="health-overview">
+        <div class="health-hero">
+            <div class="health-hero-top">
+                <div>
+                    <div class="health-eyebrow">Infrastructure health</div>
+                    <h2 class="health-title">Server Health Overview</h2>
+                    <div class="health-subtitle">Live CPU, memory, disk, services, uptime, and reboot signals for monitored servers.</div>
+                </div>
+                <div class="health-live-pill" title="Refreshes every 30 seconds">
+                    <span class="health-live-dot"></span>
+                    Live
+                </div>
+            </div>
+            <div class="health-meta-row">
+                <span class="health-meta-chip"><i class="fa-solid fa-rotate"></i> <span id="last-updated">Updating...</span></span>
+                <span class="health-meta-chip"><i class="fa-solid fa-circle-check"></i> <span id="sum-up">-</span> up</span>
+                <span class="health-meta-chip"><i class="fa-solid fa-gauge-high"></i> <span id="sum-slow">-</span> slow</span>
+                <span class="health-meta-chip"><i class="fa-solid fa-arrow-down"></i> <span id="sum-net-in">-</span> in</span>
+                <span class="health-meta-chip"><i class="fa-solid fa-arrow-up"></i> <span id="sum-net-out">-</span> out</span>
+            </div>
+        </div>
 
-<div class="health-panels">
-    <div class="card" style="padding: 1rem;">
-        <h3 style="margin-bottom: 0.75rem;">Top CPU</h3>
-        <div id="top-cpu"></div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <h3 style="margin-bottom: 0.75rem;">Top RAM</h3>
-        <div id="top-ram"></div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <h3 style="margin-bottom: 0.75rem;">Top Disk / Partition</h3>
-        <div id="top-disk"></div>
-    </div>
-    <div class="card" style="padding: 1rem;">
-        <h3 style="margin-bottom: 0.75rem;">Service Down</h3>
-        <div id="service-down"></div>
-    </div>
-</div>
+        <div class="health-summary-card is-total">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Servers</div>
+                    <div id="sum-total" class="health-summary-value">-</div>
+                </div>
+                <div class="health-summary-icon"><i class="fa-solid fa-server"></i></div>
+            </div>
+            <div class="health-summary-note">SSH, WinRM, and WMI targets currently included.</div>
+        </div>
 
-<div class="card" style="padding: 1rem; margin-top: 1rem;">
-    <h3 style="margin-bottom: 0.75rem;">All Servers</h3>
-    <div style="overflow:auto;">
-        <table class="server-health-table">
-            <thead>
-                <tr>
-                    <th>Server</th>
-                    <th>Status</th>
-                    <th>CPU</th>
-                    <th>RAM</th>
-                    <th>Disk</th>
-                    <th>Uptime</th>
-                    <th>Services</th>
-                </tr>
-            </thead>
-            <tbody id="server-table-body">
-                <tr><td colspan="7" class="text-muted">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
+        <div class="health-summary-card is-down">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Down</div>
+                    <div id="sum-down" class="health-summary-value">-</div>
+                </div>
+                <div class="health-summary-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            </div>
+            <div class="health-summary-note">Servers that need immediate connectivity review.</div>
+        </div>
+
+        <div class="health-summary-card is-service">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Service Down</div>
+                    <div id="sum-service" class="health-summary-value">-</div>
+                </div>
+                <div class="health-summary-icon"><i class="fa-solid fa-gears"></i></div>
+            </div>
+            <div class="health-summary-note">Stopped services reported by server checks.</div>
+        </div>
+
+        <div class="health-summary-card is-reboot">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Pending Reboot</div>
+                    <div id="sum-reboot" class="health-summary-value">-</div>
+                </div>
+                <div class="health-summary-icon"><i class="fa-solid fa-power-off"></i></div>
+            </div>
+            <div class="health-summary-note">Windows/Linux hosts waiting for restart actions.</div>
+        </div>
+    </section>
+
+    <section class="health-chart-card">
+        <div class="health-chart-header">
+            <h3 class="health-chart-title"><i class="fa-solid fa-chart-line"></i> Response Time by Server</h3>
+            <div class="health-chart-stats">
+                <span class="health-chart-stat"><i class="fa-solid fa-clock"></i> Last 6h</span>
+                <span class="health-chart-stat"><span id="rt-servers">-</span> servers</span>
+                <span class="health-chart-stat">Warn 10s</span>
+                <span class="health-chart-stat">Crit 30s</span>
+                <span class="health-chart-stat">Avg <span id="rt-avg">-</span></span>
+                <span class="health-chart-stat">Peak <span id="rt-max">-</span></span>
+            </div>
+        </div>
+        <div class="health-chart-body">
+            <canvas id="response-time-chart"></canvas>
+            <div id="response-time-empty" class="health-empty" style="display:none;">No response-time history by server yet.</div>
+        </div>
+    </section>
+
+    <section class="health-panels">
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-microchip"></i> Top CPU</h3>
+                <span id="top-cpu-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="top-cpu" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-memory"></i> Top RAM</h3>
+                <span id="top-ram-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="top-ram" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-hard-drive"></i> Top Disk / Partition</h3>
+                <span id="top-disk-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="top-disk" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-network-wired"></i> Top Network</h3>
+                <span id="top-network-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="top-network" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-wave-square"></i> Top Response</h3>
+                <span id="top-response-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="top-response" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+
+        <div class="health-panel">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-screwdriver-wrench"></i> Service Down</h3>
+                <span id="service-down-count" class="health-panel-count">0 items</span>
+            </div>
+            <div id="service-down" class="health-list"><div class="health-loading">Loading...</div></div>
+        </div>
+    </section>
+
+    <section class="health-table-card">
+        <div class="health-table-header">
+            <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
+            <span id="server-count-label" class="health-panel-count">0 servers</span>
+        </div>
+        <div class="health-table-wrap">
+            <table class="server-health-table">
+                <thead>
+                    <tr>
+                        <th><button type="button" class="server-sort-button" data-sort-key="server">Server <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="status">Status <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="cpu">CPU <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="response">Response <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="server-table-body">
+                    <tr><td colspan="10" class="health-loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+let responseTimeChart = null;
+let latestServerHealthData = null;
+let selectedServerId = 'all';
+let serverSearchMap = new Map();
+let serverSortState = { key: 'server', direction: 'asc' };
+const RESPONSE_WARNING_MS = 10000;
+const RESPONSE_CRITICAL_MS = 30000;
+
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -136,71 +1053,679 @@ function pct(value) {
     return Number.isFinite(num) ? `${num.toFixed(1)}%` : '-';
 }
 
-function renderList(targetId, rows, kind) {
-    const target = document.getElementById(targetId);
-    if (!rows || !rows.length) {
-        target.innerHTML = '<div class="text-muted">No data</div>';
+function formatBps(value) {
+    let num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return '0 bps';
+    const units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+    let unit = 0;
+    while (num >= 1000 && unit < units.length - 1) {
+        num /= 1000;
+        unit += 1;
+    }
+    return unit === 0 ? `${num.toFixed(0)} ${units[unit]}` : `${num.toFixed(1)} ${units[unit]}`;
+}
+
+function formatMs(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-';
+}
+
+function formatChartTime(value) {
+    const date = new Date(String(value || '').replace(' ', 'T'));
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+const responseThresholdPlugin = {
+    id: 'responseThresholdPlugin',
+    beforeDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const yScale = scales.y;
+        if (!chartArea || !yScale) return;
+
+        const warningY = yScale.getPixelForValue(RESPONSE_WARNING_MS);
+        const criticalY = yScale.getPixelForValue(RESPONSE_CRITICAL_MS);
+
+        ctx.save();
+        if (criticalY > chartArea.top && criticalY < chartArea.bottom) {
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.06)';
+            ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, criticalY - chartArea.top);
+        }
+        if (warningY > chartArea.top && warningY < chartArea.bottom) {
+            const top = Math.max(criticalY, chartArea.top);
+            ctx.fillStyle = 'rgba(245, 158, 11, 0.06)';
+            ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, warningY - top);
+        }
+        ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+        const { ctx, chartArea, scales } = chart;
+        const yScale = scales.y;
+        if (!chartArea || !yScale) return;
+
+        [
+            { value: RESPONSE_WARNING_MS, label: 'Warning 10s', color: '#f59e0b' },
+            { value: RESPONSE_CRITICAL_MS, label: 'Critical 30s', color: '#ef4444' }
+        ].forEach(item => {
+            const y = yScale.getPixelForValue(item.value);
+            if (y < chartArea.top || y > chartArea.bottom) return;
+            ctx.save();
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(chartArea.left, y);
+            ctx.lineTo(chartArea.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = item.color;
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(item.label, chartArea.right - 4, y - 5);
+            ctx.restore();
+        });
+    }
+};
+
+function numeric(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 0;
+}
+
+function barColor(value) {
+    const num = numeric(value);
+    if (num >= 90) return 'var(--danger)';
+    if (num >= 75) return 'var(--warning)';
+    return 'var(--success)';
+}
+
+function metricBar(value) {
+    const num = numeric(value);
+    return `
+        <div class="health-bar-track" aria-hidden="true">
+            <div class="health-bar-fill" style="width:${num}%; --bar-color:${barColor(num)};"></div>
+        </div>
+    `;
+}
+
+function normalizeServerId(id) {
+    return id === null || id === undefined || id === '' ? 'all' : String(id);
+}
+
+function serverFilterLink(id, name) {
+    const normalized = normalizeServerId(id);
+    return `<a href="#" data-server-filter="${esc(normalized)}" title="Filter this server">${esc(name || 'Unknown')}</a>`;
+}
+
+function setCount(id, count, noun = 'items') {
+    const el = document.getElementById(id);
+    if (el) el.textContent = `${count || 0} ${noun}`;
+}
+
+function selectedServer() {
+    if (!latestServerHealthData || selectedServerId === 'all') return null;
+    return (latestServerHealthData.servers || []).find(server => normalizeServerId(server.id) === selectedServerId) || null;
+}
+
+function serverMatchesSelection(row) {
+    if (selectedServerId === 'all') return true;
+    return normalizeServerId(row.id || row.device_id) === selectedServerId;
+}
+
+function topRows(rows, key, limit = 10) {
+    return (rows || [])
+        .filter(row => row && row[key] !== null && row[key] !== undefined)
+        .sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0))
+        .slice(0, limit);
+}
+
+function serviceStoppedCount(server) {
+    return (server.service_status || []).filter(item => !item.ok).length;
+}
+
+function sortValue(server, key) {
+    const statusRank = { down: 0, slow: 1, unknown: 2, up: 3 };
+    switch (key) {
+        case 'server':
+            return String(server.name || '').toLowerCase();
+        case 'status':
+            return statusRank[String(server.status || 'unknown').toLowerCase()] ?? statusRank.unknown;
+        case 'cpu':
+            return Number(server.cpu);
+        case 'ram':
+            return Number(server.ram);
+        case 'disk':
+            return Number(server.disk);
+        case 'traffic':
+            return Number(server.network_total_bps);
+        case 'response':
+            return Number(server.response_time);
+        case 'uptime':
+            return Number(server.uptime_seconds);
+        case 'services':
+            return serviceStoppedCount(server);
+        default:
+            return '';
+    }
+}
+
+function isSortMissing(value) {
+    return value === null || value === undefined || (typeof value === 'number' && !Number.isFinite(value)) || value === '';
+}
+
+function compareSortValues(a, b) {
+    if (typeof a === 'string' || typeof b === 'string') {
+        return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+    }
+    return a - b;
+}
+
+function sortedServers(servers) {
+    const { key, direction } = serverSortState;
+    const multiplier = direction === 'desc' ? -1 : 1;
+    return [...(servers || [])].sort((a, b) => {
+        const aValue = sortValue(a, key);
+        const bValue = sortValue(b, key);
+        const aMissing = isSortMissing(aValue);
+        const bMissing = isSortMissing(bValue);
+        if (aMissing && bMissing) return compareSortValues(sortValue(a, 'server'), sortValue(b, 'server'));
+        if (aMissing && !bMissing) return 1;
+        if (!aMissing && bMissing) return -1;
+
+        const primary = compareSortValues(aValue, bValue);
+        if (primary !== 0) return primary * multiplier;
+        return compareSortValues(sortValue(a, 'server'), sortValue(b, 'server'));
+    });
+}
+
+function updateServerSortHeaders() {
+    document.querySelectorAll('[data-sort-key]').forEach(button => {
+        const isActive = button.getAttribute('data-sort-key') === serverSortState.key;
+        const icon = button.querySelector('.server-sort-icon');
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-sort', isActive ? (serverSortState.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+        button.setAttribute('title', isActive
+            ? `Sorted ${serverSortState.direction === 'asc' ? 'ascending' : 'descending'}`
+            : 'Sort table');
+        if (icon) {
+            icon.className = `fa-solid ${isActive ? (serverSortState.direction === 'asc' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'} server-sort-icon`;
+        }
+    });
+}
+
+function setServerSort(key) {
+    serverSortState = {
+        key,
+        direction: serverSortState.key === key && serverSortState.direction === 'asc' ? 'desc' : 'asc',
+    };
+    if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
+}
+
+function buildFilteredData(data) {
+    if (!data || selectedServerId === 'all') return data;
+    const servers = (data.servers || []).filter(serverMatchesSelection);
+    const selected = servers[0];
+    const serviceDown = (data.service_down || []).filter(serverMatchesSelection);
+    const topDisk = (data.top_disk || []).filter(serverMatchesSelection);
+    const pendingReboot = (data.pending_reboot || []).filter(serverMatchesSelection);
+
+    return {
+        ...data,
+        summary: {
+            total_servers: servers.length,
+            up: servers.filter(server => server.status === 'up').length,
+            slow: servers.filter(server => server.status === 'slow').length,
+            down: servers.filter(server => server.status === 'down').length,
+            pending_reboot: pendingReboot.length || (selected?.pending_reboot ? 1 : 0),
+            service_down: serviceDown.length,
+            network_in_bps: servers.reduce((total, server) => total + Number(server.network_in_bps || 0), 0),
+            network_out_bps: servers.reduce((total, server) => total + Number(server.network_out_bps || 0), 0),
+            network_total_bps: servers.reduce((total, server) => total + Number(server.network_total_bps || 0), 0),
+        },
+        servers,
+        top_cpu: topRows(servers, 'cpu', 10),
+        top_ram: topRows(servers, 'ram', 10),
+        top_disk: topDisk,
+        top_network: topRows(servers, 'network_total_bps', 10),
+        top_response: topRows(servers, 'response_time', 10),
+        service_down: serviceDown,
+        pending_reboot: pendingReboot,
+    };
+}
+
+function populateServerFilter(servers) {
+    const select = document.getElementById('server-filter-select');
+    const datalist = document.getElementById('server-filter-options');
+    if (!select || !datalist) return;
+
+    const current = selectedServerId;
+    serverSearchMap = new Map();
+    select.innerHTML = '<option value="all">All Servers</option>';
+    datalist.innerHTML = '';
+
+    (servers || []).forEach(server => {
+        const id = normalizeServerId(server.id);
+        const label = `${server.name || 'Unknown'} (${server.ip_address || '-'})`;
+        const option = document.createElement('option');
+        option.value = id;
+        option.textContent = label;
+        select.appendChild(option);
+
+        const searchOption = document.createElement('option');
+        searchOption.value = label;
+        datalist.appendChild(searchOption);
+        serverSearchMap.set(label.toLowerCase(), id);
+        serverSearchMap.set(String(server.name || '').toLowerCase(), id);
+        serverSearchMap.set(String(server.ip_address || '').toLowerCase(), id);
+    });
+
+    if ([...select.options].some(option => option.value === current)) {
+        select.value = current;
+    } else {
+        selectedServerId = 'all';
+        select.value = 'all';
+    }
+}
+
+function updateFilterStatus() {
+    const status = document.getElementById('server-filter-status');
+    const search = document.getElementById('server-filter-search');
+    if (!status) return;
+    const server = selectedServer();
+    if (!server) {
+        status.textContent = 'Showing all servers';
+        if (search && selectedServerId === 'all') search.value = '';
         return;
     }
+    status.textContent = `Showing ${server.name || 'selected server'}`;
+    if (search) search.value = `${server.name || 'Unknown'} (${server.ip_address || '-'})`;
+}
+
+function applyServerFilter(id) {
+    selectedServerId = normalizeServerId(id);
+    const select = document.getElementById('server-filter-select');
+    if (select) select.value = selectedServerId;
+    updateFilterStatus();
+    if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
+    loadResponseTimeChart();
+}
+
+function renderList(targetId, rows, kind) {
+    const target = document.getElementById(targetId);
+    setCount(`${targetId}-count`, rows?.length || 0);
+    if (!rows || !rows.length) {
+        target.innerHTML = '<div class="health-empty">No data</div>';
+        return;
+    }
+
     target.innerHTML = rows.map(row => {
+        const id = row.id || row.device_id;
+        const name = row.name || row.device_name;
+        let value = row[kind];
         let right = '';
-        if (kind === 'disk') right = `${pct(row.use_percent)} <span class="text-muted">${esc(row.mount || '')}</span>`;
-        else if (kind === 'service') right = `<span class="status-badge status-down">${esc(row.status || 'down')}</span>`;
-        else right = pct(row[kind]);
+        let meta = row.ip_address || row.monitor_type || '';
+
+        if (kind === 'disk') {
+            value = row.use_percent;
+            right = `<strong>${pct(row.use_percent)}</strong>${metricBar(row.use_percent)}`;
+            meta = row.mount ? `Partition ${row.mount}` : 'Partition';
+        } else if (kind === 'network') {
+            right = `
+                <div class="traffic-pair">
+                    <span class="traffic-in"><i class="fa-solid fa-arrow-down"></i>${formatBps(row.network_in_bps)}</span>
+                    <span class="traffic-out"><i class="fa-solid fa-arrow-up"></i>${formatBps(row.network_out_bps)}</span>
+                </div>
+            `;
+            meta = `${formatBps(row.network_total_bps)} total`;
+        } else if (kind === 'response') {
+            const cssClass = responseClass(row.response_time);
+            const state = cssClass === 'response-critical' ? 'Critical' : (cssClass === 'response-warning' ? 'Warning' : 'Normal');
+            right = `
+                <div class="response-pair">
+                    <span class="${cssClass}"><i class="fa-solid fa-wave-square"></i>${formatMs(row.response_time)}</span>
+                    <span class="text-muted">${state}</span>
+                </div>
+            `;
+            meta = row.ip_address || row.monitor_type || '';
+        } else if (kind === 'service') {
+            right = `<span class="status-badge status-down">${esc(row.status || 'down')}</span>`;
+            meta = row.service ? `Service ${row.service}` : 'Service check';
+        } else {
+            right = `<strong>${pct(value)}</strong>${metricBar(value)}`;
+        }
+
         return `
-            <div style="display:flex; justify-content:space-between; gap:1rem; padding:0.45rem 0; border-bottom:1px solid var(--border-color);">
-                <a href="/devices?highlight_device=${encodeURIComponent(row.id || row.device_id)}">${esc(row.name || row.device_name)}</a>
-                <strong>${right}</strong>
+            <div class="health-list-row">
+                <div class="health-item-name">
+                    ${serverFilterLink(id, name)}
+                    <div class="health-item-meta">${esc(meta)}</div>
+                </div>
+                <div class="health-value">${right}</div>
             </div>
         `;
     }).join('');
 }
 
+function renderMetricCell(value, subtext = '') {
+    return `
+        <div class="metric-cell">
+            <div class="metric-cell-top">
+                <span>${pct(value)}</span>
+            </div>
+            ${metricBar(value)}
+            ${subtext ? `<small class="text-muted">${subtext}</small>` : ''}
+        </div>
+    `;
+}
+
+function renderTrafficCell(server) {
+    return `
+        <div class="traffic-cell">
+            <div class="traffic-pair">
+                <span class="traffic-in"><i class="fa-solid fa-arrow-down"></i>${formatBps(server.network_in_bps)}</span>
+                <span class="traffic-out"><i class="fa-solid fa-arrow-up"></i>${formatBps(server.network_out_bps)}</span>
+            </div>
+        </div>
+    `;
+}
+
+function responseClass(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 'response-good';
+    if (num > RESPONSE_CRITICAL_MS) return 'response-critical';
+    if (num > RESPONSE_WARNING_MS) return 'response-warning';
+    return 'response-good';
+}
+
+function renderResponseCell(server) {
+    const value = Number(server.response_time);
+    const label = Number.isFinite(value) ? formatMs(value) : '-';
+    const cssClass = responseClass(value);
+    const state = cssClass === 'response-critical' ? 'Critical' : (cssClass === 'response-warning' ? 'Warning' : 'Normal');
+    return `
+        <div class="response-cell">
+            <div class="response-pair">
+                <span class="${cssClass}"><i class="fa-solid fa-wave-square"></i>${label}</span>
+                <span class="text-muted">${state}</span>
+            </div>
+        </div>
+    `;
+}
+
 function renderServers(servers) {
     const body = document.getElementById('server-table-body');
+    const countLabel = document.getElementById('server-count-label');
+    if (countLabel) countLabel.textContent = `${servers.length} servers`;
+    updateServerSortHeaders();
+
     if (!servers.length) {
-        body.innerHTML = '<tr><td colspan="7" class="text-muted">No SSH/WinRM servers yet.</td></tr>';
+        body.innerHTML = '<tr><td colspan="10" class="health-empty">No SSH/WinRM/WMI servers yet.</td></tr>';
         return;
     }
-    body.innerHTML = servers.map(server => {
+
+    body.innerHTML = sortedServers(servers).map(server => {
         const services = server.service_status || [];
         const stopped = services.filter(item => !item.ok);
         const serviceText = services.length
             ? `<span class="status-badge ${stopped.length ? 'status-down' : 'status-up'}">${services.length - stopped.length}/${services.length}</span>`
             : '<span class="text-muted">-</span>';
         const reboot = server.pending_reboot ? '<span class="status-badge status-slow">reboot</span>' : '';
+        const loadText = server.load1 !== null && server.load1 !== undefined ? `load ${Number(server.load1).toFixed(2)}` : '';
+        const status = esc(server.status || 'unknown');
+
         return `
             <tr>
-                <td><a href="/devices?highlight_device=${encodeURIComponent(server.id)}">${esc(server.name)}</a><br><small class="text-muted">${esc(server.ip_address || '')}</small></td>
-                <td><span class="status-badge status-${esc(server.status || 'unknown')}">${esc(server.status || 'unknown')}</span> ${reboot}</td>
-                <td>${pct(server.cpu)}${server.load1 !== null && server.load1 !== undefined ? `<br><small class="text-muted">load ${Number(server.load1).toFixed(2)}</small>` : ''}</td>
-                <td>${pct(server.ram)}</td>
-                <td>${pct(server.disk)}</td>
-                <td>${esc(server.uptime_text || '-')}<br><small class="text-muted">${esc(server.last_boot_time || '')}</small></td>
-                <td>${serviceText}</td>
+                <td>
+                    <div class="server-cell">
+                        <div class="server-avatar"><i class="fa-solid fa-server"></i></div>
+                        <div>
+                            <a class="server-name-link" href="#" data-server-filter="${esc(normalizeServerId(server.id))}" title="Filter this server">${esc(server.name)}</a>
+                            <div class="server-meta">${esc(server.ip_address || '')} ${server.monitor_type ? `&bull; ${esc(server.monitor_type).toUpperCase()}` : ''}</div>
+                        </div>
+                    </div>
+                </td>
+                <td><span class="status-badge status-${status}">${status}</span> ${reboot}</td>
+                <td>${renderMetricCell(server.cpu, loadText)}</td>
+                <td>${renderMetricCell(server.ram)}</td>
+                <td>${renderMetricCell(server.disk)}</td>
+                <td>${renderTrafficCell(server)}</td>
+                <td>${renderResponseCell(server)}</td>
+                <td class="uptime-cell">${esc(server.uptime_text || '-')}<br><small class="text-muted">${esc(server.last_boot_time || '')}</small></td>
+                <td class="service-cell">${serviceText}</td>
+                <td class="server-action-cell">
+                    <a class="server-dashboard-link" href="/server-dashboard/${encodeURIComponent(server.id)}" title="Open server dashboard">
+                        <i class="fa-solid fa-chart-line"></i>
+                        Dashboard
+                    </a>
+                </td>
             </tr>
         `;
     }).join('');
 }
 
-async function loadServerHealth() {
-    const res = await fetch(`/api/server-health?_t=${Date.now()}`);
-    const data = await res.json();
-    const summary = data.summary || {};
+function setSummary(summary) {
     document.getElementById('sum-total').textContent = summary.total_servers ?? '-';
+    document.getElementById('sum-up').textContent = summary.up ?? '-';
+    document.getElementById('sum-slow').textContent = summary.slow ?? '-';
     document.getElementById('sum-down').textContent = summary.down ?? '-';
     document.getElementById('sum-service').textContent = summary.service_down ?? '-';
     document.getElementById('sum-reboot').textContent = summary.pending_reboot ?? '-';
-    renderList('top-cpu', data.top_cpu || [], 'cpu');
-    renderList('top-ram', data.top_ram || [], 'ram');
-    renderList('top-disk', data.top_disk || [], 'disk');
-    renderList('service-down', data.service_down || [], 'service');
-    renderServers(data.servers || []);
+    document.getElementById('sum-net-in').textContent = formatBps(summary.network_in_bps);
+    document.getElementById('sum-net-out').textContent = formatBps(summary.network_out_bps);
+}
+
+function setLastUpdated() {
+    const el = document.getElementById('last-updated');
+    if (!el) return;
+    el.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
+function renderError(message) {
+    ['top-cpu', 'top-ram', 'top-disk', 'top-network', 'top-response', 'service-down'].forEach(id => {
+        const target = document.getElementById(id);
+        if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
+    });
+    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
+}
+
+function renderServerHealthData(data) {
+    const filtered = buildFilteredData(data);
+    const summary = filtered.summary || {};
+    setSummary(summary);
+    renderList('top-cpu', filtered.top_cpu || [], 'cpu');
+    renderList('top-ram', filtered.top_ram || [], 'ram');
+    renderList('top-disk', filtered.top_disk || [], 'disk');
+    renderList('top-network', filtered.top_network || [], 'network');
+    renderList('top-response', filtered.top_response || [], 'response');
+    renderList('service-down', filtered.service_down || [], 'service');
+    renderServers(filtered.servers || []);
+    updateFilterStatus();
+}
+
+async function loadServerHealth() {
+    try {
+        const res = await fetch(`/api/server-health?_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success === false) throw new Error(data.error || 'Unable to load server health');
+        latestServerHealthData = data;
+        populateServerFilter(data.servers || []);
+        renderServerHealthData(data);
+        setLastUpdated();
+    } catch (error) {
+        renderError(`Unable to load server health: ${error.message}`);
+    }
+}
+
+async function loadResponseTimeChart() {
+    const empty = document.getElementById('response-time-empty');
+    const canvas = document.getElementById('response-time-chart');
+    if (!canvas || !window.Chart) return;
+
+    try {
+        const res = await fetch(`/api/server-health/response-time?minutes=360&sample=72&_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const series = selectedServerId === 'all'
+            ? (data.series || [])
+            : (data.series || []).filter(server => normalizeServerId(server.device_id) === selectedServerId);
+        const labels = (data.labels || []).map(label => formatChartTime(label));
+        const hasData = series.some(server => (server.values || []).some(value => value !== null && value !== undefined));
+        const chartValues = series
+            .flatMap(server => server.values || [])
+            .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)))
+            .map(Number);
+        const avgValue = chartValues.length ? chartValues.reduce((sum, value) => sum + value, 0) / chartValues.length : null;
+        const maxValue = chartValues.length ? Math.max(...chartValues) : null;
+
+        document.getElementById('rt-avg').textContent = formatMs(avgValue);
+        document.getElementById('rt-max').textContent = formatMs(maxValue);
+        document.getElementById('rt-servers').textContent = series.length;
+
+        if (!hasData) {
+            if (empty) empty.style.display = 'block';
+            if (responseTimeChart) {
+                responseTimeChart.destroy();
+                responseTimeChart = null;
+            }
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+
+        const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#64748b';
+        const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || '#e5e7eb';
+        const palette = [
+            '#0f766e', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2',
+            '#16a34a', '#ea580c', '#4f46e5', '#be123c', '#65a30d', '#0284c7'
+        ];
+
+        const ctx = canvas.getContext('2d');
+
+        const chartData = {
+            labels,
+            datasets: series.map((server, index) => {
+                const color = palette[index % palette.length];
+                return {
+                label: server.device_name || `Server ${server.device_id || index + 1}`,
+                data: server.values || [],
+                borderColor: color,
+                backgroundColor: color,
+                borderWidth: 1.8,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+                tension: 0.28,
+                fill: false,
+                spanGaps: false
+                };
+            })
+        };
+
+        const options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 10,
+                        boxHeight: 10,
+                        color: textColor,
+                        font: { size: 10 },
+                        usePointStyle: true,
+                        pointStyle: 'line'
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.dataset.label}: ${formatMs(context.parsed.y)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: textColor, maxTicksLimit: 10, font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: RESPONSE_CRITICAL_MS,
+                    grid: { color: gridColor },
+                    ticks: {
+                        color: textColor,
+                        font: { size: 10 },
+                        callback: value => `${value} ms`
+                    }
+                }
+            }
+        };
+
+        if (responseTimeChart) {
+            responseTimeChart.data = chartData;
+            responseTimeChart.options = options;
+            responseTimeChart.update('none');
+        } else {
+            responseTimeChart = new Chart(ctx, { type: 'line', data: chartData, options, plugins: [responseThresholdPlugin] });
+        }
+    } catch (error) {
+        if (empty) {
+            empty.style.display = 'block';
+            empty.textContent = `Unable to load response-time graph: ${error.message}`;
+        }
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    const filterSelect = document.getElementById('server-filter-select');
+    const filterSearch = document.getElementById('server-filter-search');
+    const filterClear = document.getElementById('server-filter-clear');
+
+    if (filterSelect) {
+        filterSelect.addEventListener('change', () => {
+            applyServerFilter(filterSelect.value || 'all');
+        });
+    }
+
+    if (filterSearch) {
+        filterSearch.addEventListener('change', () => {
+            const value = filterSearch.value.trim().toLowerCase();
+            if (!value) {
+                applyServerFilter('all');
+                return;
+            }
+            const directMatch = serverSearchMap.get(value);
+            if (directMatch) {
+                applyServerFilter(directMatch);
+                return;
+            }
+            const fuzzy = [...serverSearchMap.entries()].find(([label]) => label.includes(value));
+            if (fuzzy) applyServerFilter(fuzzy[1]);
+        });
+    }
+
+    if (filterClear) {
+        filterClear.addEventListener('click', () => applyServerFilter('all'));
+    }
+
+    document.querySelectorAll('[data-sort-key]').forEach(button => {
+        button.addEventListener('click', () => {
+            setServerSort(button.getAttribute('data-sort-key'));
+        });
+    });
+
+    document.addEventListener('click', event => {
+        const trigger = event.target.closest('[data-server-filter]');
+        if (!trigger) return;
+        event.preventDefault();
+        applyServerFilter(trigger.getAttribute('data-server-filter') || 'all');
+    });
+
     loadServerHealth();
+    loadResponseTimeChart();
     setInterval(loadServerHealth, 30000);
+    setInterval(loadResponseTimeChart, 30000);
 });
 </script>
 {% endblock %}

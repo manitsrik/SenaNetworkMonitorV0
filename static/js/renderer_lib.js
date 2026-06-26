@@ -4,6 +4,23 @@
  */
 
 console.log('Loading DashboardRenderer...');
+function nmGetSlowThreshold(device) {
+    if (window.NM_GET_SLOW_THRESHOLD) return window.NM_GET_SLOW_THRESHOLD(device);
+    const thresholds = window.NM_MONITOR_THRESHOLDS || {};
+    const fallback = Number(window.NM_DEFAULT_SLOW_THRESHOLD || 500);
+    const type = String((device && device.monitor_type) || 'ping').toLowerCase();
+    const value = Number(thresholds[type]);
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function nmIsDeviceSlow(device) {
+    if (window.NM_IS_DEVICE_SLOW) return window.NM_IS_DEVICE_SLOW(device);
+    if (!device) return false;
+    if (device.status === 'slow') return true;
+    const responseTime = Number(device.response_time);
+    return device.status === 'up' && Number.isFinite(responseTime) && responseTime > nmGetSlowThreshold(device);
+}
+
 window.DashboardRenderer = {
     // metadata for device types
     typeMetadata: {
@@ -1925,7 +1942,7 @@ window.DashboardRenderer = {
                     devicesByType[type].totalResponseTime += parseFloat(device.response_time);
                     devicesByType[type].responseTimeCount++;
                 }
-                if (device.response_time && parseFloat(device.response_time) > 500) {
+                if (nmIsDeviceSlow(device)) {
                     devicesByType[type].slow++;
                 } else {
                     devicesByType[type].up++;
@@ -2450,10 +2467,14 @@ window.DashboardRenderer = {
         return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg.trim());
     },
 
-    getNodeColor: function (status, responseTime) {
+    getNodeColor: function (status, responseTime, device = null) {
 
         if (status === 'down') return '#ef4444';
-        if (status === 'up' && responseTime && parseFloat(responseTime) > 500) return '#f59e0b';
+        if (status === 'up') {
+            const threshold = nmGetSlowThreshold(device);
+            const numericResponse = Number(responseTime);
+            if (Number.isFinite(numericResponse) && numericResponse > threshold) return '#f59e0b';
+        }
         if (status === 'up') return '#10b981';
         return '#f59e0b';
     },

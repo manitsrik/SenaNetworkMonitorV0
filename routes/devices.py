@@ -387,6 +387,11 @@ def get_device_performance(device_id):
             return json.loads(raw) if raw else fallback
         except Exception:
             return fallback
+
+    def _iso(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
     
     return jsonify({
         'device_id': device_id,
@@ -402,6 +407,10 @@ def get_device_performance(device_id):
         'network_out': network_out_history,
         'disk_partitions': disk_partition_history,
         'current': {
+            'status': device.get('status'),
+            'response_time': device.get('response_time'),
+            'last_check': _iso(device.get('last_check')),
+            'monitor_type': device.get('monitor_type'),
             'cpu': device.get('cpu_usage'),
             'ram': device.get('ram_usage'),
             'disk': device.get('disk_usage'),
@@ -430,6 +439,65 @@ def get_device_performance(device_id):
     })
 
 
+@devices_bp.route('/api/devices/<int:device_id>/events', methods=['GET'])
+def get_device_events(device_id):
+    """Get recent status checks and alert history for a single device."""
+    limit = max(1, min(request.args.get('limit', 30, type=int), 100))
+    minutes = request.args.get('minutes', 360, type=int)
+    minutes = max(5, min(minutes or 360, 7 * 24 * 60))
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+
+    status_history = db.get_device_history(device_id, limit=limit, minutes=minutes)
+    alert_history = db.get_device_alert_history(device_id, limit=limit)
+
+    def _iso(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return value
+
+    for row in status_history:
+        row['checked_at'] = _iso(row.get('checked_at'))
+    for row in alert_history:
+        row['created_at'] = _iso(row.get('created_at'))
+
+    events = []
+    for row in status_history:
+        events.append({
+            'kind': 'status',
+            'time': row.get('checked_at'),
+            'status': row.get('status'),
+            'response_time': row.get('response_time'),
+            'title': f"Status {row.get('status') or 'unknown'}",
+            'message': f"Response {row.get('response_time')} ms" if row.get('response_time') is not None else 'No response time recorded',
+        })
+    for row in alert_history:
+        events.append({
+            'kind': 'alert',
+            'time': row.get('created_at'),
+            'status': row.get('status'),
+            'event_type': row.get('event_type'),
+            'channel': row.get('channel'),
+            'title': row.get('event_type') or 'alert',
+            'message': row.get('message') or row.get('error_message') or '',
+        })
+
+    events.sort(key=lambda item: item.get('time') or '', reverse=True)
+    events = events[:limit]
+
+    return jsonify({
+        'success': True,
+        'device_id': device_id,
+        'device_name': device.get('name'),
+        'minutes': minutes,
+        'status_history': status_history,
+        'alert_history': alert_history,
+        'events': events,
+    })
+
+
 @devices_bp.route('/api/server-health', methods=['GET'])
 def get_server_health():
     """Get server-focused health summary for SSH/WinRM monitored devices."""
@@ -447,9 +515,17 @@ def get_server_health():
     pending_reboot = []
     disk_rows = []
 
+    def _bps(value):
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     for device in devices:
         if device.get('monitor_type') not in ('ssh', 'winrm', 'wmi'):
             continue
+        network_in = _bps(device.get('network_in_bps'))
+        network_out = _bps(device.get('network_out_bps'))
         service_status = _json_field(device, 'service_status_json', [])
         service_summary = _json_field(device, 'service_summary_json', {})
         disk_details = _json_field(device, 'disk_details_json', [])
@@ -459,6 +535,7 @@ def get_server_health():
             'ip_address': device.get('ip_address'),
             'monitor_type': device.get('monitor_type'),
             'status': device.get('status'),
+            'response_time': device.get('response_time'),
             'cpu': device.get('cpu_usage'),
             'ram': device.get('ram_usage'),
             'disk': device.get('disk_usage'),
@@ -467,6 +544,9 @@ def get_server_health():
             'load1': device.get('load1'),
             'load5': device.get('load5'),
             'load15': device.get('load15'),
+            'network_in_bps': network_in,
+            'network_out_bps': network_out,
+            'network_total_bps': network_in + network_out,
             'pending_reboot': bool(device.get('pending_reboot')),
             'uptime_text': device.get('server_uptime_text'),
             'last_boot_time': device.get('last_boot_time'),
@@ -511,13 +591,48 @@ def get_server_health():
             'down': sum(1 for s in servers if s.get('status') == 'down'),
             'pending_reboot': len(pending_reboot),
             'service_down': len(service_down),
+            'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
+            'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
+            'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
         },
         'servers': servers,
         'top_cpu': _top(servers, 'cpu'),
         'top_ram': _top(servers, 'ram'),
         'top_disk': _top(disk_rows, 'use_percent'),
+        'top_network': _top(servers, 'network_total_bps'),
+        'top_response': _top(servers, 'response_time'),
         'service_down': service_down,
         'pending_reboot': pending_reboot,
+    })
+
+
+@devices_bp.route('/api/server-health/response-time', methods=['GET'])
+def get_server_health_response_time():
+    """Get average response-time trend for server-health dashboard."""
+    minutes = request.args.get('minutes', 360, type=int)
+    sample_count = request.args.get('sample', 60, type=int)
+    minutes = max(5, min(7 * 24 * 60, minutes or 360))
+    sample_count = max(12, min(240, sample_count or 60))
+    result = _get_db().get_server_response_time_series(minutes=minutes, sample_count=sample_count)
+    series = result.get('series', [])
+    values = [
+        value
+        for device_series in series
+        for value in device_series.get('values', [])
+        if value is not None
+    ]
+    return jsonify({
+        'success': True,
+        'minutes': minutes,
+        'sample_count': sample_count,
+        'labels': result.get('labels', []),
+        'series': series,
+        'summary': {
+            'avg_response_time': round(sum(values) / len(values), 2) if values else None,
+            'min_response_time': round(min(values), 2) if values else None,
+            'max_response_time': round(max(values), 2) if values else None,
+            'server_count': len(series),
+        }
     })
 
 
@@ -539,7 +654,7 @@ def export_server_health_csv():
     writer.writerow([
         'id', 'name', 'ip_address', 'monitor_type', 'status',
         'cpu_usage', 'ram_usage', 'disk_usage', 'swap_usage', 'inode_usage',
-        'load1', 'load5', 'load15', 'pending_reboot',
+        'load1', 'load5', 'load15', 'network_in_bps', 'network_out_bps', 'pending_reboot',
         'uptime', 'last_boot_time', 'services', 'disks'
     ])
 
@@ -553,7 +668,8 @@ def export_server_health_csv():
         writer.writerow([
             device.get('id'), device.get('name'), device.get('ip_address'), device.get('monitor_type'), device.get('status'),
             device.get('cpu_usage'), device.get('ram_usage'), device.get('disk_usage'), device.get('swap_usage'), device.get('inode_usage'),
-            device.get('load1'), device.get('load5'), device.get('load15'), device.get('pending_reboot'),
+            device.get('load1'), device.get('load5'), device.get('load15'),
+            device.get('network_in_bps'), device.get('network_out_bps'), device.get('pending_reboot'),
             device.get('server_uptime_text'), device.get('last_boot_time'), service_text, disk_text
         ])
 
@@ -573,6 +689,18 @@ def export_server_health_pdf():
             return f'{float(value):.1f}%'
         except (TypeError, ValueError):
             return '-'
+
+    def bps(value):
+        try:
+            value = float(value or 0)
+        except (TypeError, ValueError):
+            return '-'
+        units = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps']
+        idx = 0
+        while value >= 1000 and idx < len(units) - 1:
+            value /= 1000
+            idx += 1
+        return f'{value:.1f} {units[idx]}' if idx else f'{value:.0f} {units[idx]}'
 
     lines = [
         'SERVER HEALTH REPORT',
@@ -600,6 +728,7 @@ def export_server_health_pdf():
             f'   IP: {device.get("ip_address") or "-"}   Monitor: {str(device.get("monitor_type") or "-").upper()}',
             f'   CPU: {percent(device.get("cpu_usage"))}   RAM: {percent(device.get("ram_usage"))}   '
             f'Disk max: {percent(device.get("disk_usage"))}   Swap: {percent(device.get("swap_usage"))}',
+            f'   Traffic in: {bps(device.get("network_in_bps"))}   Traffic out: {bps(device.get("network_out_bps"))}',
             f'   Uptime: {device.get("server_uptime_text") or "-"}   Last boot: {device.get("last_boot_time") or "-"}',
         ])
         try:

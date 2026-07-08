@@ -1894,6 +1894,112 @@ class Database:
         finally:
             self.release_connection(conn)
 
+    def get_device_down_intervals(self, device_id, minutes=360):
+        """Return contiguous down intervals for a device within the requested window."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            minutes = max(5, min(7 * 24 * 60, int(minutes or 360)))
+            end_time = datetime.now()
+            start_time = end_time - timedelta(minutes=minutes)
+
+            def _parse_time(value):
+                if isinstance(value, datetime):
+                    return value.replace(tzinfo=None)
+                text = str(value or '').strip()
+                if not text:
+                    return None
+                try:
+                    return datetime.fromisoformat(text.replace(' ', 'T')).replace(tzinfo=None)
+                except ValueError:
+                    return None
+
+            start_param = start_time.isoformat()
+
+            cursor.execute(f'''
+                SELECT status, checked_at
+                FROM status_history
+                WHERE device_id = {ph}
+                  AND checked_at < {ph}
+                ORDER BY checked_at DESC
+                LIMIT 1
+            ''', (device_id, start_param))
+            previous = self._rows_to_dicts(cursor.fetchall())
+
+            cursor.execute(f'''
+                SELECT status, checked_at
+                FROM status_history
+                WHERE device_id = {ph}
+                  AND checked_at >= {ph}
+                ORDER BY checked_at ASC
+            ''', (device_id, start_param))
+            records = self._rows_to_dicts(cursor.fetchall())
+
+            intervals = []
+            down_start = None
+            if previous and str(previous[0].get('status') or '').lower() == 'down':
+                down_start = start_time
+
+            for row in records:
+                checked_at = _parse_time(row.get('checked_at'))
+                if not checked_at:
+                    continue
+                status = str(row.get('status') or '').lower()
+                if status == 'down':
+                    if down_start is None:
+                        down_start = max(checked_at, start_time)
+                elif down_start is not None:
+                    interval_end = min(max(checked_at, start_time), end_time)
+                    if interval_end > down_start:
+                        intervals.append({
+                            'start': down_start.isoformat(),
+                            'end': interval_end.isoformat(),
+                            'status': 'down',
+                        })
+                    down_start = None
+
+            if down_start is not None and end_time > down_start:
+                intervals.append({
+                    'start': down_start.isoformat(),
+                    'end': end_time.isoformat(),
+                    'status': 'down',
+                })
+
+            return intervals
+        finally:
+            self.release_connection(conn)
+
+    def get_device_down_points(self, device_id, minutes=360):
+        """Return actual down check timestamps for a device within the requested window."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            minutes = max(5, min(7 * 24 * 60, int(minutes or 360)))
+
+            if self.db_type == 'postgresql':
+                time_filter = f"NOW() - INTERVAL '{minutes} minutes'"
+            else:
+                time_filter = f"datetime('now', '-{minutes} minutes')"
+
+            cursor.execute(f'''
+                SELECT checked_at
+                FROM status_history
+                WHERE device_id = {ph}
+                  AND checked_at >= {time_filter}
+                  AND status = 'down'
+                ORDER BY checked_at ASC
+            ''', (device_id,))
+
+            points = []
+            for row in self._rows_to_dicts(cursor.fetchall()):
+                value = row.get('checked_at')
+                points.append(value.isoformat() if isinstance(value, datetime) else value)
+            return points
+        finally:
+            self.release_connection(conn)
+
     def get_server_response_time_series(self, minutes=360, sample_count=60):
         """Get response time buckets per SSH/WinRM/WMI server device."""
         conn = self.get_connection()

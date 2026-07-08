@@ -782,8 +782,87 @@ const deviceId = Number('{{ device_id }}');
 let currentHours = 6;
 const charts = {};
 const partitionCharts = [];
+let downIntervals = [];
+let downPoints = [];
 const RESPONSE_WARNING_MS = 10000;
 const RESPONSE_CRITICAL_MS = 30000;
+
+function parseChartDate(value) {
+    const text = String(value || '');
+    const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const downIntervalPlugin = {
+    id: 'singleServerDownMarkers',
+    beforeDatasetsDraw(chart) {
+        if (!downIntervals.length || chart.options?.plugins?.downIntervals?.enabled === false) return;
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        const yScale = scales.y;
+        if (!chartArea || !xScale || !yScale) return;
+        const y = Math.min(chartArea.bottom - 1, Math.max(chartArea.top, yScale.getPixelForValue(0)));
+
+        ctx.save();
+        downIntervals.forEach(interval => {
+            const start = parseChartDate(interval.start);
+            const end = parseChartDate(interval.end);
+            if (!start || !end) return;
+            const left = Math.max(chartArea.left, xScale.getPixelForValue(start));
+            const right = Math.min(chartArea.right, xScale.getPixelForValue(end));
+            if (right <= chartArea.left || left >= chartArea.right || right <= left) return;
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(left, y);
+            ctx.lineTo(right, y);
+            ctx.stroke();
+        });
+        ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+        if (!downPoints.length || chart.options?.plugins?.downIntervals?.enabled === false) return;
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        const yScale = scales.y;
+        if (!chartArea || !xScale || !yScale) return;
+        const y = Math.min(chartArea.bottom - 2, Math.max(chartArea.top + 2, yScale.getPixelForValue(0)));
+
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        downPoints.forEach(point => {
+            const date = parseChartDate(point);
+            if (!date) return;
+            const x = xScale.getPixelForValue(date);
+            if (x < chartArea.left || x > chartArea.right) return;
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        });
+        downIntervals.forEach(interval => {
+            const start = parseChartDate(interval.start);
+            const end = parseChartDate(interval.end);
+            if (!start || !end) return;
+            const left = Math.max(chartArea.left, xScale.getPixelForValue(start));
+            const right = Math.min(chartArea.right, xScale.getPixelForValue(end));
+            if (right - left < 42 || right <= chartArea.left || left >= chartArea.right) return;
+            ctx.fillStyle = '#dc2626';
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('DOWN', left + ((right - left) / 2), y - 9);
+        });
+        ctx.restore();
+    }
+};
+
+if (window.Chart) {
+    Chart.register(downIntervalPlugin);
+}
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -816,9 +895,8 @@ function formatMs(value) {
 function formatDateTime(value) {
     const text = String(value || '');
     if (!text) return '-';
-    const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
-    const date = new Date(normalized);
-    if (Number.isNaN(date.getTime())) return text;
+    const date = parseChartDate(text);
+    if (!date) return text;
     return date.toLocaleString([], {
         month: 'short',
         day: '2-digit',
@@ -829,12 +907,66 @@ function formatDateTime(value) {
 
 function timestampPoint(row) {
     const raw = row?.timestamp || row?.sampled_at || row?.checked_at;
-    const text = String(raw || '');
-    const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
-    const date = new Date(normalized);
+    const date = parseChartDate(raw);
     const y = Number(row?.value ?? row?.avg_response_time);
-    if (Number.isNaN(date.getTime()) || !Number.isFinite(y)) return null;
+    if (!date || !Number.isFinite(y)) return null;
     return { x: date, y };
+}
+
+function timestampPointWithNull(row) {
+    const raw = row?.timestamp || row?.sampled_at || row?.checked_at;
+    const date = parseChartDate(raw);
+    if (!date) return null;
+
+    const rawValue = row?.value ?? row?.avg_response_time;
+    if (rawValue === null || rawValue === undefined || rawValue === '') {
+        return { x: date, y: null };
+    }
+
+    const y = Number(rawValue);
+    return Number.isFinite(y) ? { x: date, y } : { x: date, y: null };
+}
+
+function insertTimeGaps(points) {
+    const validPoints = (points || [])
+        .filter(point => point && point.x instanceof Date && !Number.isNaN(point.x.getTime()))
+        .sort((a, b) => a.x - b.x);
+    const finiteTimes = validPoints
+        .filter(point => point.y !== null && point.y !== undefined && Number.isFinite(Number(point.y)))
+        .map(point => point.x.getTime());
+
+    if (validPoints.length < 2 || finiteTimes.length < 2) return validPoints;
+
+    const deltas = [];
+    for (let i = 1; i < finiteTimes.length; i += 1) {
+        const delta = finiteTimes[i] - finiteTimes[i - 1];
+        if (delta > 0) deltas.push(delta);
+    }
+    if (!deltas.length) return validPoints;
+
+    deltas.sort((a, b) => a - b);
+    const medianDelta = deltas[Math.floor(deltas.length / 2)];
+    const gapThreshold = Math.max(medianDelta * 2.5, 5 * 60 * 1000);
+    const withGaps = [];
+
+    for (let i = 0; i < validPoints.length; i += 1) {
+        const previous = withGaps[withGaps.length - 1];
+        const current = validPoints[i];
+        if (
+            previous &&
+            previous.y !== null &&
+            previous.y !== undefined &&
+            current.y !== null &&
+            current.y !== undefined &&
+            current.x - previous.x > gapThreshold
+        ) {
+            withGaps.push({ x: new Date(previous.x.getTime() + 1), y: null });
+            withGaps.push({ x: new Date(current.x.getTime() - 1), y: null });
+        }
+        withGaps.push(current);
+    }
+
+    return withGaps;
 }
 
 function chartColors() {
@@ -870,7 +1002,7 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const colors = chartColors();
-    const points = (rows || []).map(timestampPoint).filter(Boolean);
+    const points = insertTimeGaps((rows || []).map(timestampPoint).filter(Boolean));
     const options = {
         responsive: true,
         maintainAspectRatio: false,
@@ -909,6 +1041,7 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
             pointRadius: 0,
             pointHoverRadius: 4,
             tension: 0.18,
+            spanGaps: false,
             fill: true
         }]
     };
@@ -925,9 +1058,11 @@ function renderNetworkChart(data) {
     const canvas = document.getElementById('network-chart');
     if (!canvas) return;
     const colors = chartColors();
-    const inPoints = (data.network_in || []).map(timestampPoint).filter(Boolean);
-    const outPoints = (data.network_out || []).map(timestampPoint).filter(Boolean);
-    const maxValue = Math.max(1000, ...inPoints.map(p => p.y), ...outPoints.map(p => p.y));
+    const inPoints = insertTimeGaps((data.network_in || []).map(timestampPoint).filter(Boolean));
+    const outPoints = insertTimeGaps((data.network_out || []).map(timestampPoint).filter(Boolean));
+    const finiteIn = inPoints.map(p => p.y).filter(value => Number.isFinite(Number(value)));
+    const finiteOut = outPoints.map(p => p.y).filter(value => Number.isFinite(Number(value)));
+    const maxValue = Math.max(1000, ...finiteIn, ...finiteOut);
     const options = {
         responsive: true,
         maintainAspectRatio: false,
@@ -960,8 +1095,8 @@ function renderNetworkChart(data) {
     };
     const chartData = {
         datasets: [
-            { label: 'Incoming', data: inPoints, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.12)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18 },
-            { label: 'Outgoing', data: outPoints, borderColor: '#be123c', backgroundColor: 'rgba(190,18,60,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18 }
+            { label: 'Incoming', data: inPoints, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.12)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18, spanGaps: false },
+            { label: 'Outgoing', data: outPoints, borderColor: '#be123c', backgroundColor: 'rgba(190,18,60,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18, spanGaps: false }
         ]
     };
     if (charts.network) {
@@ -978,9 +1113,9 @@ function renderLoadChart(data) {
     const canvas = document.getElementById('load-chart');
     if (!card || !canvas) return;
 
-    const load1 = (data.load1 || []).map(timestampPoint).filter(Boolean);
-    const load5 = (data.load5 || []).map(timestampPoint).filter(Boolean);
-    const load15 = (data.load15 || []).map(timestampPoint).filter(Boolean);
+    const load1 = insertTimeGaps((data.load1 || []).map(timestampPoint).filter(Boolean));
+    const load5 = insertTimeGaps((data.load5 || []).map(timestampPoint).filter(Boolean));
+    const load15 = insertTimeGaps((data.load15 || []).map(timestampPoint).filter(Boolean));
     const hasData = load1.length || load5.length || load15.length;
     card.style.display = hasData ? '' : 'none';
     setCount('load-count', Math.max(load1.length, load5.length, load15.length));
@@ -993,7 +1128,8 @@ function renderLoadChart(data) {
     }
 
     const colors = chartColors();
-    const maxValue = Math.max(1, ...load1.map(p => p.y), ...load5.map(p => p.y), ...load15.map(p => p.y));
+    const finiteLoadValues = [...load1, ...load5, ...load15].map(p => p.y).filter(value => Number.isFinite(Number(value)));
+    const maxValue = Math.max(1, ...finiteLoadValues);
     const options = {
         responsive: true,
         maintainAspectRatio: false,
@@ -1026,9 +1162,9 @@ function renderLoadChart(data) {
     };
     const chartData = {
         datasets: [
-            { label: 'Load 1m', data: load1, borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false },
-            { label: 'Load 5m', data: load5, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false },
-            { label: 'Load 15m', data: load15, borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false }
+            { label: 'Load 1m', data: load1, borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false, spanGaps: false },
+            { label: 'Load 5m', data: load5, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false, spanGaps: false },
+            { label: 'Load 15m', data: load15, borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,0.10)', borderWidth: 2, pointRadius: 0, tension: 0.18, fill: false, spanGaps: false }
         ]
     };
 
@@ -1099,8 +1235,8 @@ function renderResponseChart(serverHealthResponse, server) {
     const rows = labels.map((label, index) => ({
         checked_at: label,
         value: series ? series.values[index] : null
-    })).filter(row => row.value !== null && row.value !== undefined);
-    const points = rows.map(timestampPoint).filter(Boolean);
+    }));
+    const points = rows.map(timestampPointWithNull).filter(Boolean);
     const values = points.map(point => point.y).filter(value => Number.isFinite(value));
     const currentValue = Number(server?.response_time);
     const lastValue = Number.isFinite(currentValue) ? currentValue : values[values.length - 1];
@@ -1111,7 +1247,7 @@ function renderResponseChart(serverHealthResponse, server) {
     setPillValue('response-current', 'Current', lastValue);
     setPillValue('response-avg', 'Avg', avgValue);
     setPillValue('response-max', 'Max', maxValue);
-    setCount('response-count', rows.length);
+    setCount('response-count', values.length);
 
     const suggestedMax = Math.max(
         RESPONSE_WARNING_MS,
@@ -1153,6 +1289,7 @@ function renderResponseChart(serverHealthResponse, server) {
             pointRadius: 0,
             pointHoverRadius: 4,
             tension: 0.18,
+            spanGaps: false,
             fill: true
         }]
     };
@@ -1469,20 +1606,26 @@ async function loadServerList() {
 
 async function loadDashboard() {
     try {
-        const [server, performanceRes, responseRes, eventsRes] = await Promise.all([
+        const [server, performanceRes, responseRes, eventsRes, downRes] = await Promise.all([
             loadServerList(),
             fetch(`/api/devices/${deviceId}/performance?hours=${currentHours}&_t=${Date.now()}`),
             fetch(`/api/server-health/response-time?minutes=${currentHours * 60}&sample=72&_t=${Date.now()}`),
-            fetch(`/api/devices/${deviceId}/events?minutes=${currentHours * 60}&limit=30&_t=${Date.now()}`)
+            fetch(`/api/devices/${deviceId}/events?minutes=${currentHours * 60}&limit=30&_t=${Date.now()}`),
+            fetch(`/api/devices/${deviceId}/down-intervals?minutes=${currentHours * 60}&_t=${Date.now()}`)
         ]);
         if (!performanceRes.ok) throw new Error(`Performance HTTP ${performanceRes.status}`);
         if (!responseRes.ok) throw new Error(`Response HTTP ${responseRes.status}`);
         if (!eventsRes.ok) throw new Error(`Events HTTP ${eventsRes.status}`);
+        if (!downRes.ok) throw new Error(`Down intervals HTTP ${downRes.status}`);
         const performance = await performanceRes.json();
         const response = await responseRes.json();
         const events = await eventsRes.json();
+        const downData = await downRes.json();
         if (performance.error) throw new Error(performance.error);
         if (events.success === false) throw new Error(events.error || 'Unable to load events');
+        if (downData.success === false) throw new Error(downData.error || 'Unable to load down intervals');
+        downIntervals = Array.isArray(downData.intervals) ? downData.intervals : [];
+        downPoints = Array.isArray(downData.points) ? downData.points : [];
 
         updateSummary(performance, server);
         renderDetails(performance, server);

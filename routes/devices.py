@@ -498,6 +498,25 @@ def get_device_events(device_id):
     })
 
 
+@devices_bp.route('/api/devices/<int:device_id>/down-intervals', methods=['GET'])
+def get_device_down_intervals(device_id):
+    """Get contiguous down intervals for a single device."""
+    minutes = request.args.get('minutes', 360, type=int)
+    minutes = max(5, min(minutes or 360, 7 * 24 * 60))
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+
+    return jsonify({
+        'success': True,
+        'device_id': device_id,
+        'minutes': minutes,
+        'intervals': db.get_device_down_intervals(device_id, minutes=minutes),
+        'points': db.get_device_down_points(device_id, minutes=minutes),
+    })
+
+
 @devices_bp.route('/api/server-health', methods=['GET'])
 def get_server_health():
     """Get server-focused health summary for SSH/WinRM monitored devices."""

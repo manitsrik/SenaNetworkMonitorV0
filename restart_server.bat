@@ -1,13 +1,15 @@
 @echo off
-echo Stopping Flask server...
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq *app.py*" 2>nul
-timeout /t 2 /nobreak >nul
+setlocal
+cd /d "%~dp0"
 
-echo Starting Flask server...
-call .venv\Scripts\activate
-start "Network Monitor" python app.py
+REM The PowerShell script requests Administrator privileges when required.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0restart_server.ps1"
+set "EXIT_CODE=%ERRORLEVEL%"
 
-echo.
-echo Server is starting...
-echo Dashboard: http://localhost:5000
-echo.
+if not "%EXIT_CODE%"=="0" (
+    echo.
+    echo Restart failed with exit code %EXIT_CODE%.
+    pause
+)
+
+exit /b %EXIT_CODE%

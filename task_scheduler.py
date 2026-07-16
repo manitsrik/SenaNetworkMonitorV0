@@ -2,7 +2,7 @@
 Enhanced Task Scheduler for Network Monitor
 Wraps APScheduler with job management, history tracking, and admin API support
 """
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from datetime import datetime
 import traceback
@@ -13,8 +13,10 @@ class TaskScheduler:
     """Enhanced scheduler with job management and execution history"""
     
     def __init__(self, db):
-        # Use BlockingScheduler with a single-thread executor to ensure all jobs
-        # run within the same greenlet context, avoiding thread-switching errors
+        # Run the scheduler in its own native background thread.  A
+        # BlockingScheduler hosted in an eventlet greenlet can silently stop
+        # advancing while the web server remains healthy, leaving every job
+        # looking "running" even though no next run is dispatched.
         executors = {
             'default': ThreadPoolExecutor(2)
         }
@@ -23,7 +25,7 @@ class TaskScheduler:
             'max_instances': 1,
             'misfire_grace_time': 60
         }
-        self.scheduler = BlockingScheduler(executors=executors, job_defaults=job_defaults)
+        self.scheduler = BackgroundScheduler(executors=executors, job_defaults=job_defaults)
         self.db = db
         self.tasks = {}  # job_id -> task metadata
     
@@ -61,9 +63,13 @@ class TaskScheduler:
         )
     
     def start(self):
-        """Start the scheduler in a dedicated greenlet"""
-        async_runtime.spawn(self.scheduler.start)
-        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks ({async_runtime.RUNTIME_LABEL})")
+        """Start the scheduler in its own background thread."""
+        self.scheduler.start()
+        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks (native background thread)")
+
+    def is_running(self):
+        """Return the scheduler's real state, not just its service-manager label."""
+        return bool(getattr(self.scheduler, 'running', False))
     
     def shutdown(self):
         """Shutdown the scheduler"""

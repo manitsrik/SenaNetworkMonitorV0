@@ -42,6 +42,22 @@
         color: #dc2626;
         font-size: 0.8rem;
     }
+    .assignment-done-actions {
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+    .assignment-done-button {
+        width: 100%;
+        justify-content: center;
+        background: #2563eb;
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+    }
+    .assignment-done-button:hover {
+        background: #1d4ed8;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
     #graph-modal {
         background-color: rgba(15, 23, 42, 0.52);
         backdrop-filter: blur(5px);
@@ -1025,11 +1041,13 @@
                             <option value="">-- Choose User --</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary" onclick="assignUserToDevice()">
-                        ➕ Assign
+                    <button id="assign-user-button" class="btn btn-primary" onclick="assignUserToDevice()">
+                        Add &amp; Save
                     </button>
                 </div>
             </div>
+
+            <div id="assignment-feedback" class="alert" role="status" aria-live="polite" style="display: none; margin-bottom: 1rem;"></div>
 
             <!-- Assignments List -->
             <div class="card">
@@ -1056,9 +1074,9 @@
                 </div>
             </div>
 
-            <div class="mt-2">
-                <button class="btn btn-secondary" onclick="closeAssignmentModal()" style="width: 100%;">
-                    Close
+            <div class="mt-2 assignment-done-actions">
+                <button class="btn assignment-done-button" onclick="closeAssignmentModal()">
+                    ✓ Done
                 </button>
             </div>
         </div>
@@ -1077,5 +1095,5 @@
     window.NM_MONITOR_THRESHOLDS = {{ monitor_thresholds | tojson }};
     window.NM_DEFAULT_SLOW_THRESHOLD = {{ default_slow_threshold | tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/devices.js') }}?v=20260609_device_graph_drag_zoom_fix"></script>
+<script src="{{ url_for('static', filename='js/devices.js') }}?v=20260717_assignment_feedback"></script>
 {% endblock %}

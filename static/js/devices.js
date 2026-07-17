@@ -2516,6 +2516,22 @@ function populateParentDeviceDropdown(excludeDeviceId) {
 // ============================================================================
 
 let currentAssignmentDeviceId = null;
+let assignmentFeedbackTimer = null;
+
+function showAssignmentFeedback(message, type = 'success') {
+    const feedback = document.getElementById('assignment-feedback');
+    if (!feedback) return;
+
+    if (assignmentFeedbackTimer) clearTimeout(assignmentFeedbackTimer);
+
+    feedback.className = `alert alert-${type}`;
+    feedback.textContent = message;
+    feedback.style.display = 'block';
+    assignmentFeedbackTimer = setTimeout(() => {
+        feedback.style.display = 'none';
+        assignmentFeedbackTimer = null;
+    }, 4000);
+}
 
 async function openAssignmentModal(deviceId, deviceName) {
     currentAssignmentDeviceId = deviceId;
@@ -2529,6 +2545,12 @@ async function openAssignmentModal(deviceId, deviceName) {
 
 function closeAssignmentModal() {
     document.getElementById('assignment-modal').classList.remove('active');
+    const feedback = document.getElementById('assignment-feedback');
+    if (feedback) feedback.style.display = 'none';
+    if (assignmentFeedbackTimer) {
+        clearTimeout(assignmentFeedbackTimer);
+        assignmentFeedbackTimer = null;
+    }
     currentAssignmentDeviceId = null;
 }
 
@@ -2584,12 +2606,16 @@ async function loadAssignments(deviceId) {
 }
 
 async function assignUserToDevice() {
-    const userId = document.getElementById('assign-user-select').value;
+    const select = document.getElementById('assign-user-select');
+    const button = document.getElementById('assign-user-button');
+    const userId = select.value;
     if (!userId || !currentAssignmentDeviceId) {
         alert('Please select a user.');
         return;
     }
-    
+
+    if (button) button.disabled = true;
+
     try {
         const response = await fetch('/api/assignments/assign', {
             method: 'POST',
@@ -2601,14 +2627,18 @@ async function assignUserToDevice() {
         });
         
         const result = await response.json();
-        if (result.success) {
-            loadAssignments(currentAssignmentDeviceId);
+        if (response.ok && result.success) {
+            await loadAssignments(currentAssignmentDeviceId);
+            select.value = '';
+            showAssignmentFeedback('User assigned and saved successfully.');
         } else {
             alert('Error: ' + (result.error || 'Failed to assign user'));
         }
     } catch (error) {
         console.error('Error assigning user:', error);
         alert('Error assigning user.');
+    } finally {
+        if (button) button.disabled = false;
     }
 }
 
@@ -2626,8 +2656,9 @@ async function unassignUserFromDevice(userId) {
         });
         
         const result = await response.json();
-        if (result.success) {
-            loadAssignments(currentAssignmentDeviceId);
+        if (response.ok && result.success) {
+            await loadAssignments(currentAssignmentDeviceId);
+            showAssignmentFeedback('User removed successfully.');
         } else {
             alert('Error: ' + (result.error || 'Failed to remove user'));
         }

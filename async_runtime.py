@@ -24,6 +24,7 @@ _MONKEY_PATCHED = False
 
 
 def monkey_patch(all=True):
+    """Apply the Eventlet compatibility patches used by the web runtime."""
     global _MONKEY_PATCHED
     if not _MONKEY_PATCHED:
         eventlet.monkey_patch(all=all)

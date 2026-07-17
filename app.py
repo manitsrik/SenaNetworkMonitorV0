@@ -358,7 +358,9 @@ def api_services_status():
     status['monitor_workers'] = monitor.max_workers
     status['db_type'] = db.db_type
     status['db_pool_active'] = db._pool is not None if hasattr(db, '_pool') else False
-    status['task_scheduler_active'] = task_scheduler.is_running()
+    scheduler_health = task_scheduler.get_health()
+    status['task_scheduler'] = scheduler_health
+    status['task_scheduler_active'] = scheduler_health['running'] and scheduler_health['heartbeat_ok']
     return jsonify(status)
 
 @app.route('/api/tasks')

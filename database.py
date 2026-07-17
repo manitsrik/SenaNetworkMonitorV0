@@ -2187,8 +2187,13 @@ class Database:
         self.release_connection(conn)
         return stats
     
-    def get_device_type_trends(self, minutes=180, device_id=None):
-        """Get average response time trends by device type or specific device"""
+    def get_device_type_trends(self, minutes=180, device_id=None, device_type=None):
+        """Get compact response trends aggregated in the database.
+
+        A type dashboard needs one value per type/time bucket, not one row per
+        device.  Aggregating here prevents every chart from downloading and
+        then overwriting hundreds of duplicate points in the browser.
+        """
         conn = self.get_connection()
         cursor = self._cursor(conn)
         ph = self._ph()
@@ -2217,18 +2222,26 @@ class Database:
         if device_id:
             where_clause += f" AND h.device_id = {ph}"
             params.append(device_id)
+        elif device_type:
+            where_clause += f" AND d.device_type = {ph}"
+            params.append(device_type)
+
+        if device_id:
+            select_identity = "d.device_type, d.name as device_name, d.id as device_id"
+            group_identity = "d.device_type, d.name, d.id,"
+        else:
+            select_identity = "d.device_type, NULL as device_name, NULL as device_id"
+            group_identity = "d.device_type,"
 
         query = f'''
-            SELECT 
-                d.device_type,
-                d.name as device_name,
-                d.id as device_id,
+            SELECT
+                {select_identity},
                 {time_select} as timestamp,
                 AVG(h.response_time) as avg_response_time
             FROM status_history h
             JOIN devices d ON h.device_id = d.id
             {where_clause}
-            GROUP BY d.device_type, d.name, d.id, {time_group}
+            GROUP BY {group_identity} {time_group}
             ORDER BY timestamp ASC
         '''
         

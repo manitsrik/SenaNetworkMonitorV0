@@ -2200,7 +2200,7 @@ window.DashboardRenderer = {
             else if (currentRange <= 60) requestMinutes = 90;
             const url = filterDeviceId 
                 ? `/api/statistics/trend?minutes=${requestMinutes}&device_id=${filterDeviceId}&_t=${Date.now()}`
-                : `/api/statistics/trend?minutes=${requestMinutes}&_t=${Date.now()}`;
+                : `/api/statistics/trend?minutes=${requestMinutes}${filterType ? `&device_type=${encodeURIComponent(filterType)}` : ''}&_t=${Date.now()}`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const trends = await response.json();
@@ -2297,6 +2297,21 @@ window.DashboardRenderer = {
             const sortedTimes = timeBuckets.map(b => b.label);
 
             const chartDatasets = Object.values(datasets);
+            const hasRecentData = chartDatasets.some(dataset => dataset.data.some(value => value !== null));
+            if (!hasRecentData) {
+                const existingChart = this.instances[`chart_${index}`];
+                if (existingChart) {
+                    existingChart.destroy();
+                    delete this.instances[`chart_${index}`];
+                }
+                contentArea.innerHTML = `
+                    <div class="text-muted" style="font-size:0.8rem; text-align:center; padding:1rem;">
+                        <i class="fas fa-clock" style="display:block; margin-bottom:0.35rem;"></i>
+                        No recent monitoring data<br>
+                        <small>Waiting for the next device check</small>
+                    </div>`;
+                return;
+            }
             const rangeLabel = currentRange >= 180 ? '3h' : currentRange >= 60 ? '1h' : currentRange + 'm';
             this.instances[`trend_payload_${index}`] = {
                 labels: sortedTimes,

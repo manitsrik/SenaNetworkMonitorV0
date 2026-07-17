@@ -1,185 +1,198 @@
+"""Cooperative background task scheduler for the Eventlet web runtime.
+
+APScheduler's blocking/background schedulers rely on threading conditions.
+Those conditions are replaced by Eventlet in production and have previously
+stopped dispatching while the web process stayed healthy.  This small
+scheduler uses the application's cooperative clock directly, so there is no
+cross-runtime condition or scheduler lock that can silently deadlock.
 """
-Enhanced Task Scheduler for Network Monitor
-Wraps APScheduler with job management, history tracking, and admin API support
-"""
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.executors.pool import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
+
 import async_runtime
 
 
 class TaskScheduler:
-    """Enhanced scheduler with job management and execution history"""
-    
+    """Schedule interval and daily cron jobs as isolated greenlets."""
+
     def __init__(self, db):
-        # Run the scheduler in its own native background thread.  A
-        # BlockingScheduler hosted in an eventlet greenlet can silently stop
-        # advancing while the web server remains healthy, leaving every job
-        # looking "running" even though no next run is dispatched.
-        executors = {
-            'default': ThreadPoolExecutor(2)
-        }
-        job_defaults = {
-            'coalesce': True,
-            'max_instances': 1,
-            'misfire_grace_time': 60
-        }
-        self.scheduler = BackgroundScheduler(executors=executors, job_defaults=job_defaults)
         self.db = db
-        self.tasks = {}  # job_id -> task metadata
-    
+        self.tasks = {}
+        self._running = False
+        self._scheduler_greenlet = None
+        self._started_at = None
+        self._last_scheduler_activity = None
+
+    @staticmethod
+    def _interval_seconds(trigger, trigger_args):
+        if trigger != 'interval':
+            return None
+        return max(1, int(trigger_args.get('seconds', 0) or 0) +
+                   int(trigger_args.get('minutes', 0) or 0) * 60 +
+                   int(trigger_args.get('hours', 0) or 0) * 3600)
+
+    @staticmethod
+    def _next_cron_run(now, trigger_args):
+        hour = int(trigger_args.get('hour', 0))
+        minute = int(trigger_args.get('minute', 0))
+        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    def _calculate_next_run(self, meta, now=None):
+        now = now or datetime.now()
+        if meta['trigger'] == 'interval':
+            return now + timedelta(seconds=self._interval_seconds(meta['trigger'], meta['trigger_args']))
+        if meta['trigger'] == 'cron':
+            return self._next_cron_run(now, meta['trigger_args'])
+        raise ValueError(f"Unsupported trigger: {meta['trigger']}")
+
     def add_task(self, job_id, name, func, trigger, **trigger_args):
-        """
-        Register and schedule a task
-        
-        Args:
-            job_id: Unique identifier (e.g., 'monitor_job')
-            name: Human-readable name (e.g., 'Device Monitoring')
-            func: The function to execute
-            trigger: APScheduler trigger type ('interval', 'cron')
-            **trigger_args: Arguments for the trigger (e.g., seconds=30, hour=8)
-        """
-        # Store metadata
-        self.tasks[job_id] = {
+        meta = {
             'name': name,
             'func': func,
             'trigger': trigger,
             'trigger_args': trigger_args,
             'created_at': datetime.now(),
+            'next_run': None,
+            'paused': False,
+            'running': False,
         }
-        
-        # Wrap function with history logging
-        wrapped = self._wrap_job(job_id, name, func)
-        
-        # Add to APScheduler
-        self.scheduler.add_job(
-            func=wrapped,
-            trigger=trigger,
-            id=job_id,
-            max_instances=1 if job_id == 'monitor_job' else 2,
-            misfire_grace_time=30,
-            **trigger_args
-        )
-    
+        meta['next_run'] = self._calculate_next_run(meta)
+        self.tasks[job_id] = meta
+
     def start(self):
-        """Start the scheduler in its own background thread."""
-        self.scheduler.start()
-        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks (native background thread)")
+        if self._running:
+            return
+        self._running = True
+        self._started_at = datetime.now()
+        self._last_scheduler_activity = self._started_at
+        for meta in self.tasks.values():
+            meta['next_run'] = self._calculate_next_run(meta, self._started_at)
+        self._scheduler_greenlet = async_runtime.spawn(self._run_loop)
+        print(f"[TaskScheduler] Started with {len(self.tasks)} tasks (cooperative eventlet loop)")
+
+    def _run_loop(self):
+        while self._running:
+            try:
+                now = datetime.now()
+                self._last_scheduler_activity = now
+                for job_id, meta in list(self.tasks.items()):
+                    if meta['paused'] or not meta['next_run'] or meta['next_run'] > now:
+                        continue
+
+                    # Coalesce missed runs and never overlap the same job.
+                    meta['next_run'] = self._calculate_next_run(meta, now)
+                    if meta['running']:
+                        continue
+
+                    meta['running'] = True
+                    async_runtime.spawn(self._execute_job, job_id, meta)
+            except Exception as exc:
+                # One metadata error must never kill dispatch for every job.
+                print(f"[TaskScheduler] Dispatch loop error: {exc}")
+                traceback.print_exc()
+            async_runtime.sleep(1)
+
+    def _execute_job(self, job_id, meta):
+        try:
+            self._wrap_job(job_id, meta['name'], meta['func'])()
+        finally:
+            meta['running'] = False
+            self._last_scheduler_activity = datetime.now()
 
     def is_running(self):
-        """Return the scheduler's real state, not just its service-manager label."""
-        return bool(getattr(self.scheduler, 'running', False))
-    
+        greenlet = self._scheduler_greenlet
+        return bool(self._running and greenlet is not None and not greenlet.dead)
+
+    def get_health(self):
+        now = datetime.now()
+        last_activity = self._last_scheduler_activity
+        activity_age = (now - last_activity).total_seconds() if last_activity else None
+        heartbeat_ok = activity_age is not None and activity_age <= 180
+        return {
+            'running': self.is_running(),
+            'heartbeat_ok': heartbeat_ok,
+            'last_activity': last_activity.isoformat() if last_activity else None,
+            'activity_age_seconds': round(activity_age, 1) if activity_age is not None else None,
+        }
+
     def shutdown(self):
-        """Shutdown the scheduler"""
-        self.scheduler.shutdown()
+        self._running = False
+        if self._scheduler_greenlet is not None and not self._scheduler_greenlet.dead:
+            self._scheduler_greenlet.kill()
         print("[TaskScheduler] Shut down")
-    
+
     def pause_task(self, job_id):
-        """Pause a scheduled task"""
-        if job_id not in self.tasks:
+        meta = self.tasks.get(job_id)
+        if not meta:
             return {'success': False, 'error': f'Unknown task: {job_id}'}
-        try:
-            self.scheduler.pause_job(job_id)
-            return {'success': True, 'message': f'Task {job_id} paused'}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+        meta['paused'] = True
+        meta['next_run'] = None
+        return {'success': True, 'message': f'Task {job_id} paused'}
+
     def resume_task(self, job_id):
-        """Resume a paused task"""
-        if job_id not in self.tasks:
+        meta = self.tasks.get(job_id)
+        if not meta:
             return {'success': False, 'error': f'Unknown task: {job_id}'}
-        try:
-            self.scheduler.resume_job(job_id)
-            return {'success': True, 'message': f'Task {job_id} resumed'}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+        meta['paused'] = False
+        meta['next_run'] = self._calculate_next_run(meta)
+        return {'success': True, 'message': f'Task {job_id} resumed'}
+
     def run_now(self, job_id):
-        """Run a task immediately (one-shot)"""
-        if job_id not in self.tasks:
+        meta = self.tasks.get(job_id)
+        if not meta:
             return {'success': False, 'error': f'Unknown task: {job_id}'}
-        try:
-            task = self.tasks[job_id]
-            wrapped = self._wrap_job(job_id, task['name'], task['func'])
-            # Add a one-shot job
-            self.scheduler.add_job(
-                func=wrapped,
-                trigger='date',
-                id=f'{job_id}_manual',
-                replace_existing=True
-            )
-            return {'success': True, 'message': f'Task {job_id} triggered'}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+        if meta['running']:
+            return {'success': False, 'error': f'Task {job_id} is already running'}
+        meta['running'] = True
+        async_runtime.spawn(self._execute_job, job_id, meta)
+        return {'success': True, 'message': f'Task {job_id} triggered'}
+
     def reschedule(self, job_id, trigger, **trigger_args):
-        """Change task schedule"""
-        if job_id not in self.tasks:
+        meta = self.tasks.get(job_id)
+        if not meta:
             return {'success': False, 'error': f'Unknown task: {job_id}'}
         try:
-            self.scheduler.reschedule_job(job_id, trigger=trigger, **trigger_args)
-            self.tasks[job_id]['trigger'] = trigger
-            self.tasks[job_id]['trigger_args'] = trigger_args
+            meta['trigger'] = trigger
+            meta['trigger_args'] = trigger_args
+            meta['next_run'] = self._calculate_next_run(meta)
             return {'success': True, 'message': f'Task {job_id} rescheduled'}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
-    
+        except Exception as exc:
+            return {'success': False, 'error': str(exc)}
+
     def get_tasks(self):
-        """Get all tasks with their current status and next run time"""
         result = []
         for job_id, meta in self.tasks.items():
-            job = self.scheduler.get_job(job_id)
-            
-            next_run = None
-            status = 'unknown'
-            if job:
-                next_run = job.next_run_time.isoformat() if job.next_run_time else None
-                status = 'paused' if job.next_run_time is None else 'scheduled'
-            else:
-                status = 'removed'
-            
-            # Build trigger description
-            trigger_desc = meta['trigger']
             args = meta.get('trigger_args', {})
-            if meta['trigger'] == 'interval' and 'seconds' in args:
-                trigger_desc = f"every {args['seconds']}s"
+            trigger_desc = meta['trigger']
+            if meta['trigger'] == 'interval':
+                seconds = self._interval_seconds(meta['trigger'], args)
+                trigger_desc = f'every {seconds}s'
             elif meta['trigger'] == 'cron':
-                parts = []
-                if 'hour' in args:
-                    parts.append(f"{args['hour']:02d}:{args.get('minute', 0):02d}")
-                trigger_desc = f"cron {' '.join(parts)}" if parts else 'cron'
-            
+                trigger_desc = f"cron {int(args.get('hour', 0)):02d}:{int(args.get('minute', 0)):02d}"
             result.append({
                 'job_id': job_id,
                 'name': meta['name'],
                 'trigger': trigger_desc,
-                'status': status,
-                'next_run': next_run,
+                'status': 'running' if meta['running'] else ('paused' if meta['paused'] else 'scheduled'),
+                'next_run': meta['next_run'].isoformat() if meta['next_run'] else None,
             })
-        
         return result
-    
+
     def get_history(self, job_id=None, limit=50):
-        """Get job execution history from database"""
         return self.db.get_job_history(job_id=job_id, limit=limit)
-    
+
     def _wrap_job(self, job_id, job_name, func):
-        """Wrap a job function with history logging"""
         db = self.db
-        
+
         def wrapper():
-            # Mandatory timeout for ALL background jobs to prevent global stall
-            # monitor_job has a 30s interval, give it 120s max. Others 300s.
-            timeout_sec = 300 if job_id == 'monitor_job' else 300
-            
+            timeout_sec = 300
             timer = async_runtime.Timeout(timeout_sec)
-            
             history_id = db.log_job_start(job_id, job_name)
             try:
                 result = func()
-                # Generate summary from result
                 summary = None
                 if isinstance(result, list):
                     summary = f"{len(result)} items processed"
@@ -187,17 +200,16 @@ class TaskScheduler:
                     summary = str(result)[:200]
                 elif result is not None:
                     summary = str(result)[:200]
-                
                 db.log_job_complete(history_id, summary)
             except async_runtime.TimeoutError:
                 db.log_job_error(history_id, f"Job timed out after {timeout_sec}s")
                 print(f"[TaskScheduler] Job {job_id} TIMED OUT after {timeout_sec}s")
-            except Exception as e:
-                db.log_job_error(history_id, f"{type(e).__name__}: {str(e)}")
-                print(f"[TaskScheduler] Job {job_id} failed: {e}")
+            except Exception as exc:
+                db.log_job_error(history_id, f"{type(exc).__name__}: {str(exc)}")
+                print(f"[TaskScheduler] Job {job_id} failed: {exc}")
                 traceback.print_exc()
             finally:
                 timer.cancel()
-        
+
         wrapper.__name__ = f"wrapped_{job_id}"
         return wrapper

@@ -940,9 +940,14 @@ def check_device_now(device_id):
 @devices_bp.route('/api/statistics/trend', methods=['GET'])
 def get_trend_statistics():
     """Get response time trends by device type or specific device"""
-    minutes = request.args.get('minutes', 180, type=int)
+    minutes = max(5, min(request.args.get('minutes', 180, type=int), 24 * 60))
     device_id = request.args.get('device_id', type=int)
-    trends = _get_db().get_device_type_trends(minutes, device_id=device_id)
+    device_type = request.args.get('device_type', type=str)
+    trends = _get_db().get_device_type_trends(
+        minutes,
+        device_id=device_id,
+        device_type=device_type,
+    )
     return jsonify(trends)
 
 

@@ -4,6 +4,9 @@ Configuration settings for Network Monitor
 import os
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 def _env_bool(name, default=False):
     value = os.environ.get(name)
     if value is None:
@@ -93,6 +96,16 @@ class Config:
     HTTP_TIMEOUT = 10  # seconds to wait for HTTP response
     HTTP_USER_AGENT = 'NetworkMonitor/1.0'
     VERIFY_SSL = True  # Verify SSL certificates
+    # Additional intermediate/root certificates used by HTTPS monitors. This
+    # keeps verification enabled for sites whose servers omit an intermediate
+    # certificate that browsers can retrieve through AIA automatically.
+    HTTP_EXTRA_CA_CERTS = [
+        path if os.path.isabs(path) else os.path.join(BASE_DIR, path)
+        for path in _env_list(
+            'HTTP_EXTRA_CA_CERTS',
+            os.path.join('certs', 'globalsign-gcc-r46-alphassl-ca-2025.pem')
+        )
+    ]
     
     # Response time thresholds (ms) per monitor type
     MONITOR_THRESHOLDS = {

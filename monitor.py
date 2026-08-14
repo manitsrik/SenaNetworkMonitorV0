@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from config import Config
 import time
 import requests
+from requests.adapters import HTTPAdapter
 from urllib.parse import urlparse
 import asyncio
 import socket
@@ -16,6 +17,18 @@ import threading
 import sys
 import ssl
 import json
+
+
+class _SSLContextAdapter(HTTPAdapter):
+    """Use the monitor's CA-extended SSL context for HTTPS requests."""
+
+    def __init__(self, ssl_context, **kwargs):
+        self.ssl_context = ssl_context
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs['ssl_context'] = self.ssl_context
+        return super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
 
 # Remote monitoring imports
 try:
@@ -59,12 +72,21 @@ class NetworkMonitor:
         self.alerter = None  # Will be set by app.py
         self.plugin_manager = None  # Will be set by app.py
         self.max_workers = Config.MONITOR_MAX_WORKERS
+        self._http_ssl_context = self._create_http_ssl_context()
         
         # Dedicated Asyncio thread for SNMP (Stable Architecture)
         self._loop = None
         self._thread = None
         if SNMP_AVAILABLE:
             self._start_asyncio_thread()
+
+    @staticmethod
+    def _create_http_ssl_context():
+        """Create a verified SSL context with any configured extra CAs."""
+        context = ssl.create_default_context(cafile=requests.certs.where())
+        for cert_path in Config.HTTP_EXTRA_CA_CERTS:
+            context.load_verify_locations(cafile=cert_path)
+        return context
     
     def _start_asyncio_thread(self):
         """Start a persistent background thread with an asyncio event loop"""
@@ -251,7 +273,7 @@ class NetworkMonitor:
             
             # First try with verification
             try:
-                context = ssl.create_default_context()
+                context = self._http_ssl_context
                 with socket.create_connection((hostname, port), timeout=Config.HTTP_TIMEOUT) as sock:
                     with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                         cert = ssock.getpeercert()
@@ -377,13 +399,16 @@ class NetworkMonitor:
             # Perform HTTP GET request natively (requests uses patched sockets)
             start_time = time.time()
             
-            response = requests.get(
-                url,
-                timeout=Config.HTTP_TIMEOUT,
-                verify=Config.VERIFY_SSL,
-                headers={'User-Agent': Config.HTTP_USER_AGENT},
-                allow_redirects=True
-            )
+            with requests.Session() as session:
+                if Config.VERIFY_SSL:
+                    session.mount('https://', _SSLContextAdapter(self._http_ssl_context))
+                response = session.get(
+                    url,
+                    timeout=Config.HTTP_TIMEOUT,
+                    verify=Config.VERIFY_SSL,
+                    headers={'User-Agent': Config.HTTP_USER_AGENT},
+                    allow_redirects=True
+                )
                 
             response_time = (time.time() - start_time) * 1000  # Convert to ms
             

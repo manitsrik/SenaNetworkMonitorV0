@@ -79,6 +79,28 @@ class Config:
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
     MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 12)  # parallel workers
+    # The check is executed on the remote server through WinRM, so it verifies
+    # that the monitored host itself can resolve DNS and reach the Internet.
+    INTERNET_CHECK_URL = os.environ.get('INTERNET_CHECK_URL') or 'http://www.msftconnecttest.com/connecttest.txt'
+    INTERNET_CHECK_TIMEOUT = max(1, int(os.environ.get('INTERNET_CHECK_TIMEOUT') or 8))
+    INTERNET_CHECK_EXPECTED_STATUS = int(os.environ.get('INTERNET_CHECK_EXPECTED_STATUS') or 200)
+    INTERNET_CHECK_EXPECTED_CONTENT = os.environ.get('INTERNET_CHECK_EXPECTED_CONTENT', 'Microsoft Connect Test')
+    # A single unhealthy Windows host must not hold the shared monitoring job
+    # open for several minutes. The transport values cap individual WSMan
+    # operations; WINRM_DEVICE_TIMEOUT caps the complete multi-command check.
+    WINRM_OPERATION_TIMEOUT = max(5, int(os.environ.get('WINRM_OPERATION_TIMEOUT') or 20))
+    WINRM_READ_TIMEOUT = max(
+        WINRM_OPERATION_TIMEOUT + 1,
+        int(os.environ.get('WINRM_READ_TIMEOUT') or 30),
+    )
+    WINRM_DEVICE_TIMEOUT = max(
+        WINRM_READ_TIMEOUT + 1,
+        int(os.environ.get('WINRM_DEVICE_TIMEOUT') or 50),
+    )
+    WINRM_SLOW_COMMAND_SECONDS = max(
+        1,
+        int(os.environ.get('WINRM_SLOW_COMMAND_SECONDS') or 5),
+    )
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'
@@ -142,7 +164,7 @@ class Config:
     DNS_LIFETIME = 15  # seconds total time for all retries (increased for stability)
     
     # Failure Threshold - require consecutive failures before marking as down
-    FAILURE_THRESHOLD = 3  # device must fail 3 consecutive checks to be marked as down
+    FAILURE_THRESHOLD = 2  # device must fail 2 consecutive checks to be marked as down
     
     # Device defaults
     DEFAULT_DEVICE_TYPE = 'server'

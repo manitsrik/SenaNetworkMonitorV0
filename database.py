@@ -245,6 +245,13 @@ class Database:
                 disk_details_json TEXT,
                 service_status_json TEXT,
                 service_summary_json TEXT,
+                internet_status TEXT,
+                internet_latency_ms REAL,
+                internet_dns_ok {bool_type},
+                internet_http_status INTEGER,
+                internet_target TEXT,
+                internet_error TEXT,
+                internet_checked_at TIMESTAMP,
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -323,6 +330,13 @@ class Database:
             ('disk_details_json', 'TEXT'),
             ('service_status_json', 'TEXT'),
             ('service_summary_json', 'TEXT'),
+            ('internet_status', 'TEXT'),
+            ('internet_latency_ms', 'REAL'),
+            ('internet_dns_ok', bool_type),
+            ('internet_http_status', 'INTEGER'),
+            ('internet_target', 'TEXT'),
+            ('internet_error', 'TEXT'),
+            ('internet_checked_at', 'TIMESTAMP'),
         ]
         for col_name, col_type in metrics_columns:
             self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
@@ -867,6 +881,21 @@ class Database:
         ''')
 
         cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS internet_check_history (
+                id          {pk},
+                device_id   INTEGER NOT NULL,
+                status      TEXT NOT NULL,
+                latency_ms  REAL,
+                dns_ok      {bool_type},
+                http_status INTEGER,
+                target      TEXT,
+                error       TEXT,
+                checked_at  TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS resource_alert_states (
                 device_id   INTEGER NOT NULL,
                 event_type  TEXT NOT NULL,
@@ -998,6 +1027,8 @@ class Database:
         # system_metrics_history indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_device_sampled ON system_metrics_history(device_id, timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_timestamp ON system_metrics_history(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_internet_device_checked ON internet_check_history(device_id, checked_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_internet_checked_at ON internet_check_history(checked_at)')
         
         # audit_logs indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)')
@@ -1403,19 +1434,25 @@ class Database:
         finally:
             self.release_connection(conn)
 
-    def get_system_metrics_history(self, device_id, metric_type, hours=24):
+    def get_system_metrics_history(self, device_id, metric_type, hours=24, minutes=None):
         """Get system metrics history for a device"""
         conn = self.get_connection()
         try:
             cursor = self._cursor(conn)
             ph = self._ph()
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 24)))
+                window_unit = 'hours'
             
             if self.db_type == 'postgresql':
                 query = f"""
                     SELECT value, timestamp 
                     FROM system_metrics_history 
                     WHERE device_id = {ph} AND metric_type = {ph} 
-                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND timestamp >= NOW() - INTERVAL '{window_value} {window_unit}'
                     ORDER BY timestamp ASC
                 """
             else:
@@ -1423,7 +1460,7 @@ class Database:
                     SELECT value, timestamp 
                     FROM system_metrics_history 
                     WHERE device_id = {ph} AND metric_type = {ph} 
-                    AND timestamp >= datetime('now', '-{hours} hours')
+                    AND timestamp >= datetime('now', '-{window_value} {window_unit}')
                     ORDER BY timestamp ASC
                 """
             
@@ -1891,6 +1928,71 @@ class Database:
                 
             history = self._rows_to_dicts(cursor.fetchall())
             return history
+        finally:
+            self.release_connection(conn)
+
+    def update_internet_check(self, device_id, status, latency_ms=None, dns_ok=None,
+                              http_status=None, target=None, error=None):
+        """Persist the latest remote Internet check and its full status history."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            checked_at = datetime.now().isoformat()
+            cursor.execute(f'''
+                UPDATE devices
+                SET internet_status = {ph}, internet_latency_ms = {ph},
+                    internet_dns_ok = {ph}, internet_http_status = {ph},
+                    internet_target = {ph}, internet_error = {ph},
+                    internet_checked_at = {ph}
+                WHERE id = {ph}
+            ''', (
+                status, latency_ms, dns_ok, http_status, target,
+                (str(error)[:1000] if error else None), checked_at, device_id,
+            ))
+            cursor.execute(f'''
+                INSERT INTO internet_check_history
+                    (device_id, status, latency_ms, dns_ok, http_status, target, error, checked_at)
+                VALUES ({self._ph(8)})
+            ''', (
+                device_id, status, latency_ms, dns_ok, http_status, target,
+                (str(error)[:1000] if error else None), checked_at,
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            self._safe_rollback(conn)
+            print(f"[DB ERROR] update_internet_check: {e}")
+            return False
+        finally:
+            self.release_connection(conn)
+
+    def get_internet_check_history(self, device_id, hours=24, minutes=None):
+        """Return remote Internet checks for a server in chronological order."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 24)))
+                window_unit = 'hours'
+            if self.db_type == 'postgresql':
+                time_filter = f"NOW() - INTERVAL '{window_value} {window_unit}'"
+            else:
+                time_filter = f"datetime('now', '-{window_value} {window_unit}')"
+            cursor.execute(f'''
+                SELECT status, latency_ms, dns_ok, http_status, target, error, checked_at
+                FROM internet_check_history
+                WHERE device_id = {ph} AND checked_at >= {time_filter}
+                ORDER BY checked_at ASC
+            ''', (device_id,))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_internet_check_history: {e}")
+            return []
         finally:
             self.release_connection(conn)
 
@@ -2733,20 +2835,25 @@ class Database:
         finally:
             self.release_connection(conn)
 
-    def get_disk_partition_history(self, device_id, hours=24):
+    def get_disk_partition_history(self, device_id, hours=24, minutes=None):
         """Return disk usage history grouped by mount/drive name."""
         conn = self.get_connection()
         try:
             cursor = self._cursor(conn)
             ph = self._ph()
-            hours = max(1, int(hours or 1))
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 1)))
+                window_unit = 'hours'
             if self.db_type == 'postgresql':
                 query = f"""
                     SELECT metric_type, value, timestamp
                     FROM system_metrics_history
                     WHERE device_id = {ph}
                     AND metric_type LIKE 'disk:%%'
-                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND timestamp >= NOW() - INTERVAL '{window_value} {window_unit}'
                     ORDER BY timestamp ASC
                 """
             else:
@@ -2755,7 +2862,7 @@ class Database:
                     FROM system_metrics_history
                     WHERE device_id = {ph}
                     AND metric_type LIKE 'disk:%'
-                    AND timestamp >= datetime('now', '-{hours} hours')
+                    AND timestamp >= datetime('now', '-{window_value} {window_unit}')
                     ORDER BY timestamp ASC
                 """
             cursor.execute(query, (device_id,))
@@ -4007,23 +4114,6 @@ class Database:
         cursor.execute(f'UPDATE devices SET escalation_level = {self._ph()} WHERE id = {self._ph()}', (level, device_id))
         conn.commit()
         self.release_connection(conn)
-        
-        if device_id:
-            cursor.execute(f'''
-                SELECT * FROM maintenance_windows 
-                WHERE (device_id = {ph} OR device_id IS NULL)
-                  AND start_time <= {ph} 
-                  AND end_time >= {ph}
-            ''', (device_id, now, now))
-        else:
-            cursor.execute(f'''
-                SELECT * FROM maintenance_windows 
-                WHERE start_time <= {ph} AND end_time >= {ph}
-            ''', (now, now))
-        
-        windows = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return windows
     
     def is_device_in_maintenance(self, device_id):
         """Check if a device is currently in maintenance window"""
@@ -4222,6 +4312,9 @@ class Database:
             # Delete old server performance samples using the global retention policy.
             cursor.execute(f'DELETE FROM system_metrics_history WHERE timestamp < {ph}', (cutoff_date,))
             deleted_metrics = cursor.rowcount
+
+            cursor.execute(f'DELETE FROM internet_check_history WHERE checked_at < {ph}', (cutoff_date,))
+            deleted_internet = cursor.rowcount
             
             conn.commit()
             
@@ -4231,12 +4324,14 @@ class Database:
                 cursor.execute('VACUUM ANALYZE status_history')
                 cursor.execute('VACUUM ANALYZE alert_history')
                 cursor.execute('VACUUM ANALYZE system_metrics_history')
+                cursor.execute('VACUUM ANALYZE internet_check_history')
                 conn.autocommit = False
             
             print(
                 f"[DB Cleanup] Deleted {deleted_history} old status records, "
                 f"{deleted_alerts} old alerts, {deleted_bw} old bandwidth samples, "
-                f"{deleted_metrics} old system metric samples "
+                f"{deleted_metrics} old system metric samples, "
+                f"{deleted_internet} old Internet check samples "
                 f"(retention: {Config.RETENTION_DAYS} days)"
             )
             

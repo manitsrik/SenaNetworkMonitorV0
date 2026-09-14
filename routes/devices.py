@@ -364,22 +364,26 @@ def get_snmp_interfaces(device_id):
 def get_device_performance(device_id):
     """Get performance metrics history for a device"""
     hours = request.args.get('hours', 24, type=int)
+    minutes = request.args.get('minutes', default=None, type=int)
+    if minutes is not None:
+        minutes = max(5, min(minutes, 7 * 24 * 60))
     db = _get_db()
     device = db.get_device(device_id)
     if not device:
         return jsonify({'error': 'Device not found'}), 404
     
-    cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours)
-    ram_history = db.get_system_metrics_history(device_id, 'ram', hours)
-    disk_history = db.get_system_metrics_history(device_id, 'disk', hours)
-    swap_history = db.get_system_metrics_history(device_id, 'swap', hours)
-    inode_history = db.get_system_metrics_history(device_id, 'inode', hours)
-    load1_history = db.get_system_metrics_history(device_id, 'load1', hours)
-    load5_history = db.get_system_metrics_history(device_id, 'load5', hours)
-    load15_history = db.get_system_metrics_history(device_id, 'load15', hours)
-    network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours)
-    network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours)
-    disk_partition_history = db.get_disk_partition_history(device_id, hours)
+    cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours, minutes=minutes)
+    ram_history = db.get_system_metrics_history(device_id, 'ram', hours, minutes=minutes)
+    disk_history = db.get_system_metrics_history(device_id, 'disk', hours, minutes=minutes)
+    swap_history = db.get_system_metrics_history(device_id, 'swap', hours, minutes=minutes)
+    inode_history = db.get_system_metrics_history(device_id, 'inode', hours, minutes=minutes)
+    load1_history = db.get_system_metrics_history(device_id, 'load1', hours, minutes=minutes)
+    load5_history = db.get_system_metrics_history(device_id, 'load5', hours, minutes=minutes)
+    load15_history = db.get_system_metrics_history(device_id, 'load15', hours, minutes=minutes)
+    network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours, minutes=minutes)
+    network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours, minutes=minutes)
+    disk_partition_history = db.get_disk_partition_history(device_id, hours, minutes=minutes)
+    internet_history = db.get_internet_check_history(device_id, hours, minutes=minutes)
 
     def _json_field(name, fallback):
         try:
@@ -406,6 +410,7 @@ def get_device_performance(device_id):
         'network_in': network_in_history,
         'network_out': network_out_history,
         'disk_partitions': disk_partition_history,
+        'internet': internet_history,
         'current': {
             'status': device.get('status'),
             'response_time': device.get('response_time'),
@@ -428,6 +433,13 @@ def get_device_performance(device_id):
             'disk_details': _json_field('disk_details_json', []),
             'service_status': _json_field('service_status_json', []),
             'service_summary': _json_field('service_summary_json', {}),
+            'internet_status': device.get('internet_status'),
+            'internet_latency_ms': device.get('internet_latency_ms'),
+            'internet_dns_ok': device.get('internet_dns_ok'),
+            'internet_http_status': device.get('internet_http_status'),
+            'internet_target': device.get('internet_target'),
+            'internet_error': device.get('internet_error'),
+            'internet_checked_at': _iso(device.get('internet_checked_at')),
         },
         'thresholds': {
             'cpu': device.get('cpu_threshold', 85),
@@ -452,6 +464,7 @@ def get_device_events(device_id):
 
     status_history = db.get_device_history(device_id, limit=limit, minutes=minutes)
     alert_history = db.get_device_alert_history(device_id, limit=limit)
+    internet_history = db.get_internet_check_history(device_id, minutes=minutes)
 
     def _iso(value):
         if isinstance(value, datetime):
@@ -462,6 +475,8 @@ def get_device_events(device_id):
         row['checked_at'] = _iso(row.get('checked_at'))
     for row in alert_history:
         row['created_at'] = _iso(row.get('created_at'))
+    for row in internet_history:
+        row['checked_at'] = _iso(row.get('checked_at'))
 
     events = []
     for row in status_history:
@@ -483,6 +498,28 @@ def get_device_events(device_id):
             'title': row.get('event_type') or 'alert',
             'message': row.get('message') or row.get('error_message') or '',
         })
+    for row in internet_history:
+        status = str(row.get('status') or 'unknown')
+        details = []
+        if row.get('dns_ok') is not None:
+            details.append('DNS OK' if row.get('dns_ok') else 'DNS failed')
+        if row.get('http_status') is not None:
+            details.append(f"HTTP {row.get('http_status')}")
+        if row.get('latency_ms') is not None:
+            details.append(f"{round(float(row.get('latency_ms')), 1)} ms")
+        if row.get('error'):
+            details.append(str(row.get('error')))
+        events.append({
+            'kind': 'internet',
+            'time': row.get('checked_at'),
+            'status': status,
+            'latency_ms': row.get('latency_ms'),
+            'dns_ok': row.get('dns_ok'),
+            'http_status': row.get('http_status'),
+            'target': row.get('target'),
+            'title': f"Internet {status}",
+            'message': ' · '.join(details) or 'No Internet check details',
+        })
 
     events.sort(key=lambda item: item.get('time') or '', reverse=True)
     events = events[:limit]
@@ -494,6 +531,7 @@ def get_device_events(device_id):
         'minutes': minutes,
         'status_history': status_history,
         'alert_history': alert_history,
+        'internet_history': internet_history,
         'events': events,
     })
 
@@ -569,6 +607,13 @@ def get_server_health():
             'pending_reboot': bool(device.get('pending_reboot')),
             'uptime_text': device.get('server_uptime_text'),
             'last_boot_time': device.get('last_boot_time'),
+            'internet_status': device.get('internet_status'),
+            'internet_latency_ms': device.get('internet_latency_ms'),
+            'internet_dns_ok': device.get('internet_dns_ok'),
+            'internet_http_status': device.get('internet_http_status'),
+            'internet_target': device.get('internet_target'),
+            'internet_error': device.get('internet_error'),
+            'internet_checked_at': device.get('internet_checked_at'),
             'service_status': service_status,
             'service_summary': service_summary,
             'disk_details': disk_details,

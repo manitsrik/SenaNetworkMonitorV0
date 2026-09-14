@@ -705,6 +705,10 @@
         color: var(--danger);
     }
 
+    .response-unknown {
+        color: var(--text-muted);
+    }
+
     .metric-cell-top {
         display: flex;
         align-items: center;
@@ -1066,6 +1070,7 @@ function formatBps(value) {
 }
 
 function formatMs(value) {
+    if (value === null || value === undefined || value === '') return '-';
     const num = Number(value);
     return Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-';
 }
@@ -1199,7 +1204,9 @@ function sortValue(server, key) {
         case 'traffic':
             return Number(server.network_total_bps);
         case 'response':
-            return Number(server.response_time);
+            return server.response_time === null || server.response_time === undefined || server.response_time === ''
+                ? null
+                : Number(server.response_time);
         case 'uptime':
             return Number(server.uptime_seconds);
         case 'services':
@@ -1430,18 +1437,23 @@ function renderTrafficCell(server) {
 }
 
 function responseClass(value) {
+    if (value === null || value === undefined || value === '') return 'response-unknown';
     const num = Number(value);
-    if (!Number.isFinite(num)) return 'response-good';
+    if (!Number.isFinite(num)) return 'response-unknown';
     if (num > RESPONSE_CRITICAL_MS) return 'response-critical';
     if (num > RESPONSE_WARNING_MS) return 'response-warning';
     return 'response-good';
 }
 
 function renderResponseCell(server) {
-    const value = Number(server.response_time);
+    const rawValue = server.response_time;
+    const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== '';
+    const value = hasValue ? Number(rawValue) : NaN;
     const label = Number.isFinite(value) ? formatMs(value) : '-';
-    const cssClass = responseClass(value);
-    const state = cssClass === 'response-critical' ? 'Critical' : (cssClass === 'response-warning' ? 'Warning' : 'Normal');
+    const cssClass = responseClass(rawValue);
+    const state = cssClass === 'response-critical'
+        ? 'Critical'
+        : (cssClass === 'response-warning' ? 'Warning' : (cssClass === 'response-good' ? 'Normal' : 'No response'));
     return `
         <div class="response-cell">
             <div class="response-pair">

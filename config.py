@@ -54,6 +54,8 @@ class Config:
     SERVER_HOST = os.environ.get('SERVER_HOST') or '0.0.0.0'
     SERVER_PORT = int(os.environ.get('SERVER_PORT') or 5000)
     DEBUG = _env_bool('DEBUG', False)
+    # Reload Jinja templates when their files change, without a server restart.
+    TEMPLATES_AUTO_RELOAD = _env_bool('TEMPLATES_AUTO_RELOAD', True)
     STRICT_STARTUP_VALIDATION = _env_bool('STRICT_STARTUP_VALIDATION', False)
     ENABLE_SWAGGER_UI = _env_bool('ENABLE_SWAGGER_UI', True)
     EXPOSE_INTERNAL_DOCS = _env_bool('EXPOSE_INTERNAL_DOCS', False)

@@ -998,10 +998,10 @@
 
         <div class="health-panel">
             <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-screwdriver-wrench"></i> Service Down</h3>
-                <span id="service-down-count" class="health-panel-count">0 items</span>
+                <h3 class="health-panel-title"><i class="fa-solid fa-server"></i> Server Down</h3>
+                <span id="server-down-count" class="health-panel-count">0 items</span>
             </div>
-            <div id="service-down" class="health-list"><div class="health-loading">Loading...</div></div>
+            <div id="server-down" class="health-list"><div class="health-loading">Loading...</div></div>
         </div>
     </section>
 
@@ -1357,11 +1357,11 @@ function applyServerFilter(id) {
     loadResponseTimeChart();
 }
 
-function renderList(targetId, rows, kind) {
+function renderList(targetId, rows, kind, emptyText = 'No data') {
     const target = document.getElementById(targetId);
     setCount(`${targetId}-count`, rows?.length || 0);
     if (!rows || !rows.length) {
-        target.innerHTML = '<div class="health-empty">No data</div>';
+        target.innerHTML = `<div class="health-empty">${esc(emptyText)}</div>`;
         return;
     }
 
@@ -1394,9 +1394,18 @@ function renderList(targetId, rows, kind) {
                 </div>
             `;
             meta = row.ip_address || row.monitor_type || '';
-        } else if (kind === 'service') {
-            right = `<span class="status-badge status-down">${esc(row.status || 'down')}</span>`;
-            meta = row.service ? `Service ${row.service}` : 'Service check';
+        } else if (kind === 'down') {
+            const detail = row.pending_reboot
+                ? 'Pending reboot'
+                : (row.last_boot_time ? `Last boot ${row.last_boot_time}` : 'No response');
+            right = `
+                <div class="response-pair">
+                    <span class="status-badge status-down">${esc(row.status || 'down')}</span>
+                    <span class="text-muted">${esc(detail)}</span>
+                </div>
+            `;
+            meta = [row.ip_address, row.monitor_type ? String(row.monitor_type).toUpperCase() : '']
+                .filter(Boolean).join(' • ');
         } else {
             right = `<strong>${pct(value)}</strong>${metricBar(value)}`;
         }
@@ -1533,11 +1542,17 @@ function setLastUpdated() {
 }
 
 function renderError(message) {
-    ['top-cpu', 'top-ram', 'top-disk', 'top-network', 'top-response', 'service-down'].forEach(id => {
+    ['top-cpu', 'top-ram', 'top-disk', 'top-network', 'top-response', 'server-down'].forEach(id => {
         const target = document.getElementById(id);
         if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
     });
     document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
+}
+
+function downServers(servers) {
+    return servers
+        .filter(server => String(server.status || '').toLowerCase() === 'down')
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
 function renderServerHealthData(data) {
@@ -1549,7 +1564,7 @@ function renderServerHealthData(data) {
     renderList('top-disk', filtered.top_disk || [], 'disk');
     renderList('top-network', filtered.top_network || [], 'network');
     renderList('top-response', filtered.top_response || [], 'response');
-    renderList('service-down', filtered.service_down || [], 'service');
+    renderList('server-down', downServers(filtered.servers || []), 'down', 'All servers responding');
     renderServers(filtered.servers || []);
     updateFilterStatus();
 }

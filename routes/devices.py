@@ -806,8 +806,12 @@ def get_server_health_response_time():
     sample_count = request.args.get('sample', 60, type=int)
     minutes = max(5, min(7 * 24 * 60, minutes or 360))
     sample_count = max(12, min(240, sample_count or 60))
-    result = _get_db().get_server_response_time_series(minutes=minutes, sample_count=sample_count)
+    db = _get_db()
+    result = db.get_server_response_time_series(minutes=minutes, sample_count=sample_count)
     series = result.get('series', [])
+    medians = db.get_response_time_medians(minutes=minutes)
+    for entry in series:
+        entry['median_response_time'] = medians.get(entry.get('device_id'))
     values = [
         value
         for device_series in series
@@ -1003,6 +1007,11 @@ def get_server_health_top_metrics():
     long_series = db.get_metric_series(ids, ['ram'] + partition_types,
                                        hours=projection_days * 24, buckets=40)
 
+    # Straight from the samples. Taking it across the drawn buckets instead
+    # reported CPU up to 45% higher than the readings ever were, because an
+    # average inside a bucket lifts the whole bucket on a spiky metric.
+    cpu_medians = db.get_recent_metric_medians(ids, 'cpu', hours * 60)
+
     def projection(device_id, metric_key, limit_column, default_limit):
         points = long_series.get((device_id, metric_key))
         if not points:
@@ -1044,13 +1053,12 @@ def get_server_health_top_metrics():
     cpu_rows, ram_rows, net_rows, net_series = [], [], [], {}
     for device_id in ids:
         cpu = series.get((device_id, 'cpu'))
-        if cpu:
-            median, _ = _series_stats(cpu)
-            if median is not None:
-                cpu_rows.append(dict(base(device_id), rank_value=round(median, 1),
-                                     current=numeric(devices[device_id].get('cpu_usage')),
-                                     unit='%', series=cpu,
-                                     limit=_threshold_for(devices[device_id], 'cpu_threshold', 85)))
+        cpu_median = (cpu_medians.get(device_id) or {}).get('median')
+        if cpu and cpu_median is not None:
+            cpu_rows.append(dict(base(device_id), rank_value=round(cpu_median, 1),
+                                 current=numeric(devices[device_id].get('cpu_usage')),
+                                 unit='%', series=cpu,
+                                 limit=_threshold_for(devices[device_id], 'cpu_threshold', 85)))
 
         ram = series.get((device_id, 'ram'))
         current_ram = numeric(devices[device_id].get('ram_usage'))

@@ -2695,10 +2695,13 @@ function renderCollectionHealth(data) {
                 .map(Number);
             const server = serverById(entry.device_id);
             const { warn } = responseThresholds(server);
+            // The API measures this across the raw checks; the drawn buckets
+            // are averages, and a median of those is a different number.
+            const measured = Number(entry.median_response_time);
             return {
                 id: entry.device_id,
                 name: entry.device_name,
-                median: median(values),
+                median: Number.isFinite(measured) ? measured : median(values),
                 peak: values.length ? Math.max(...values) : null,
                 warn,
                 custom: !!server?.slow_threshold_is_custom,

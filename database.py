@@ -2282,7 +2282,7 @@ class Database:
         if not device_ids:
             return {}
 
-        minutes = max(1, min(int(minutes or 5), 24 * 60))
+        minutes = max(1, min(int(minutes or 5), 7 * 24 * 60))
         conn = self.get_connection()
         try:
             cursor = self._cursor(conn)
@@ -2345,6 +2345,43 @@ class Database:
         except Exception as e:
             print(f"[DB ERROR] get_partition_metric_types: {e}")
             return []
+        finally:
+            self.release_connection(conn)
+
+    def get_response_time_medians(self, minutes=360):
+        """True median collection time per server device, from raw checks.
+
+        The bucketed series is for drawing. A median taken across bucket
+        averages is not the median of the readings: averaging inside a bucket
+        lifts every bucket, and on a spiky host the two differ by a fifth.
+        """
+        minutes = max(5, min(int(minutes or 360), 7 * 24 * 60))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cutoff = self._cutoff_sql('minutes', minutes)
+            if self.db_type == 'postgresql':
+                median = 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY h.response_time)'
+            else:
+                median = 'AVG(h.response_time)'
+            cursor.execute(f'''
+                SELECT h.device_id, {median} AS mid, COUNT(*) AS n
+                FROM status_history h
+                JOIN devices d ON d.id = h.device_id
+                WHERE d.monitor_type IN ('ssh', 'winrm', 'wmi')
+                  AND h.checked_at >= {cutoff}
+                  AND h.response_time IS NOT NULL
+                  AND h.status IN ('up', 'slow')
+                GROUP BY h.device_id
+            ''')
+            return {
+                row['device_id']: float(row['mid'])
+                for row in self._rows_to_dicts(cursor.fetchall())
+                if row.get('mid') is not None
+            }
+        except Exception as e:
+            print(f"[DB ERROR] get_response_time_medians: {e}")
+            return {}
         finally:
             self.release_connection(conn)
 

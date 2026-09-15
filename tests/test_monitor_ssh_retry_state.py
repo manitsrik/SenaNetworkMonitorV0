@@ -14,8 +14,10 @@ class FakeStream:
 
 
 def full_output(command):
-    if command.startswith('grep -c ^processor'):
-        return '4\n 11:20 up 2 days, load average: 0.40, 0.30, 0.20'
+    if command.startswith("grep '^cpu '"):
+        # the /proc/stat counters, then uptime.
+        return ('cpu  1000 0 500 8000 500 0 0 0\n'
+                ' 11:20 up 2 days, load average: 0.40, 0.30, 0.20')
     if command == 'free -m | grep Mem':
         return 'Mem: 1000 500 100 0 400 500'
     if command.startswith('df -P -k'):
@@ -78,7 +80,9 @@ def test_reconnect_discards_metrics_from_the_failed_attempt(monkeypatch):
 
     assert result['status'] in ('up', 'slow')
     assert clients == []
-    assert result['cpu'] == 10.0
+    assert result['load1'] == 0.40
+    # Utilisation needs a previous reading to difference against.
+    assert result['cpu'] is None
     assert result['uptime_seconds'] is None
     assert result['uptime_text'] is None
     assert result['last_boot_time'] is None

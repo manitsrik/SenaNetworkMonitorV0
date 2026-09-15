@@ -72,6 +72,8 @@ class NetworkMonitor:
         self.alerter = None  # Will be set by app.py
         self.plugin_manager = None  # Will be set by app.py
         self.max_workers = Config.MONITOR_MAX_WORKERS
+        # Last /proc/stat reading per Linux host, for the CPU delta below.
+        self._cpu_snapshots = {}
         self._http_ssl_context = self._create_http_ssl_context()
         
         # Dedicated Asyncio thread for SNMP (Stable Architecture)
@@ -770,6 +772,49 @@ class NetworkMonitor:
             return [str(v).strip() for v in value if str(v).strip()]
         return [part.strip() for part in str(value).replace('\n', ',').split(',') if part.strip()]
 
+    def _cpu_percent_from_proc_stat(self, key, line):
+        """Share of CPU time spent working since this host's previous poll.
+
+        Utilisation is a rate, so it needs two readings. Taking them a second
+        apart inside one collection would add that second to every Linux host,
+        and two of them have under 50ms of headroom against their slow
+        thresholds -- so the reading is differenced against the previous poll
+        instead, which costs nothing and covers the whole interval.
+
+        Returns None rather than a guess when there is nothing to difference
+        against: the first poll after a restart, or counters that went
+        backwards because the host rebooted.
+        """
+        try:
+            fields = [int(value) for value in line.split()[1:]]
+        except (AttributeError, IndexError, ValueError):
+            return None
+        if len(fields) < 5:
+            return None
+
+        # user nice system idle iowait irq softirq steal ...
+        # iowait is the CPU having nothing to run, not work being done -- the
+        # exact time the load average counts and this deliberately does not.
+        total = sum(fields)
+        spare = fields[3] + fields[4]
+
+        snapshots = getattr(self, '_cpu_snapshots', None)
+        if snapshots is None:
+            snapshots = self._cpu_snapshots = {}
+
+        previous = snapshots.get(key)
+        snapshots[key] = (total, spare)
+        if previous is None:
+            return None
+
+        total_delta = total - previous[0]
+        spare_delta = spare - previous[1]
+        if total_delta <= 0 or spare_delta < 0:
+            return None
+
+        busy = 100.0 * (total_delta - spare_delta) / total_delta
+        return round(min(100.0, max(0.0, busy)), 2)
+
     def check_ssh(self, ip_address, username, password, port=22, monitored_services=None,
                   slow_threshold_ms=None):
         """
@@ -800,15 +845,24 @@ class NetworkMonitor:
             try:
                 client.connect(ip_address, port=int(port), username=username, password=password, timeout=10)
                 
-                # Get CPU Usage (1 min load average vs cores)
-                _, stdout, _ = client.exec_command("grep -c ^processor /proc/cpuinfo && uptime")
+                # CPU counters and load averages in one round trip.
+                #
+                # `cpu` used to be load1/cores*100, which is not CPU usage at
+                # all: the load average counts processes blocked on disk as
+                # well as processes running, so a host waiting on I/O reported
+                # as busy while its CPUs were idle -- and the figure sat in the
+                # same column, and the same chart, as the true percentage the
+                # Windows hosts report. It is now real utilisation from
+                # /proc/stat. The load averages are still collected; they are
+                # worth knowing, they are just a different thing.
+                _, stdout, _ = client.exec_command("grep '^cpu ' /proc/stat; uptime")
                 out = stdout.read().decode().strip().split('\n')
-                cores = int(out[0]) if out[0].isdigit() else 1
-                loads = [float(v.strip()) for v in out[1].split('load average:')[1].split(',')[:3]]
+                loads = [float(v.strip()) for v in out[-1].split('load average:')[1].split(',')[:3]]
                 result['load1'] = loads[0]
                 result['load5'] = loads[1] if len(loads) > 1 else None
                 result['load15'] = loads[2] if len(loads) > 2 else None
-                result['cpu'] = min(100.0, round((result['load1'] / cores) * 100, 2))
+                result['cpu'] = self._cpu_percent_from_proc_stat(
+                    '%s:%s' % (ip_address, port), out[0] if len(out) > 1 else '')
                 
                 # Get RAM Usage
                 _, stdout, _ = client.exec_command("free -m | grep Mem")

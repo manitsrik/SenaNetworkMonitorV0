@@ -629,7 +629,22 @@ def _threshold_for(device, column, default):
         return default
 
 
-def _attention_items(server, device):
+def _sustained_cpu(server, cpu_medians):
+    """The CPU figure the attention list should judge, or None to skip it.
+
+    A single reading swings from idle to saturated between polls: over six
+    hours one host here covered 17% to 118% of its own limit. Judging that
+    instant puts rows in and out of the panel every refresh, and disagrees with
+    the alerting, which has always required the threshold to be held for
+    threshold_duration_minutes. This uses the median over that same window.
+    """
+    entry = cpu_medians.get(server['id'])
+    if not entry or entry['samples'] < 2:
+        return None
+    return entry['median']
+
+
+def _attention_items(server, device, cpu_medians=None):
     """Everything about one server that is close to, or past, its own limit.
 
     Ranked by percentage of that server's own threshold rather than by raw
@@ -639,10 +654,15 @@ def _attention_items(server, device):
     items = []
 
     for key, label, column, default in ATTENTION_METRICS:
-        try:
-            value = float(server.get(key))
-        except (TypeError, ValueError):
-            continue
+        if key == 'cpu':
+            value = _sustained_cpu(server, cpu_medians or {})
+            if value is None:
+                continue
+        else:
+            try:
+                value = float(server.get(key))
+            except (TypeError, ValueError):
+                continue
         limit = _threshold_for(device, column, default)
         percent = value / limit * 100
         if percent < Config.ATTENTION_MIN_PERCENT:
@@ -656,7 +676,8 @@ def _attention_items(server, device):
             'limit': round(limit, 1),
             'percent': round(percent, 1),
             'severity': 'critical' if value >= limit else 'warning',
-            'detail': '%s%% of a %d%% limit' % (round(value, 1), round(limit)),
+            'detail': ('%s%% of a %d%% limit' % (round(value, 1), round(limit))
+                       + (' sustained' if key == 'cpu' else '')),
         })
 
     status = str(server.get('internet_status') or '').strip().lower()
@@ -729,6 +750,7 @@ def get_server_health():
     pending_reboot = []
     disk_rows = []
     attention = []
+    device_by_id = {}
 
     def _bps(value):
         try:
@@ -794,8 +816,7 @@ def get_server_health():
             'disk_threshold': device.get('disk_threshold'),
         }
         servers.append(server)
-        if _is_live(server):
-            attention.extend(_attention_items(server, device))
+        device_by_id[server['id']] = device
         if server['pending_reboot']:
             pending_reboot.append(server)
         for service in service_status:
@@ -819,6 +840,16 @@ def get_server_health():
             })
 
     hidden_stale = {}
+
+    # One query for every server's recent CPU, rather than one per server.
+    cpu_window = max(
+        (int(d.get('threshold_duration_minutes') or 5) for d in device_by_id.values()),
+        default=5,
+    )
+    cpu_medians = _get_db().get_recent_metric_medians(list(device_by_id), 'cpu', cpu_window)
+    for server in servers:
+        if _is_live(server):
+            attention.extend(_attention_items(server, device_by_id[server['id']], cpu_medians))
 
     def _top(items, key, limit=10, label=None):
         candidates = [item for item in items if item.get(key) is not None]
@@ -873,6 +904,7 @@ def get_server_health():
         'thresholds': {
             'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
             'attention_min_percent': Config.ATTENTION_MIN_PERCENT,
+            'cpu_sustained_minutes': cpu_window,
             'internet_slow_latency_ms': Config.INTERNET_SLOW_LATENCY_MS,
             'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
             'slow_ms': {
@@ -1040,6 +1072,120 @@ def get_server_health_capacity():
         'metric_label': spec['label'],
         'days': days,
         'servers': servers,
+    })
+
+
+def _series_stats(series):
+    values = [v for v in (series or []) if v is not None]
+    if not values:
+        return None, None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return median, sum(values) / len(values)
+
+
+@devices_bp.route('/api/server-health/top-metrics', methods=['GET'])
+def get_server_health_top_metrics():
+    """Top consumers per metric, each with its own history beside the figure.
+
+    CPU is ranked on its median over the window rather than the latest sample:
+    the instant reading reorders the list on every refresh, which makes a
+    ranking nobody can read. The others are steady enough to rank on current.
+    """
+    hours = max(1, min(request.args.get('hours', 24, type=int) or 24, 7 * 24))
+    buckets = max(8, min(request.args.get('buckets', 48, type=int) or 48, 120))
+    limit = max(3, min(request.args.get('limit', 10, type=int) or 10, 25))
+
+    db = _get_db()
+    devices = {
+        d['id']: d for d in db.get_all_devices()
+        if d.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'hours': hours, 'cards': []})
+
+    ids = list(devices)
+    series = db.get_metric_series(ids, ['cpu', 'ram', 'network_in', 'network_out'],
+                                  hours=hours, buckets=buckets)
+    latency = db.get_internet_latency_series(ids, hours=hours, buckets=buckets)
+
+    def base(device_id):
+        device = devices[device_id]
+        return {
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'status': device.get('status'),
+        }
+
+    def numeric(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    cpu_rows, ram_rows, net_rows, net_series = [], [], [], {}
+    for device_id in ids:
+        cpu = series.get((device_id, 'cpu'))
+        if cpu:
+            median, _ = _series_stats(cpu)
+            if median is not None:
+                cpu_rows.append(dict(base(device_id), rank_value=round(median, 1),
+                                     current=numeric(devices[device_id].get('cpu_usage')),
+                                     unit='%', series=cpu))
+
+        ram = series.get((device_id, 'ram'))
+        current_ram = numeric(devices[device_id].get('ram_usage'))
+        if ram and current_ram is not None:
+            ram_rows.append(dict(base(device_id), rank_value=round(current_ram, 1),
+                                 current=round(current_ram, 1), unit='%', series=ram))
+
+        # One line for the interface, in and out together, as the table shows it.
+        inbound = series.get((device_id, 'network_in')) or []
+        outbound = series.get((device_id, 'network_out')) or []
+        if inbound or outbound:
+            width = max(len(inbound), len(outbound))
+            combined = []
+            for i in range(width):
+                a = inbound[i] if i < len(inbound) else None
+                b = outbound[i] if i < len(outbound) else None
+                combined.append(None if a is None and b is None else (a or 0) + (b or 0))
+            net_series[device_id] = combined
+            total = (numeric(devices[device_id].get('network_in_bps')) or 0) \
+                + (numeric(devices[device_id].get('network_out_bps')) or 0)
+            net_rows.append(dict(base(device_id), rank_value=round(total), current=round(total),
+                                 unit='bps', series=combined))
+
+    latency_rows = []
+    for device_id, points in latency.items():
+        _, mean = _series_stats(points)
+        if mean is None:
+            continue
+        latency_rows.append(dict(base(device_id), rank_value=round(mean),
+                                 current=numeric(devices[device_id].get('internet_latency_ms')),
+                                 unit='ms', series=points))
+
+    def top(rows):
+        return sorted(rows, key=lambda r: -(r['rank_value'] or 0))[:limit]
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'buckets': buckets,
+        'cards': [
+            {'key': 'cpu', 'title': 'Top CPU Usage', 'unit': '%',
+             'ranked_by': 'median over the window, because a single CPU reading swings too far to rank on',
+             'sort_key': 'cpu', 'rows': top(cpu_rows)},
+            {'key': 'ram', 'title': 'Top Memory Usage', 'unit': '%',
+             'ranked_by': 'current usage', 'sort_key': 'ram', 'rows': top(ram_rows)},
+            {'key': 'network', 'title': 'Top Network I/O', 'unit': 'bps',
+             'ranked_by': 'current throughput, in and out combined',
+             'sort_key': 'traffic', 'rows': top(net_rows)},
+            {'key': 'internet', 'title': 'Top Internet Latency', 'unit': 'ms',
+             'ranked_by': 'average round-trip over the window',
+             'sort_key': 'internet', 'rows': top(latency_rows)},
+        ],
     })
 
 

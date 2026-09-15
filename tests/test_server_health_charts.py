@@ -23,6 +23,11 @@ class FakeDB:
     def get_all_devices(self):
         return self.devices
 
+    def get_recent_metric_medians(self, device_ids, metric_type, minutes):
+        # CPU only joins the attention list when it has been sustained, so the
+        # fake returns whatever the test set up for that window.
+        return getattr(self, 'cpu_medians', {})
+
     def get_capacity_samples(self, device_ids, metric, days=30, buckets=40):
         self.capacity_calls.append((tuple(device_ids), metric, days, buckets))
         return self.capacity

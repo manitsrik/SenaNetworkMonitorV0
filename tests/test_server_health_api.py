@@ -18,6 +18,11 @@ class FakeDB:
     def get_all_devices(self):
         return self.devices
 
+    def get_recent_metric_medians(self, device_ids, metric_type, minutes):
+        # CPU only joins the attention list when it has been sustained, so the
+        # fake returns whatever the test set up for that window.
+        return getattr(self, 'cpu_medians', {})
+
 
 def make_client(devices):
     app = Flask(__name__)
@@ -271,3 +276,51 @@ def test_summary_separates_unchecked_internet_from_working_internet():
     assert summary['internet_problem'] == 1
     # Never checked is not the same as working, and not the same as broken.
     assert summary['internet_unchecked'] == 1
+
+
+# --------------------------------------------------- sustained CPU ------
+
+class MedianDB(FakeDB):
+    def __init__(self, devices, cpu_medians):
+        super().__init__(devices)
+        self.cpu_medians = cpu_medians
+
+
+def client_for(db):
+    """make_client() builds its own FakeDB; these tests supply one."""
+    app = Flask(__name__)
+    app.config['DB'] = db
+    app.register_blueprint(devices_bp)
+    return app.test_client()
+
+
+def test_cpu_needs_a_sustained_reading_to_reach_the_attention_list():
+    """One CPU sample swings from idle to saturated between polls."""
+    busy_now = ssh_device(cpu_usage=99.0, cpu_threshold=85.0)
+
+    # Instantaneous CPU is pinned, but the window says it was a spike.
+    quiet = MedianDB([busy_now], {1: {'median': 4.0, 'samples': 20}})
+    assert [i['kind'] for i in client_for(quiet).get('/api/server-health').get_json()['attention']] == []
+
+    # Held high across the window, it is a real state and gets listed.
+    held = MedianDB([busy_now], {1: {'median': 90.0, 'samples': 20}})
+    items = client_for(held).get('/api/server-health').get_json()['attention']
+    cpu = [i for i in items if i['kind'] == 'cpu']
+    assert len(cpu) == 1
+    assert cpu[0]['severity'] == 'critical'
+    assert 'sustained' in cpu[0]['detail']
+
+
+def test_cpu_is_skipped_when_the_window_holds_too_few_samples():
+    """A single sample is not a window; better to say nothing than to guess."""
+    device = ssh_device(cpu_usage=99.0, cpu_threshold=85.0)
+    thin = MedianDB([device], {1: {'median': 99.0, 'samples': 1}})
+    assert [i for i in client_for(thin).get('/api/server-health').get_json()['attention']
+            if i['kind'] == 'cpu'] == []
+
+
+def test_memory_still_uses_the_current_reading():
+    """Memory does not swing the way CPU does, so it is judged on the spot."""
+    device = ssh_device(ram_usage=93.0, ram_threshold=95.0)
+    payload = client_for(MedianDB([device], {})).get('/api/server-health').get_json()
+    assert [i['kind'] for i in payload['attention']] == ['ram']

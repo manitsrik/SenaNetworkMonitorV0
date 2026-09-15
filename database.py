@@ -2271,6 +2271,159 @@ class Database:
             })
         return result
 
+    def get_recent_metric_medians(self, device_ids, metric_type, minutes):
+        """Median of one metric per device over the last `minutes`.
+
+        CPU is a sample, not a state: it swings from idle to saturated between
+        one poll and the next, so anything that ranks or alerts on the single
+        latest reading flaps. The median over the same window the alerting
+        already uses answers "is it actually busy" instead.
+        """
+        if not device_ids:
+            return {}
+
+        minutes = max(1, min(int(minutes or 5), 24 * 60))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('minutes', minutes)
+
+            if self.db_type == 'postgresql':
+                median = 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)'
+            else:
+                # SQLite has no percentile function; the mean is close enough
+                # for a window this short and this is not the primary backend.
+                median = 'AVG(value)'
+
+            cursor.execute(f'''
+                SELECT device_id, {median} AS mid, COUNT(*) AS n
+                FROM system_metrics_history
+                WHERE metric_type = {ph}
+                  AND value IS NOT NULL
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id
+            ''', [metric_type] + list(device_ids))
+            return {
+                row['device_id']: {'median': float(row['mid']), 'samples': int(row['n'])}
+                for row in self._rows_to_dicts(cursor.fetchall())
+                if row.get('mid') is not None
+            }
+        except Exception as e:
+            print(f"[DB ERROR] get_recent_metric_medians: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_metric_series(self, device_ids, metric_types, hours=24, buckets=48):
+        """Bucketed history per device per metric, oldest bucket first.
+
+        Feeds the sparkline beside each figure: a number says what a server is
+        doing now, the line says whether that is a spike or where it has been
+        sitting all day.
+        """
+        if not device_ids or not metric_types:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 7 * 24))
+        buckets = max(8, min(int(buckets or 48), 200))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, _ = self._bucket_sql('timestamp', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            devices = ', '.join([ph] * len(device_ids))
+            metrics = ', '.join([ph] * len(metric_types))
+
+            cursor.execute(f'''
+                SELECT device_id, metric_type,
+                       {bucket_expr} AS bucket_id,
+                       AVG(value) AS value
+                FROM system_metrics_history
+                WHERE metric_type IN ({metrics})
+                  AND value IS NOT NULL
+                  AND device_id IN ({devices})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id, metric_type, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(metric_types) + list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_metric_series: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+        result = {}
+        for row in rows:
+            index = int(row['bucket_id']) - oldest
+            if index < 0 or index >= buckets:
+                continue
+            key = (row['device_id'], row['metric_type'])
+            if key not in result:
+                result[key] = [None] * buckets
+            result[key][index] = float(row['value'])
+        return result
+
+    def get_internet_latency_series(self, device_ids, hours=24, buckets=48):
+        """Bucketed internet round-trip per device, plus the window average."""
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 7 * 24))
+        buckets = max(8, min(int(buckets or 48), 200))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, _ = self._bucket_sql('checked_at', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            devices = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       AVG(latency_ms) AS value
+                FROM internet_check_history
+                WHERE latency_ms IS NOT NULL
+                  AND device_id IN ({devices})
+                  AND checked_at >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_internet_latency_series: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+        result = {}
+        for row in rows:
+            index = int(row['bucket_id']) - oldest
+            if index < 0 or index >= buckets:
+                continue
+            series = result.setdefault(row['device_id'], [None] * buckets)
+            series[index] = float(row['value'])
+        return result
+
     def get_status_counts_by_hour(self, device_ids, hours=24):
         """Distinct devices in each status, per hour, over the window.
 

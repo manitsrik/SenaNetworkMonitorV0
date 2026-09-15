@@ -738,10 +738,14 @@
     }
 
     /* --- Clickable KPI cards (focus the table on one signal) --- */
-    button.health-summary-card {
-        font: inherit;
+    /* The Servers card is a plain figure; only the filter cards are buttons. */
+    .health-summary-card {
         text-align: left;
         width: 100%;
+    }
+
+    button.health-summary-card {
+        font: inherit;
         cursor: pointer;
         transition: border-color 0.12s ease, background 0.12s ease;
     }
@@ -1709,7 +1713,7 @@
             </div>
         </div>
 
-        <button type="button" class="health-summary-card is-total" data-health-focus="all" title="Show every monitored server">
+        <div class="health-summary-card is-total">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Servers</div>
@@ -1719,7 +1723,7 @@
                 <svg class="health-summary-spark" id="spark-total" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" title="SSH, WinRM, and WMI targets currently included.">SSH &middot; WinRM &middot; WMI</div>
-        </button>
+        </div>
 
         <button type="button" class="health-summary-card is-down" data-health-focus="down" title="Filter the table to servers that are down">
             <div class="health-summary-header">
@@ -2664,7 +2668,7 @@ function setCardState(focusKey, count) {
     if (!card) return;
     // A card with nothing behind it would filter the table down to an empty
     // list, so it stops being a button instead of leading to a dead end.
-    card.disabled = focusKey !== 'all' && !count;
+    card.disabled = !count;
     if (card.disabled && healthFocus === focusKey) healthFocus = 'all';
 }
 

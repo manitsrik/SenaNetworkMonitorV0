@@ -1147,6 +1147,20 @@
         margin-bottom: 0.45rem;
     }
 
+    /* Two of these headers carry a sort toggle and the rest do not, and a
+       wrapped title made it worse: every card started its first row at a
+       different height. Fix the header box so the five lists line up. */
+    .topcards .health-panel-header {
+        min-height: 38px;
+        padding-block: 0.3rem;
+    }
+
+    .topcards .health-panel-title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     /* A card shows every row it was given. The shared panel cap belongs to the
        side lists it was written for, not here. */
     .topcards .health-panel {
@@ -1233,22 +1247,6 @@
         display: block;
         width: 58px;
         height: 20px;
-    }
-
-    .topcard-viewall {
-        color: var(--primary);
-        font-size: 0.66rem;
-        font-weight: 700;
-        text-decoration: none;
-        white-space: nowrap;
-        background: none;
-        border: 0;
-        cursor: pointer;
-        font-family: inherit;
-    }
-
-    .topcard-viewall:hover {
-        text-decoration: underline;
     }
 
     /* ===================== Monitoring Health: ranked bars =============== */
@@ -2913,14 +2911,11 @@ function renderTopCards(data) {
                         ${esc(card.title)}
                         <i class="fa-solid fa-circle-info health-info" tabindex="0" title="Ranked by ${esc(card.ranked_by)}. The line is the last ${esc(String(data.hours))} hours."></i>
                     </h3>
-                    <span style="display:inline-flex;align-items:center;gap:0.35rem">
-                        ${card.soonest ? `
-                        <span class="topcard-sorts">
-                            <button type="button" data-topsort="${esc(card.key)}:now" aria-pressed="${mode !== 'soonest'}">Now</button>
-                            <button type="button" data-topsort="${esc(card.key)}:soonest" aria-pressed="${mode === 'soonest'}">Days left</button>
-                        </span>` : ''}
-                        <button type="button" class="topcard-viewall" data-view-all="${esc(card.sort_key)}">View all &rarr;</button>
-                    </span>
+                    ${card.soonest ? `
+                    <span class="topcard-sorts">
+                        <button type="button" data-topsort="${esc(card.key)}:now" aria-pressed="${mode !== 'soonest'}">Now</button>
+                        <button type="button" data-topsort="${esc(card.key)}:soonest" aria-pressed="${mode === 'soonest'}">Days left</button>
+                    </span>` : ''}
                 </div>
                 <div class="topcard-list">${body}</div>
             </div>
@@ -2950,22 +2945,12 @@ function renderTopCards(data) {
         });
     });
 
-    host.querySelectorAll('[data-view-all]').forEach(button => {
-        button.addEventListener('click', event => {
-            event.stopPropagation();
-            // Send them to the table already sorted on the column they were reading.
-            setHealthFocus('all');
-            serverSortState = { key: button.getAttribute('data-view-all'), direction: 'desc' };
-            if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
-            document.querySelector('.health-table-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-    });
 }
 
 async function loadTopCards() {
     const host = document.getElementById('topcards');
     try {
-        // Five is what fits at a glance; "View all" opens the table for the rest.
+        // Five is what fits at a glance; the table below carries the rest.
         const res = await fetch(`/api/server-health/top-metrics?hours=24&limit=5&_t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();

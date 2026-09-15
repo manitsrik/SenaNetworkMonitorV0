@@ -43,5 +43,6 @@ Thumbs.db
 static/uploads/
 device_notes/
 
-# Local database backups
+# Local database backups and operational snapshots
 backups/*.dump
+backups/*.json

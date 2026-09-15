@@ -987,10 +987,6 @@
         padding: 0.4rem 0.55rem;
     }
 
-    .health-panel.is-rail {
-        max-height: none;
-    }
-
     /* ===================== Tabs over the table ========================== */
     .health-tabs {
         display: flex;
@@ -1077,41 +1073,6 @@
 
     .timeline-group:first-child {
         padding-top: 0.1rem;
-    }
-
-    /* ===================== Quick actions =============================== */
-    .health-quick {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 0.35rem;
-        padding: 0.45rem 0.6rem 0.55rem;
-    }
-
-    .health-quick-btn {
-        display: grid;
-        gap: 0.1rem;
-        padding: 0.42rem 0.5rem;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--bg-tertiary);
-        color: var(--text-primary);
-        text-decoration: none;
-    }
-
-    .health-quick-btn:hover {
-        border-color: var(--primary);
-        color: var(--text-primary);
-        text-decoration: none;
-    }
-
-    .health-quick-btn b {
-        font-size: 0.72rem;
-        font-weight: 700;
-    }
-
-    .health-quick-btn span {
-        color: var(--text-muted);
-        font-size: 0.62rem;
     }
 
     /* ===================== Capacity Outlook: small multiples ============ */
@@ -1484,8 +1445,7 @@
         .health-overview,
         .health-panels,
         .capacity-grid,
-        .health-rail,
-        .health-quick {
+        .health-rail {
             grid-template-columns: 1fr;
         }
 
@@ -1533,7 +1493,7 @@
         body { background: #fff !important; color: #111 !important; }
         .health-overview, .health-panels { grid-template-columns: 1fr 1fr !important; }
         .health-cols { grid-template-columns: 1fr !important; }
-        .health-quick, .health-tabs { display: none !important; }
+        .health-tabs { display: none !important; }
         .health-hero, .health-summary-card, .health-panel, .health-table-card {
             box-shadow: none !important;
             break-inside: avoid;
@@ -1732,25 +1692,6 @@
             </div>
         </section>
 
-        <section class="health-panel is-rail">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-bolt"></i> Quick Actions</h3>
-            </div>
-            <div class="health-quick">
-                <a class="health-quick-btn" href="/api/server-health/export.pdf">
-                    <b>Export PDF</b><span>current snapshot</span>
-                </a>
-                <a class="health-quick-btn" href="/api/server-health/export.csv">
-                    <b>Export CSV</b><span>all metrics</span>
-                </a>
-                <a class="health-quick-btn" href="/devices">
-                    <b>Service checks</b><span id="quick-services">-</span>
-                </a>
-                <a class="health-quick-btn" href="/devices">
-                    <b>Thresholds</b><span id="quick-thresholds">-</span>
-                </a>
-            </div>
-        </section>
         </aside>
     </div>
 
@@ -2609,12 +2550,6 @@ function setSummary(summary) {
     const staleValue = document.getElementById('sum-stale');
     if (staleValue) staleValue.textContent = stale;
     if (staleChip) staleChip.hidden = stale === 0;
-
-    setText('quick-services', monitored
-        ? `${monitored} of ${summary.total_servers} hosts`
-        : `none of ${summary.total_servers} hosts yet`);
-    const custom = (latestServerHealthData?.servers || []).filter(server => server.slow_threshold_is_custom).length;
-    setText('quick-thresholds', custom ? `${custom} tuned per host` : 'using shared defaults');
 
     setCardState('down', summary.down || 0);
     setCardState('service', monitored ? (summary.service_down || 0) : 0);

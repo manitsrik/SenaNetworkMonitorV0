@@ -2272,10 +2272,15 @@ class Database:
         return result
 
     def get_status_timeline(self, device_ids, hours=24, buckets=96):
-        """Worst status per device per time bucket, plus the window's status mix.
+        """Status make-up per device per time bucket, plus the window total.
 
-        Returns {device_id: {'band': [...], 'counts': {...}}} with a
-        '__labels__' entry carrying the bucket labels. Bucket 0 is the oldest.
+        Returns {device_id: {'band': [...], 'mix': [...], 'counts': {...}}} with
+        a '__labels__' entry carrying the bucket labels. Bucket 0 is the oldest.
+
+        `band` is the worst status seen in each bucket, which is what the
+        tooltip and the gap detection want. `mix` is the [up, slow, down] count
+        behind it: colouring a whole bucket by its worst check made a single bad
+        check look like an outage lasting the entire bucket.
         """
         if not device_ids:
             return {}
@@ -2331,14 +2336,14 @@ class Database:
 
             entry = result.setdefault(row['device_id'], {
                 'band': ['none'] * buckets,
+                'mix': [None] * buckets,
                 'counts': {'up': 0, 'slow': 0, 'down': 0},
             })
             down_n = int(row.get('down_n') or 0)
             slow_n = int(row.get('slow_n') or 0)
             up_n = int(row.get('up_n') or 0)
-            # A bucket is coloured by its worst check: one outage inside a
-            # ten-minute bucket must not be averaged away into "up".
             entry['band'][index] = 'down' if down_n else ('slow' if slow_n else ('up' if up_n else 'unknown'))
+            entry['mix'][index] = [up_n, slow_n, down_n]
             entry['counts']['down'] += down_n
             entry['counts']['slow'] += slow_n
             entry['counts']['up'] += up_n

@@ -966,6 +966,7 @@ def get_server_health_status_timeline():
     for device_id, device in devices.items():
         entry = timeline.get(device_id, {})
         band = entry.get('band') or ['none'] * buckets
+        mix = entry.get('mix') or [None] * buckets
         counts = entry.get('counts') or {}
         total = sum(counts.values())
         servers.append({
@@ -975,6 +976,7 @@ def get_server_health_status_timeline():
             'monitor_type': device.get('monitor_type'),
             'status': device.get('status'),
             'band': band,
+            'mix': mix,
             'checks': total,
             'up_pct': round(counts.get('up', 0) / total * 100, 1) if total else None,
             'slow_pct': round(counts.get('slow', 0) / total * 100, 1) if total else None,

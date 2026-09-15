@@ -1100,11 +1100,11 @@
     .timeline-band span {
         flex: 1 1 0;
         min-width: 0;
+        /* Filled by a gradient built from the bucket's own up/slow/down split,
+           so one bad check no longer colours the whole slice. */
+        background: var(--slice, var(--success));
     }
 
-    .timeline-band .is-up    { background: var(--success); }
-    .timeline-band .is-slow  { background: var(--warning); }
-    .timeline-band .is-down  { background: var(--danger); }
     .timeline-band .is-unknown { background: rgba(107, 114, 128, 0.55); }
     /* A gap is the monitor not running, which must not read as a healthy bar. */
     .timeline-band .is-none  {
@@ -1577,6 +1577,7 @@
                     <button type="button" class="health-range-btn" data-collection-minutes="60" data-collection-sample="60">1h</button>
                     <button type="button" class="health-range-btn is-active" data-collection-minutes="360" data-collection-sample="72">6h</button>
                     <button type="button" class="health-range-btn" data-collection-minutes="1440" data-collection-sample="96">24h</button>
+                    <button type="button" class="health-range-btn" data-collection-minutes="10080" data-collection-sample="168">7d</button>
                 </div>
                 <span class="health-chart-stat" id="collection-count">-</span>
             </div>
@@ -1654,6 +1655,74 @@ function formatThreshold(ms) {
     const num = Number(ms);
     if (!Number.isFinite(num) || num <= 0) return '-';
     return num >= 1000 ? `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}s` : `${Math.round(num)} ms`;
+}
+
+// Each card looks at a different span because each answers a different
+// question, so a reload that silently reset all three undid deliberate
+// choices. Remembering them is per-browser convenience only: storage can be
+// unavailable or throw, and the page has to render correctly regardless.
+const PREFS_KEY = 'serverHealth.viewPrefs';
+
+function loadPrefs() {
+    try {
+        return JSON.parse(localStorage.getItem(PREFS_KEY)) || {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function savePrefs() {
+    try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify({
+            capacityMetric,
+            capacityDays,
+            capacityRisingOnly,
+            timelineHours,
+            collectionRange,
+        }));
+    } catch (error) {
+        /* private window, blocked storage: the page works without it */
+    }
+}
+
+function markActive(attribute, value) {
+    const buttons = [...document.querySelectorAll(`[${attribute}]`)];
+    const match = buttons.find(button => button.getAttribute(attribute) === String(value));
+    if (!match) return false;
+    buttons.forEach(button => button.classList.toggle('is-active', button === match));
+    return true;
+}
+
+function applyStoredPrefs() {
+    const prefs = loadPrefs();
+
+    if (prefs.capacityMetric && markActive('data-capacity-metric', prefs.capacityMetric)) {
+        capacityMetric = prefs.capacityMetric;
+    }
+    if (prefs.capacityDays && markActive('data-capacity-days', prefs.capacityDays)) {
+        capacityDays = Number(prefs.capacityDays);
+    }
+    if (prefs.timelineHours && markActive('data-timeline-hours', prefs.timelineHours)) {
+        timelineHours = Number(prefs.timelineHours);
+    }
+    if (prefs.collectionRange?.minutes && markActive('data-collection-minutes', prefs.collectionRange.minutes)) {
+        collectionRange = {
+            minutes: Number(prefs.collectionRange.minutes),
+            sample: Number(prefs.collectionRange.sample) || 72,
+        };
+    }
+    if (typeof prefs.capacityRisingOnly === 'boolean') {
+        capacityRisingOnly = prefs.capacityRisingOnly;
+        const toggle = document.getElementById('capacity-rising-only');
+        if (toggle) toggle.checked = capacityRisingOnly;
+    }
+}
+
+function formatWindowHours(hours) {
+    const num = Number(hours);
+    if (!Number.isFinite(num)) return '-';
+    if (num < 48) return `${Math.round(num)} hours`;
+    return `${Math.round(num / 24)} days`;
 }
 
 function formatAge(seconds) {
@@ -2428,6 +2497,52 @@ async function loadCapacity() {
 
 // ========================= Availability Timeline ==========================
 
+// Minimum share of a slice any non-up status gets. Colouring a bucket purely by
+// its worst check overstated how long things were broken by up to 28x on a
+// 30-day window; colouring it purely by proportion hides a single bad check in
+// a sub-pixel sliver. 0.14 of the 14px band is 2px -- the least that reliably
+// survives rendering -- and holds the overstatement to about 4x.
+const BUCKET_MIN_SHARE = 0.14;
+
+function bucketSlice(counts) {
+    const [up, slow, down] = counts || [0, 0, 0];
+    const total = up + slow + down;
+    if (!total) {
+        return { gradient: 'rgba(107, 114, 128, 0.55)', label: 'no check recorded' };
+    }
+
+    let downShare = down / total;
+    let slowShare = slow / total;
+    if (down) downShare = Math.max(downShare, BUCKET_MIN_SHARE);
+    if (slow) slowShare = Math.max(slowShare, BUCKET_MIN_SHARE);
+    const bad = downShare + slowShare;
+    if (bad > 1) {
+        downShare /= bad;
+        slowShare /= bad;
+    }
+
+    const parts = [];
+    const summary = [];
+    let cursor = 0;
+    if (downShare > 0) {
+        parts.push(`var(--danger) ${(cursor * 100).toFixed(1)}% ${((cursor + downShare) * 100).toFixed(1)}%`);
+        cursor += downShare;
+        summary.push(`${down} down`);
+    }
+    if (slowShare > 0) {
+        parts.push(`var(--warning) ${(cursor * 100).toFixed(1)}% ${((cursor + slowShare) * 100).toFixed(1)}%`);
+        cursor += slowShare;
+        summary.push(`${slow} slow`);
+    }
+    parts.push(`var(--success) ${(cursor * 100).toFixed(1)}% 100%`);
+    if (up) summary.push(`${up} up`);
+
+    return {
+        gradient: parts.length === 1 ? 'var(--success)' : `linear-gradient(to top, ${parts.join(', ')})`,
+        label: summary.join(', '),
+    };
+}
+
 function renderTimeline(data) {
     const body = document.getElementById('timeline-body');
     const hint = document.getElementById('timeline-hint');
@@ -2451,11 +2566,16 @@ function renderTimeline(data) {
     }
 
     body.innerHTML = servers.map(server => {
+        const mix = server.mix || [];
         const band = (server.band || []).map((state, index) => {
             const when = labels[index] || '';
-            const label = state === 'none' ? 'no check recorded' : state;
             const marker = index === calibrationIndex ? ' is-calibration' : '';
-            return `<span class="is-${esc(state)}${marker}" title="${esc(when)} ${esc(label)}"></span>`;
+            if (state === 'none' || state === 'unknown') {
+                const label = state === 'none' ? 'no check recorded' : 'unknown';
+                return `<span class="is-${esc(state)}${marker}" title="${esc(when)} ${esc(label)}"></span>`;
+            }
+            const slice = bucketSlice(mix[index]);
+            return `<span class="${marker.trim()}" style="--slice:${slice.gradient};" title="${esc(when)} ${esc(slice.label)}"></span>`;
         }).join('');
 
         const up = server.up_pct;
@@ -2482,15 +2602,21 @@ function renderTimeline(data) {
         if (servers.every(server => (server.band || [])[index] === 'none')) blind += 1;
     }
     const notes = [];
+
     if (blind) {
         const hoursPerBucket = data.hours / (bucketCount || 1);
         const missing = blind * hoursPerBucket;
         notes.push(`No check was recorded for any server across ${missing < 1 ? `${Math.round(missing * 60)} minutes` : `${missing.toFixed(1)} hours`} of this window: monitoring was not running.`);
     }
+    const perBucket = bucketCount ? (data.hours * 60) / bucketCount : 0;
+    notes.unshift(perBucket < 90
+        ? `Last ${formatWindowHours(data.hours)}, ${Math.round(perBucket)} minutes per block.`
+        : `Last ${formatWindowHours(data.hours)}, ${(perBucket / 60).toFixed(1)} hours per block.`);
+
     if (calibrationIndex > 0) {
         notes.push(`The blue line marks ${data.calibrated_at}, when the slow thresholds were recalibrated. Checks to its left keep the verdict they were given at the time and cannot be re-judged.`);
     }
-    notes.push('Percentages are the share of checks that came back up.');
+    notes.push('Percentages are the share of checks that came back up. Each block is shaded by its own mix of results, with brief incidents drawn at a minimum width so they stay visible.');
     if (hint) hint.textContent = notes.join(' ');
 }
 
@@ -2574,7 +2700,9 @@ function renderCollectionHealth(data) {
     }).join('');
 
     const over = rows.filter(row => row.median > row.warn);
-    const notes = ['Share of each host\'s own slow threshold used by a typical collection.'];
+    const notes = [
+        `Median over the last ${formatWindowHours(collectionRange.minutes / 60)}, as a share of each host's own slow threshold.`,
+    ];
     if (over.length) {
         notes.push(over.length === 1
             ? `1 host sits above its threshold on a typical poll, so it reports SLOW almost every cycle. Raise the threshold on that device if this is simply how long its agent takes.`
@@ -2670,16 +2798,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     bindGroup('data-capacity-metric', button => {
         capacityMetric = button.getAttribute('data-capacity-metric') || 'ram';
+        savePrefs();
         loadCapacity();
     });
 
     bindGroup('data-capacity-days', button => {
         capacityDays = Number(button.getAttribute('data-capacity-days')) || 30;
+        savePrefs();
         loadCapacity();
     });
 
     bindGroup('data-timeline-hours', button => {
         timelineHours = Number(button.getAttribute('data-timeline-hours')) || 24;
+        savePrefs();
         loadTimeline();
     });
 
@@ -2688,6 +2819,7 @@ document.addEventListener('DOMContentLoaded', () => {
             minutes: Number(button.getAttribute('data-collection-minutes')) || 360,
             sample: Number(button.getAttribute('data-collection-sample')) || 72,
         };
+        savePrefs();
         loadCollectionHealth();
     });
 
@@ -2695,6 +2827,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (risingOnly) {
         risingOnly.addEventListener('change', () => {
             capacityRisingOnly = risingOnly.checked;
+            savePrefs();
             if (latestCapacityData) renderCapacity(latestCapacityData);
         });
     }
@@ -2705,6 +2838,8 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         applyServerFilter(trigger.getAttribute('data-server-filter') || 'all');
     });
+
+    applyStoredPrefs();
 
     // Server health lands first: the other sections read each device's own
     // thresholds out of it.

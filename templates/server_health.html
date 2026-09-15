@@ -410,7 +410,7 @@
 
     .health-chart-body {
         position: relative;
-        height: 170px;
+        height: 210px;
         padding: 0.5rem 0.7rem 0.55rem;
     }
 
@@ -778,7 +778,7 @@
     }
 
     .health-table-wrap {
-        max-height: calc(100vh - 415px);
+        max-height: calc(100vh - 470px);
         min-height: 264px;
     }
 
@@ -793,6 +793,243 @@
         background: rgba(107, 114, 128, 0.1);
         color: var(--text-muted);
         border: 1px solid rgba(107, 114, 128, 0.35);
+    }
+
+    /* --- Clickable KPI cards (focus the table on one signal) --- */
+    button.health-summary-card {
+        font: inherit;
+        text-align: left;
+        width: 100%;
+        cursor: pointer;
+        transition: border-color 0.12s ease, background 0.12s ease;
+    }
+
+    button.health-summary-card:hover {
+        border-color: var(--summary-color, var(--primary));
+    }
+
+    button.health-summary-card:focus-visible {
+        outline: 2px solid rgba(59, 130, 246, 0.45);
+        outline-offset: 2px;
+    }
+
+    button.health-summary-card.is-active {
+        border-color: var(--summary-color, var(--primary));
+        background: var(--summary-bg, var(--health-soft));
+    }
+
+    button.health-summary-card.is-active::after {
+        height: 5px;
+    }
+
+    button.health-summary-card:disabled {
+        cursor: default;
+    }
+
+    button.health-summary-card:disabled:hover {
+        border-color: var(--border-color);
+    }
+
+    .health-summary-value.is-empty {
+        color: var(--text-muted);
+        font-size: 1.35rem;
+        line-height: 1.3;
+    }
+
+    .health-meta-chip.is-clickable {
+        font-family: inherit;
+        font-size: 0.68rem;
+        line-height: inherit;
+        cursor: pointer;
+        border-color: rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--warning);
+        font-weight: 700;
+    }
+
+    /* --- Active focus chip in the table header --- */
+    .health-focus-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.16rem 0.2rem 0.16rem 0.5rem;
+        border: 1px solid rgba(245, 158, 11, 0.4);
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--warning);
+        font-size: 0.66rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .health-focus-chip button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(245, 158, 11, 0.22);
+        color: inherit;
+        font-size: 0.6rem;
+        cursor: pointer;
+    }
+
+    .health-table-header-right {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+    /* --- Chart controls: time range + problem-only --- */
+    .health-chart-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .health-range-group {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .health-range-btn {
+        min-height: 22px;
+        padding: 0.16rem 0.5rem;
+        border: 0;
+        background: transparent;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.66rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .health-range-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .health-range-btn.is-active {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    .health-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        min-height: 22px;
+        padding: 0.14rem 0.45rem;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+        font-weight: 700;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .health-toggle input {
+        width: 12px;
+        height: 12px;
+        margin: 0;
+        accent-color: var(--primary);
+        cursor: pointer;
+    }
+
+    .health-chart-stat.is-warning {
+        border-color: rgba(245, 158, 11, 0.45);
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--warning);
+    }
+
+    .health-chart-stat.is-critical {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+    }
+
+    .health-chart-hint {
+        padding: 0 0.7rem 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        line-height: 1.3;
+    }
+
+    .health-info {
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        cursor: help;
+    }
+
+    /* --- Freshness / stale data --- */
+    .stale-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        margin-left: 0.28rem;
+        padding: 0.06rem 0.32rem;
+        border-radius: 999px;
+        background: rgba(245, 158, 11, 0.16);
+        color: var(--warning);
+        font-size: 0.56rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        vertical-align: middle;
+    }
+
+    .stale-chip.is-down {
+        background: rgba(239, 68, 68, 0.14);
+        color: var(--danger);
+    }
+
+    .age-text {
+        color: var(--text-muted);
+    }
+
+    .age-text.is-stale {
+        color: var(--warning);
+        font-weight: 700;
+    }
+
+    .metric-cell.is-stale .metric-cell-top,
+    .metric-cell.is-stale .health-bar-track,
+    .health-value.is-stale > *:not(.metric-note) {
+        opacity: 0.45;
+    }
+
+    .metric-note {
+        display: block;
+        margin-top: 0.12rem;
+        color: var(--text-muted);
+        font-size: 0.56rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+
+    .status-cell {
+        min-width: 116px;
+        white-space: nowrap;
+    }
+
+    .status-cell .server-meta {
+        margin-top: 0.16rem;
+    }
+
+    /* --- Service checks: "0 stopped" vs "never configured" --- */
+    .service-unset {
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        font-style: italic;
+        white-space: nowrap;
     }
 
     @media (max-width: 1440px) {
@@ -889,10 +1126,13 @@
                 <span class="health-meta-chip"><i class="fa-solid fa-gauge-high"></i> <span id="sum-slow">-</span> slow</span>
                 <span class="health-meta-chip"><i class="fa-solid fa-arrow-down"></i> <span id="sum-net-in">-</span> in</span>
                 <span class="health-meta-chip"><i class="fa-solid fa-arrow-up"></i> <span id="sum-net-out">-</span> out</span>
+                <button type="button" id="sum-stale-chip" class="health-meta-chip is-clickable" data-health-focus="stale" hidden>
+                    <i class="fa-solid fa-hourglass-half"></i> <span id="sum-stale">0</span> stale
+                </button>
             </div>
         </div>
 
-        <div class="health-summary-card is-total">
+        <button type="button" class="health-summary-card is-total" data-health-focus="all" title="Show every monitored server">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Servers</div>
@@ -901,9 +1141,9 @@
                 <div class="health-summary-icon"><i class="fa-solid fa-server"></i></div>
             </div>
             <div class="health-summary-note">SSH, WinRM, and WMI targets currently included.</div>
-        </div>
+        </button>
 
-        <div class="health-summary-card is-down">
+        <button type="button" class="health-summary-card is-down" data-health-focus="down" title="Filter the table to servers that are down">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Down</div>
@@ -911,10 +1151,10 @@
                 </div>
                 <div class="health-summary-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
             </div>
-            <div class="health-summary-note">Servers that need immediate connectivity review.</div>
-        </div>
+            <div class="health-summary-note" id="sum-down-note">Servers that need immediate connectivity review.</div>
+        </button>
 
-        <div class="health-summary-card is-service">
+        <button type="button" class="health-summary-card is-service" data-health-focus="service" title="Filter the table to servers with a stopped service">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Service Down</div>
@@ -922,10 +1162,10 @@
                 </div>
                 <div class="health-summary-icon"><i class="fa-solid fa-gears"></i></div>
             </div>
-            <div class="health-summary-note">Stopped services reported by server checks.</div>
-        </div>
+            <div class="health-summary-note" id="sum-service-note">Stopped services reported by server checks.</div>
+        </button>
 
-        <div class="health-summary-card is-reboot">
+        <button type="button" class="health-summary-card is-reboot" data-health-focus="reboot" title="Filter the table to servers waiting for a restart">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Pending Reboot</div>
@@ -933,26 +1173,40 @@
                 </div>
                 <div class="health-summary-icon"><i class="fa-solid fa-power-off"></i></div>
             </div>
-            <div class="health-summary-note">Windows/Linux hosts waiting for restart actions.</div>
-        </div>
+            <div class="health-summary-note" id="sum-reboot-note">Windows/Linux hosts waiting for restart actions.</div>
+        </button>
     </section>
 
     <section class="health-chart-card">
         <div class="health-chart-header">
-            <h3 class="health-chart-title"><i class="fa-solid fa-chart-line"></i> Response Time by Server</h3>
-            <div class="health-chart-stats">
-                <span class="health-chart-stat"><i class="fa-solid fa-clock"></i> Last 6h</span>
-                <span class="health-chart-stat"><span id="rt-servers">-</span> servers</span>
-                <span class="health-chart-stat">Warn 10s</span>
-                <span class="health-chart-stat">Crit 30s</span>
-                <span class="health-chart-stat">Avg <span id="rt-avg">-</span></span>
-                <span class="health-chart-stat">Peak <span id="rt-max">-</span></span>
+            <h3 class="health-chart-title">
+                <i class="fa-solid fa-chart-line"></i> Collection Time by Server
+                <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                   title="How long a full SSH/WinRM/WMI metric collection takes end to end: connect, run every command, return. This is not ICMP ping latency, so several seconds is normal."></i>
+            </h3>
+            <div class="health-chart-controls">
+                <div class="health-range-group" id="rt-range-group" role="group" aria-label="Chart time range">
+                    <button type="button" class="health-range-btn" data-range-minutes="60" data-range-sample="60">1h</button>
+                    <button type="button" class="health-range-btn is-active" data-range-minutes="360" data-range-sample="72">6h</button>
+                    <button type="button" class="health-range-btn" data-range-minutes="1440" data-range-sample="96">24h</button>
+                    <button type="button" class="health-range-btn" data-range-minutes="10080" data-range-sample="168">7d</button>
+                </div>
+                <label class="health-toggle" title="Show only servers that crossed their slow threshold in this window">
+                    <input type="checkbox" id="rt-problem-only" checked>
+                    Problem only
+                </label>
+                <span class="health-chart-stat"><span id="rt-servers">-</span> shown</span>
+                <span class="health-chart-stat">Warn <span id="rt-warn">-</span></span>
+                <span class="health-chart-stat">Crit <span id="rt-crit">-</span></span>
+                <span class="health-chart-stat" id="rt-avg-chip">Avg <span id="rt-avg">-</span></span>
+                <span class="health-chart-stat" id="rt-max-chip">Peak <span id="rt-max">-</span></span>
             </div>
         </div>
         <div class="health-chart-body">
             <canvas id="response-time-chart"></canvas>
-            <div id="response-time-empty" class="health-empty" style="display:none;">No response-time history by server yet.</div>
+            <div id="response-time-empty" class="health-empty" style="display:none;">No collection-time history by server yet.</div>
         </div>
+        <div class="health-chart-hint" id="rt-hint"></div>
     </section>
 
     <section class="health-panels">
@@ -990,7 +1244,7 @@
 
         <div class="health-panel">
             <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-wave-square"></i> Top Response</h3>
+                <h3 class="health-panel-title"><i class="fa-solid fa-wave-square"></i> Slowest Collection</h3>
                 <span id="top-response-count" class="health-panel-count">0 items</span>
             </div>
             <div id="top-response" class="health-list"><div class="health-loading">Loading...</div></div>
@@ -1008,7 +1262,15 @@
     <section class="health-table-card">
         <div class="health-table-header">
             <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
-            <span id="server-count-label" class="health-panel-count">0 servers</span>
+            <div class="health-table-header-right">
+                <span id="health-focus-chip" class="health-focus-chip" hidden>
+                    <span id="health-focus-label"></span>
+                    <button type="button" id="health-focus-clear" title="Clear this filter" aria-label="Clear filter">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </span>
+                <span id="server-count-label" class="health-panel-count">0 servers</span>
+            </div>
         </div>
         <div class="health-table-wrap">
             <table class="server-health-table">
@@ -1020,7 +1282,7 @@
                         <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="response">Response <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="response" title="Full agent collection round-trip, not ICMP ping">Collection <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th>Action</th>
@@ -1040,11 +1302,30 @@
 <script>
 let responseTimeChart = null;
 let latestServerHealthData = null;
+let latestFetchedAt = Date.now();
 let selectedServerId = 'all';
 let serverSearchMap = new Map();
-let serverSortState = { key: 'server', direction: 'asc' };
+// Triage first: the table opens on the worst servers instead of alphabetically.
+let serverSortState = { key: 'status', direction: 'asc' };
+let healthFocus = 'all';
+let chartRange = { minutes: 360, sample: 72 };
+let chartProblemOnly = true;
+
+// Fallbacks only. The API sends the real per-monitor-type thresholds, which is
+// what the monitor itself uses to mark a server "slow".
 const RESPONSE_WARNING_MS = 10000;
 const RESPONSE_CRITICAL_MS = 30000;
+let chartWarnMs = RESPONSE_WARNING_MS;
+let chartCritMs = RESPONSE_CRITICAL_MS;
+let staleAfterSeconds = 300;
+
+const FOCUS_DEFS = {
+    all: { label: 'All servers', match: () => true },
+    down: { label: 'Down', match: server => String(server.status || '').toLowerCase() === 'down' },
+    service: { label: 'Service down', match: server => (server.service_status || []).some(item => !item.ok) },
+    reboot: { label: 'Pending reboot', match: server => !!server.pending_reboot },
+    stale: { label: 'Stale data', match: server => !!server.is_stale },
+};
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -1075,6 +1356,66 @@ function formatMs(value) {
     return Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-';
 }
 
+function formatThreshold(ms) {
+    const num = Number(ms);
+    if (!Number.isFinite(num) || num <= 0) return '-';
+    return num >= 1000 ? `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}s` : `${Math.round(num)} ms`;
+}
+
+function formatAge(seconds) {
+    if (seconds === null || seconds === undefined || seconds === '') return 'unknown';
+    const num = Number(seconds);
+    if (!Number.isFinite(num) || num < 0) return 'unknown';
+    if (num < 90) return `${Math.round(num)}s ago`;
+    const minutes = num / 60;
+    if (minutes < 90) return `${Math.round(minutes)}m ago`;
+    const hours = minutes / 60;
+    if (hours < 48) return `${Math.round(hours)}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+}
+
+// The API measures the age at fetch time; add the time spent on screen since.
+function ageSeconds(row) {
+    const raw = row?.metrics_age_seconds;
+    if (raw === null || raw === undefined || raw === '') return null;
+    const base = Number(raw);
+    if (!Number.isFinite(base)) return null;
+    return base + Math.max(0, (Date.now() - latestFetchedAt) / 1000);
+}
+
+function isRowStale(row) {
+    if (!row) return false;
+    if (row.is_stale) return true;
+    const age = ageSeconds(row);
+    return age !== null && age > staleAfterSeconds;
+}
+
+function isRowDown(row) {
+    return String(row?.status || '').toLowerCase() === 'down';
+}
+
+// A down or stale row still carries its last successful reading. Say so rather
+// than presenting it as a live measurement.
+function freshnessChip(row) {
+    if (isRowDown(row)) return '<span class="stale-chip is-down">last known</span>';
+    if (isRowStale(row)) return '<span class="stale-chip">stale</span>';
+    return '';
+}
+
+function serverById(id) {
+    const normalized = normalizeServerId(id);
+    return (latestServerHealthData?.servers || []).find(server => normalizeServerId(server.id) === normalized) || null;
+}
+
+function responseThresholds(server) {
+    const warn = Number(server?.slow_threshold_ms);
+    const critical = Number(server?.critical_threshold_ms);
+    return {
+        warn: Number.isFinite(warn) && warn > 0 ? warn : RESPONSE_WARNING_MS,
+        critical: Number.isFinite(critical) && critical > 0 ? critical : RESPONSE_CRITICAL_MS,
+    };
+}
+
 function formatChartTime(value) {
     const date = new Date(String(value || '').replace(' ', 'T'));
     if (Number.isNaN(date.getTime())) return '';
@@ -1088,8 +1429,8 @@ const responseThresholdPlugin = {
         const yScale = scales.y;
         if (!chartArea || !yScale) return;
 
-        const warningY = yScale.getPixelForValue(RESPONSE_WARNING_MS);
-        const criticalY = yScale.getPixelForValue(RESPONSE_CRITICAL_MS);
+        const warningY = yScale.getPixelForValue(chartWarnMs);
+        const criticalY = yScale.getPixelForValue(chartCritMs);
 
         ctx.save();
         if (criticalY > chartArea.top && criticalY < chartArea.bottom) {
@@ -1109,8 +1450,8 @@ const responseThresholdPlugin = {
         if (!chartArea || !yScale) return;
 
         [
-            { value: RESPONSE_WARNING_MS, label: 'Warning 10s', color: '#f59e0b' },
-            { value: RESPONSE_CRITICAL_MS, label: 'Critical 30s', color: '#ef4444' }
+            { value: chartWarnMs, label: `Warning ${formatThreshold(chartWarnMs)}`, color: '#f59e0b' },
+            { value: chartCritMs, label: `Critical ${formatThreshold(chartCritMs)}`, color: '#ef4444' }
         ].forEach(item => {
             const y = yScale.getPixelForValue(item.value);
             if (y < chartArea.top || y > chartArea.bottom) return;
@@ -1125,8 +1466,9 @@ const responseThresholdPlugin = {
             ctx.setLineDash([]);
             ctx.fillStyle = item.color;
             ctx.font = '700 10px Inter, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.fillText(item.label, chartArea.right - 4, y - 5);
+            // Anchored left: the right edge used to clip the label off-canvas.
+            ctx.textAlign = 'left';
+            ctx.fillText(item.label, chartArea.left + 6, y - 5);
             ctx.restore();
         });
     }
@@ -1193,8 +1535,13 @@ function sortValue(server, key) {
     switch (key) {
         case 'server':
             return String(server.name || '').toLowerCase();
-        case 'status':
-            return statusRank[String(server.status || 'unknown').toLowerCase()] ?? statusRank.unknown;
+        case 'status': {
+            // Rank by status first, then let stale data and a pending reboot
+            // pull a server above its otherwise healthy peers. The penalties
+            // stay under 10 so they never cross a status boundary.
+            const rank = statusRank[String(server.status || 'unknown').toLowerCase()] ?? statusRank.unknown;
+            return rank * 10 + (isRowStale(server) ? 0 : 2) + (server.pending_reboot ? 0 : 1);
+        }
         case 'cpu':
             return Number(server.cpu);
         case 'ram':
@@ -1285,6 +1632,8 @@ function buildFilteredData(data) {
             down: servers.filter(server => server.status === 'down').length,
             pending_reboot: pendingReboot.length || (selected?.pending_reboot ? 1 : 0),
             service_down: serviceDown.length,
+            service_monitored_servers: servers.filter(server => server.services_configured).length,
+            stale: servers.filter(isRowStale).length,
             network_in_bps: servers.reduce((total, server) => total + Number(server.network_in_bps || 0), 0),
             network_out_bps: servers.reduce((total, server) => total + Number(server.network_out_bps || 0), 0),
             network_total_bps: servers.reduce((total, server) => total + Number(server.network_total_bps || 0), 0),
@@ -1348,6 +1697,34 @@ function updateFilterStatus() {
     if (search) search.value = `${server.name || 'Unknown'} (${server.ip_address || '-'})`;
 }
 
+function focusMatcher(key) {
+    return (FOCUS_DEFS[key] || FOCUS_DEFS.all).match;
+}
+
+function updateFocusUi(shown, total) {
+    const chip = document.getElementById('health-focus-chip');
+    const label = document.getElementById('health-focus-label');
+
+    document.querySelectorAll('[data-health-focus]').forEach(node => {
+        node.classList.toggle('is-active', node.getAttribute('data-health-focus') === healthFocus);
+    });
+
+    if (!chip || !label) return;
+    if (healthFocus === 'all') {
+        chip.hidden = true;
+        return;
+    }
+    chip.hidden = false;
+    label.textContent = `${FOCUS_DEFS[healthFocus].label}: ${shown} of ${total}`;
+}
+
+function setHealthFocus(key) {
+    const next = FOCUS_DEFS[key] ? key : 'all';
+    // Clicking the active card clears it, so the cards work as toggles.
+    healthFocus = (next === healthFocus && next !== 'all') ? 'all' : next;
+    if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
+}
+
 function applyServerFilter(id) {
     selectedServerId = normalizeServerId(id);
     const select = document.getElementById('server-filter-select');
@@ -1368,6 +1745,9 @@ function renderList(targetId, rows, kind, emptyText = 'No data') {
     target.innerHTML = rows.map(row => {
         const id = row.id || row.device_id;
         const name = row.name || row.device_name;
+        const chip = kind === 'down' ? '' : freshnessChip(row);
+        const dimmed = chip ? ' is-stale' : '';
+        const age = ageSeconds(row);
         let value = row[kind];
         let right = '';
         let meta = row.ip_address || row.monitor_type || '';
@@ -1385,7 +1765,7 @@ function renderList(targetId, rows, kind, emptyText = 'No data') {
             `;
             meta = `${formatBps(row.network_total_bps)} total`;
         } else if (kind === 'response') {
-            const cssClass = responseClass(row.response_time);
+            const cssClass = responseClass(row.response_time, row);
             const state = cssClass === 'response-critical' ? 'Critical' : (cssClass === 'response-warning' ? 'Warning' : 'Normal');
             right = `
                 <div class="response-pair">
@@ -1410,21 +1790,24 @@ function renderList(targetId, rows, kind, emptyText = 'No data') {
             right = `<strong>${pct(value)}</strong>${metricBar(value)}`;
         }
 
+        const metaParts = [esc(meta)];
+        if (kind !== 'down' && age !== null) metaParts.push(esc(formatAge(age)));
+
         return `
             <div class="health-list-row">
                 <div class="health-item-name">
-                    ${serverFilterLink(id, name)}
-                    <div class="health-item-meta">${esc(meta)}</div>
+                    ${serverFilterLink(id, name)}${chip}
+                    <div class="health-item-meta">${metaParts.filter(Boolean).join(' &bull; ')}</div>
                 </div>
-                <div class="health-value">${right}</div>
+                <div class="health-value${dimmed}">${right}</div>
             </div>
         `;
     }).join('');
 }
 
-function renderMetricCell(value, subtext = '') {
+function renderMetricCell(value, subtext = '', stale = false) {
     return `
-        <div class="metric-cell">
+        <div class="metric-cell${stale ? ' is-stale' : ''}">
             <div class="metric-cell-top">
                 <span>${pct(value)}</span>
             </div>
@@ -1445,12 +1828,13 @@ function renderTrafficCell(server) {
     `;
 }
 
-function responseClass(value) {
+function responseClass(value, server = null) {
     if (value === null || value === undefined || value === '') return 'response-unknown';
     const num = Number(value);
     if (!Number.isFinite(num)) return 'response-unknown';
-    if (num > RESPONSE_CRITICAL_MS) return 'response-critical';
-    if (num > RESPONSE_WARNING_MS) return 'response-warning';
+    const { warn, critical } = responseThresholds(server);
+    if (num > critical) return 'response-critical';
+    if (num > warn) return 'response-warning';
     return 'response-good';
 }
 
@@ -1459,12 +1843,13 @@ function renderResponseCell(server) {
     const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== '';
     const value = hasValue ? Number(rawValue) : NaN;
     const label = Number.isFinite(value) ? formatMs(value) : '-';
-    const cssClass = responseClass(rawValue);
+    const cssClass = responseClass(rawValue, server);
+    const { warn } = responseThresholds(server);
     const state = cssClass === 'response-critical'
         ? 'Critical'
         : (cssClass === 'response-warning' ? 'Warning' : (cssClass === 'response-good' ? 'Normal' : 'No response'));
     return `
-        <div class="response-cell">
+        <div class="response-cell" title="Slow threshold for ${esc(String(server.monitor_type || 'this method').toUpperCase())}: ${esc(formatThreshold(warn))}">
             <div class="response-pair">
                 <span class="${cssClass}"><i class="fa-solid fa-wave-square"></i>${label}</span>
                 <span class="text-muted">${state}</span>
@@ -1473,26 +1858,42 @@ function renderResponseCell(server) {
     `;
 }
 
-function renderServers(servers) {
+function renderServers(servers, totalServers = servers.length) {
     const body = document.getElementById('server-table-body');
     const countLabel = document.getElementById('server-count-label');
-    if (countLabel) countLabel.textContent = `${servers.length} servers`;
+    if (countLabel) {
+        countLabel.textContent = servers.length === totalServers
+            ? `${servers.length} servers`
+            : `${servers.length} of ${totalServers} servers`;
+    }
     updateServerSortHeaders();
 
     if (!servers.length) {
-        body.innerHTML = '<tr><td colspan="10" class="health-empty">No SSH/WinRM/WMI servers yet.</td></tr>';
+        const message = healthFocus === 'all'
+            ? 'No SSH/WinRM/WMI servers yet.'
+            : `No server matches "${FOCUS_DEFS[healthFocus].label}".`;
+        body.innerHTML = `<tr><td colspan="10" class="health-empty">${esc(message)}</td></tr>`;
         return;
     }
 
     body.innerHTML = sortedServers(servers).map(server => {
         const services = server.service_status || [];
         const stopped = services.filter(item => !item.ok);
-        const serviceText = services.length
-            ? `<span class="status-badge ${stopped.length ? 'status-down' : 'status-up'}">${services.length - stopped.length}/${services.length}</span>`
-            : '<span class="text-muted">-</span>';
+        let serviceText;
+        if (!server.services_configured) {
+            // An empty cell used to read as "all good". It never was.
+            serviceText = '<span class="service-unset" title="No services selected for this device yet">Not configured</span>';
+        } else if (!services.length) {
+            serviceText = '<span class="service-unset" title="Service checks are configured but have not reported yet">Awaiting check</span>';
+        } else {
+            serviceText = `<span class="status-badge ${stopped.length ? 'status-down' : 'status-up'}" title="${services.length - stopped.length} of ${services.length} running">${services.length - stopped.length}/${services.length}</span>`;
+        }
         const reboot = server.pending_reboot ? '<span class="status-badge status-slow">reboot</span>' : '';
         const loadText = server.load1 !== null && server.load1 !== undefined ? `load ${Number(server.load1).toFixed(2)}` : '';
         const status = esc(server.status || 'unknown');
+        const age = ageSeconds(server);
+        const stale = isRowStale(server) || isRowDown(server) || age === null;
+        const ageText = age === null ? 'never collected' : formatAge(age);
 
         return `
             <tr>
@@ -1505,13 +1906,20 @@ function renderServers(servers) {
                         </div>
                     </div>
                 </td>
-                <td><span class="status-badge status-${status}">${status}</span> ${reboot}</td>
-                <td>${renderMetricCell(server.cpu, loadText)}</td>
-                <td>${renderMetricCell(server.ram)}</td>
-                <td>${renderMetricCell(server.disk)}</td>
+                <td class="status-cell">
+                    <span class="status-badge status-${status}">${status}</span> ${reboot}${freshnessChip(server)}
+                    <div class="server-meta">
+                        <span class="age-text${stale ? ' is-stale' : ''}" title="Metrics last collected: ${esc(server.last_metrics_time || server.last_check || 'unknown')}">
+                            <i class="fa-regular fa-clock"></i> ${esc(ageText)}
+                        </span>
+                    </div>
+                </td>
+                <td>${renderMetricCell(server.cpu, loadText, stale)}</td>
+                <td>${renderMetricCell(server.ram, '', stale)}</td>
+                <td>${renderMetricCell(server.disk, '', stale)}</td>
                 <td>${renderTrafficCell(server)}</td>
                 <td>${renderResponseCell(server)}</td>
-                <td class="uptime-cell">${esc(server.uptime_text || '-')}<br><small class="text-muted">${esc(server.last_boot_time || '')}</small></td>
+                <td class="uptime-cell">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
                 <td class="service-cell">${serviceText}</td>
                 <td class="server-action-cell">
                     <a class="server-dashboard-link" href="/server-dashboard/${encodeURIComponent(server.id)}" title="Open server dashboard">
@@ -1524,15 +1932,50 @@ function renderServers(servers) {
     }).join('');
 }
 
+function setCardState(focusKey, count) {
+    const card = document.querySelector(`.health-summary-card[data-health-focus="${focusKey}"]`);
+    if (!card) return;
+    // A card with nothing behind it would filter the table down to an empty
+    // list, so it stops being a button instead of leading to a dead end.
+    card.disabled = focusKey !== 'all' && !count;
+    if (card.disabled && healthFocus === focusKey) healthFocus = 'all';
+}
+
 function setSummary(summary) {
     document.getElementById('sum-total').textContent = summary.total_servers ?? '-';
     document.getElementById('sum-up').textContent = summary.up ?? '-';
     document.getElementById('sum-slow').textContent = summary.slow ?? '-';
     document.getElementById('sum-down').textContent = summary.down ?? '-';
-    document.getElementById('sum-service').textContent = summary.service_down ?? '-';
     document.getElementById('sum-reboot').textContent = summary.pending_reboot ?? '-';
     document.getElementById('sum-net-in').textContent = formatBps(summary.network_in_bps);
     document.getElementById('sum-net-out').textContent = formatBps(summary.network_out_bps);
+
+    // "Service Down: 0" is only good news when something is actually watched.
+    const monitored = Number(summary.service_monitored_servers || 0);
+    const serviceValue = document.getElementById('sum-service');
+    const serviceNote = document.getElementById('sum-service-note');
+    if (!monitored) {
+        serviceValue.textContent = 'Not set up';
+        serviceValue.classList.add('is-empty');
+        if (serviceNote) serviceNote.textContent = 'No device has service checks configured, so this is not a health signal yet.';
+    } else {
+        serviceValue.textContent = summary.service_down ?? 0;
+        serviceValue.classList.remove('is-empty');
+        if (serviceNote) {
+            serviceNote.textContent = `Stopped services across ${monitored} server${monitored === 1 ? '' : 's'} with service checks.`;
+        }
+    }
+
+    const stale = Number(summary.stale || 0);
+    const staleChip = document.getElementById('sum-stale-chip');
+    const staleValue = document.getElementById('sum-stale');
+    if (staleValue) staleValue.textContent = stale;
+    if (staleChip) staleChip.hidden = stale === 0;
+
+    setCardState('down', summary.down || 0);
+    setCardState('service', monitored ? (summary.service_down || 0) : 0);
+    setCardState('reboot', summary.pending_reboot || 0);
+    setCardState('stale', stale);
 }
 
 function setLastUpdated() {
@@ -1565,7 +2008,11 @@ function renderServerHealthData(data) {
     renderList('top-network', filtered.top_network || [], 'network');
     renderList('top-response', filtered.top_response || [], 'response');
     renderList('server-down', downServers(filtered.servers || []), 'down', 'All servers responding');
-    renderServers(filtered.servers || []);
+
+    const allServers = filtered.servers || [];
+    const focused = allServers.filter(focusMatcher(healthFocus));
+    renderServers(focused, allServers.length);
+    updateFocusUi(focused.length, allServers.length);
     updateFilterStatus();
 }
 
@@ -1576,6 +2023,9 @@ async function loadServerHealth() {
         const data = await res.json();
         if (data.success === false) throw new Error(data.error || 'Unable to load server health');
         latestServerHealthData = data;
+        latestFetchedAt = Date.now();
+        const staleAfter = Number(data.thresholds?.stale_after_seconds);
+        if (Number.isFinite(staleAfter) && staleAfter > 0) staleAfterSeconds = staleAfter;
         populateServerFilter(data.servers || []);
         renderServerHealthData(data);
         setLastUpdated();
@@ -1584,18 +2034,61 @@ async function loadServerHealth() {
     }
 }
 
+function setChipSeverity(id, value) {
+    const chip = document.getElementById(id);
+    if (!chip) return;
+    const num = Number(value);
+    chip.classList.remove('is-warning', 'is-critical');
+    if (!Number.isFinite(num)) return;
+    if (num > chartCritMs) chip.classList.add('is-critical');
+    else if (num > chartWarnMs) chip.classList.add('is-warning');
+}
+
 async function loadResponseTimeChart() {
     const empty = document.getElementById('response-time-empty');
     const canvas = document.getElementById('response-time-chart');
     if (!canvas || !window.Chart) return;
 
+    const hint = document.getElementById('rt-hint');
+
     try {
-        const res = await fetch(`/api/server-health/response-time?minutes=360&sample=72&_t=${Date.now()}`);
+        const query = `minutes=${chartRange.minutes}&sample=${chartRange.sample}`;
+        const res = await fetch(`/api/server-health/response-time?${query}&_t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const series = selectedServerId === 'all'
+        const candidates = selectedServerId === 'all'
             ? (data.series || [])
             : (data.series || []).filter(server => normalizeServerId(server.device_id) === selectedServerId);
+
+        // Twelve overlapping lines say nothing. Default to the servers that
+        // actually crossed their own slow threshold in this window.
+        const breaching = candidates.filter(entry => {
+            const { warn } = responseThresholds(serverById(entry.device_id));
+            return (entry.values || []).some(value => Number.isFinite(Number(value)) && Number(value) > warn);
+        });
+
+        let series = candidates;
+        const notes = [];
+        if (chartProblemOnly && candidates.length > 1) {
+            if (breaching.length) {
+                series = breaching;
+                notes.push(`Showing ${breaching.length} of ${candidates.length} servers that crossed their slow threshold in this window.`);
+            } else {
+                notes.push(`No server crossed its slow threshold in this window, so all ${candidates.length} are shown.`);
+            }
+        }
+        if (series.length > 1) {
+            notes.push('Click a server in the legend to isolate it; click it again to bring the rest back.');
+        }
+        if (hint) hint.textContent = notes.join(' ');
+
+        // Use the strictest threshold among the drawn servers so the bands never
+        // claim a server is fine when its own limit is lower.
+        const warnValues = series.map(entry => responseThresholds(serverById(entry.device_id)).warn);
+        const critValues = series.map(entry => responseThresholds(serverById(entry.device_id)).critical);
+        chartWarnMs = warnValues.length ? Math.min(...warnValues) : RESPONSE_WARNING_MS;
+        chartCritMs = critValues.length ? Math.min(...critValues) : RESPONSE_CRITICAL_MS;
+
         const labels = (data.labels || []).map(label => formatChartTime(label));
         const hasData = series.some(server => (server.values || []).some(value => value !== null && value !== undefined));
         const chartValues = series
@@ -1607,7 +2100,11 @@ async function loadResponseTimeChart() {
 
         document.getElementById('rt-avg').textContent = formatMs(avgValue);
         document.getElementById('rt-max').textContent = formatMs(maxValue);
-        document.getElementById('rt-servers').textContent = series.length;
+        document.getElementById('rt-servers').textContent = `${series.length}/${candidates.length}`;
+        document.getElementById('rt-warn').textContent = formatThreshold(chartWarnMs);
+        document.getElementById('rt-crit').textContent = formatThreshold(chartCritMs);
+        setChipSeverity('rt-avg-chip', avgValue);
+        setChipSeverity('rt-max-chip', maxValue);
 
         if (!hasData) {
             if (empty) empty.style.display = 'block';
@@ -1663,6 +2160,16 @@ async function loadResponseTimeChart() {
                         font: { size: 10 },
                         usePointStyle: true,
                         pointStyle: 'line'
+                    },
+                    onClick(event, legendItem, legend) {
+                        const chart = legend.chart;
+                        const index = legendItem.datasetIndex;
+                        const isolated = chart.data.datasets
+                            .every((_, i) => chart.isDatasetVisible(i) === (i === index));
+                        chart.data.datasets.forEach((_, i) => {
+                            chart.setDatasetVisibility(i, isolated ? true : i === index);
+                        });
+                        chart.update();
                     }
                 },
                 tooltip: {
@@ -1678,7 +2185,7 @@ async function loadResponseTimeChart() {
                 },
                 y: {
                     beginAtZero: true,
-                    suggestedMax: RESPONSE_CRITICAL_MS,
+                    suggestedMax: chartCritMs,
                     grid: { color: gridColor },
                     ticks: {
                         color: textColor,
@@ -1699,7 +2206,7 @@ async function loadResponseTimeChart() {
     } catch (error) {
         if (empty) {
             empty.style.display = 'block';
-            empty.textContent = `Unable to load response-time graph: ${error.message}`;
+            empty.textContent = `Unable to load collection-time graph: ${error.message}`;
         }
     }
 }
@@ -1742,6 +2249,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    document.querySelectorAll('[data-health-focus]').forEach(node => {
+        node.addEventListener('click', () => {
+            setHealthFocus(node.getAttribute('data-health-focus'));
+        });
+    });
+
+    const focusClear = document.getElementById('health-focus-clear');
+    if (focusClear) {
+        focusClear.addEventListener('click', event => {
+            event.stopPropagation();
+            setHealthFocus('all');
+        });
+    }
+
+    document.querySelectorAll('[data-range-minutes]').forEach(button => {
+        button.addEventListener('click', () => {
+            chartRange = {
+                minutes: Number(button.getAttribute('data-range-minutes')) || 360,
+                sample: Number(button.getAttribute('data-range-sample')) || 72,
+            };
+            document.querySelectorAll('[data-range-minutes]').forEach(other => {
+                other.classList.toggle('is-active', other === button);
+            });
+            loadResponseTimeChart();
+        });
+    });
+
+    const problemOnly = document.getElementById('rt-problem-only');
+    if (problemOnly) {
+        problemOnly.addEventListener('change', () => {
+            chartProblemOnly = problemOnly.checked;
+            loadResponseTimeChart();
+        });
+    }
+
     document.addEventListener('click', event => {
         const trigger = event.target.closest('[data-server-filter]');
         if (!trigger) return;
@@ -1749,8 +2291,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyServerFilter(trigger.getAttribute('data-server-filter') || 'all');
     });
 
-    loadServerHealth();
-    loadResponseTimeChart();
+    loadServerHealth().finally(loadResponseTimeChart);
     setInterval(loadServerHealth, 30000);
     setInterval(loadResponseTimeChart, 30000);
 });

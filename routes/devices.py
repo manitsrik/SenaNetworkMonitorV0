@@ -6,7 +6,8 @@ import csv
 import io
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from config import Config
 from .auth import login_required, operator_required
 from .audit import log_audit
 
@@ -555,6 +556,63 @@ def get_device_down_intervals(device_id):
     })
 
 
+# A metrics row is treated as stale once it is several polling cycles old.
+# A healthy fleet was measured at 52-221s between metric writes: agent checks are
+# slow and queue behind each other, so the ceiling sits well above the nominal
+# PING_INTERVAL to keep a merely slow cycle from being reported as stale data.
+SERVER_HEALTH_STALE_AFTER_SECONDS = max(600, int(getattr(Config, 'PING_INTERVAL', 60)) * 10)
+
+# The agent checks report the full collection round-trip, not an ICMP latency,
+# so the "critical" line sits well above the slow threshold the monitor uses.
+SERVER_HEALTH_CRITICAL_MULTIPLIER = 3
+
+
+def _parse_timestamp(raw):
+    """Parse a timestamp coming from either the SQLite or PostgreSQL driver."""
+    if raw is None or raw == '':
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    text = str(raw).strip().replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _age_seconds(raw):
+    """Age of a stored timestamp in seconds, or None when it cannot be read.
+
+    Naive timestamps are written by two different paths: `last_check` uses local
+    time while `last_metrics_time` uses the database CURRENT_TIMESTAMP, which is
+    UTC on SQLite. Comparing against both clocks and keeping the smallest
+    non-negative answer gives the right age either way.
+    """
+    parsed = _parse_timestamp(raw)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        return max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+    candidates = [
+        (datetime.now() - parsed).total_seconds(),
+        (datetime.utcnow() - parsed).total_seconds(),
+    ]
+    non_negative = [value for value in candidates if value >= -60]
+    age = min(non_negative) if non_negative else max(candidates)
+    return max(0.0, age)
+
+
+def _slow_threshold_ms(monitor_type):
+    """Slow threshold the monitor itself applies for this collection method."""
+    return Config.MONITOR_THRESHOLDS.get(monitor_type, Config.DEFAULT_SLOW_THRESHOLD)
+
+
 @devices_bp.route('/api/server-health', methods=['GET'])
 def get_server_health():
     """Get server-focused health summary for SSH/WinRM monitored devices."""
@@ -586,6 +644,12 @@ def get_server_health():
         service_status = _json_field(device, 'service_status_json', [])
         service_summary = _json_field(device, 'service_summary_json', {})
         disk_details = _json_field(device, 'disk_details_json', [])
+        monitor_type = device.get('monitor_type')
+        metrics_age = _age_seconds(device.get('last_metrics_time'))
+        if metrics_age is None:
+            metrics_age = _age_seconds(device.get('last_check'))
+        services_configured = bool(str(device.get('monitored_services') or '').strip())
+        slow_threshold = _slow_threshold_ms(monitor_type)
         server = {
             'id': device.get('id'),
             'name': device.get('name'),
@@ -617,6 +681,13 @@ def get_server_health():
             'service_status': service_status,
             'service_summary': service_summary,
             'disk_details': disk_details,
+            'services_configured': services_configured,
+            'last_check': device.get('last_check'),
+            'last_metrics_time': device.get('last_metrics_time'),
+            'metrics_age_seconds': round(metrics_age, 1) if metrics_age is not None else None,
+            'is_stale': bool(metrics_age is not None and metrics_age > SERVER_HEALTH_STALE_AFTER_SECONDS),
+            'slow_threshold_ms': slow_threshold,
+            'critical_threshold_ms': slow_threshold * SERVER_HEALTH_CRITICAL_MULTIPLIER,
         }
         servers.append(server)
         if server['pending_reboot']:
@@ -636,6 +707,9 @@ def get_server_health():
                 'mount': disk.get('mount') or disk.get('name'),
                 'use_percent': disk.get('use_percent'),
                 'size_kb': disk.get('size_kb'),
+                'status': server['status'],
+                'is_stale': server['is_stale'],
+                'metrics_age_seconds': server['metrics_age_seconds'],
             })
 
     def _top(items, key, limit=10):
@@ -655,6 +729,8 @@ def get_server_health():
             'down': sum(1 for s in servers if s.get('status') == 'down'),
             'pending_reboot': len(pending_reboot),
             'service_down': len(service_down),
+            'service_monitored_servers': sum(1 for s in servers if s.get('services_configured')),
+            'stale': sum(1 for s in servers if s.get('is_stale')),
             'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
             'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
@@ -667,6 +743,14 @@ def get_server_health():
         'top_response': _top(servers, 'response_time'),
         'service_down': service_down,
         'pending_reboot': pending_reboot,
+        'thresholds': {
+            'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
+            'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
+            'slow_ms': {
+                key: Config.MONITOR_THRESHOLDS.get(key, Config.DEFAULT_SLOW_THRESHOLD)
+                for key in ('ssh', 'winrm', 'wmi')
+            },
+        },
     })
 
 

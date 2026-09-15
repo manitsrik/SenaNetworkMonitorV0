@@ -2824,6 +2824,7 @@ function topValueText(row, unit) {
 // sample swings too far to order a list by, and that has to be said next to the
 // number or it reads as a contradiction.
 const TOPCARD_STAT = { cpu: 'median 24h', internet: 'avg 24h' };
+const TOPCARD_RANK_LABEL = { cpu: 'median', internet: 'avg' };
 
 // The same icons the table and the rest of the page already use for these
 // things, so a card is recognisable before its title is read.
@@ -2922,12 +2923,15 @@ function renderTopCards(data) {
         const source = (mode === 'soonest' && card.soonest) ? card.soonest : card.rows;
         const rows = source.filter(row => serverMatchesSelection({ id: row.id }));
         const body = rows.length ? rows.map((row, index) => {
-            const colour = topTone(card, row, index);
+            // Memory, disk and network already rank on the current value, so this
+            // changes nothing for them.
+            const live = { ...row, rank_value: row.current ?? row.rank_value };
+            const colour = topTone(card, live, index);
             const key = `${card.key}:${row.id}:${row.label || ''}`;
             const open = topOpen.has(key);
             const figure = mode === 'soonest' && row.days_to_limit !== null && row.days_to_limit !== undefined
                 ? `${Math.round(row.days_to_limit)}d`
-                : topValueText(row, card.unit);
+                : topValueText(live, card.unit);
             return `
                 <div class="topcard-row${open ? ' is-open' : ''}" data-topcard-key="${esc(key)}" role="button" tabindex="0" aria-expanded="${open}">
                     <span class="topcard-rank">${index + 1}</span>
@@ -2938,11 +2942,7 @@ function renderTopCards(data) {
                     <span class="topcard-value" style="color:${colour}">${esc(figure)}${
                         mode === 'soonest' || !TOPCARD_STAT[card.key]
                             ? ''
-                            : `<span class="topcard-stat">${esc(TOPCARD_STAT[card.key])}${
-                                row.current === null || row.current === undefined
-                                    ? ''
-                                    : ` · now ${esc(topValueText({ rank_value: row.current }, card.unit))}`
-                              }</span>`
+                            : `<span class="topcard-stat">${esc(TOPCARD_RANK_LABEL[card.key])} ${esc(topValueText(row, card.unit))}</span>`
                     }</span>
                     ${topSpark(row.series, colour)}
                 </div>

@@ -609,6 +609,92 @@ def _age_seconds(raw):
     return max(0.0, age)
 
 
+ATTENTION_METRICS = (
+    ('cpu', 'CPU', 'cpu_threshold', 85),
+    ('ram', 'RAM', 'ram_threshold', 90),
+    ('disk', 'Disk', 'disk_threshold', 90),
+)
+
+
+def _is_live(item):
+    """A reading from a host that stopped reporting is history, not a state."""
+    return not item.get('is_stale') and str(item.get('status') or '').lower() != 'down'
+
+
+def _threshold_for(device, column, default):
+    try:
+        value = float(device.get(column))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _attention_items(server, device):
+    """Everything about one server that is close to, or past, its own limit.
+
+    Ranked by percentage of that server's own threshold rather than by raw
+    usage: 94% RAM against a 95% limit is nearer the edge than 83% against 90%,
+    and sorting on the raw number gets that backwards.
+    """
+    items = []
+
+    for key, label, column, default in ATTENTION_METRICS:
+        try:
+            value = float(server.get(key))
+        except (TypeError, ValueError):
+            continue
+        limit = _threshold_for(device, column, default)
+        percent = value / limit * 100
+        if percent < Config.ATTENTION_MIN_PERCENT:
+            continue
+        items.append({
+            'kind': key,
+            'label': label,
+            'device_id': server['id'],
+            'name': server['name'],
+            'value': round(value, 1),
+            'limit': round(limit, 1),
+            'percent': round(percent, 1),
+            'severity': 'critical' if value >= limit else 'warning',
+            'detail': '%s%% of a %d%% limit' % (round(value, 1), round(limit)),
+        })
+
+    status = str(server.get('internet_status') or '').strip().lower()
+    if status and status != 'online':
+        items.append({
+            'kind': 'internet',
+            'label': 'Internet',
+            'device_id': server['id'],
+            'name': server['name'],
+            'value': None,
+            'limit': None,
+            # Above anything merely near its limit: the connection is out, not
+            # heading that way.
+            'percent': 101.0,
+            'severity': 'critical',
+            'detail': status.replace('_', ' '),
+        })
+    elif status == 'online':
+        try:
+            latency = float(server.get('internet_latency_ms'))
+        except (TypeError, ValueError):
+            latency = None
+        if latency is not None and latency > Config.INTERNET_SLOW_LATENCY_MS:
+            items.append({
+                'kind': 'internet',
+                'label': 'Internet',
+                'device_id': server['id'],
+                'name': server['name'],
+                'value': round(latency),
+                'limit': Config.INTERNET_SLOW_LATENCY_MS,
+                'percent': round(latency / Config.INTERNET_SLOW_LATENCY_MS * 100, 1),
+                'severity': 'warning',
+                'detail': '%d ms to reach the internet' % round(latency),
+            })
+
+    return items
+
+
 def _slow_threshold_ms(device):
     """Slow threshold the monitor itself applies to this device.
 
@@ -642,6 +728,7 @@ def get_server_health():
     service_down = []
     pending_reboot = []
     disk_rows = []
+    attention = []
 
     def _bps(value):
         try:
@@ -707,6 +794,8 @@ def get_server_health():
             'disk_threshold': device.get('disk_threshold'),
         }
         servers.append(server)
+        if _is_live(server):
+            attention.extend(_attention_items(server, device))
         if server['pending_reboot']:
             pending_reboot.append(server)
         for service in service_status:
@@ -728,9 +817,6 @@ def get_server_health():
                 'is_stale': server['is_stale'],
                 'metrics_age_seconds': server['metrics_age_seconds'],
             })
-
-    def _is_live(item):
-        return not item.get('is_stale') and str(item.get('status') or '').lower() != 'down'
 
     hidden_stale = {}
 
@@ -758,6 +844,13 @@ def get_server_health():
             'service_down': len(service_down),
             'service_monitored_servers': sum(1 for s in servers if s.get('services_configured')),
             'stale': sum(1 for s in servers if s.get('is_stale')),
+            'internet_online': sum(1 for s in servers
+                                   if str(s.get('internet_status') or '').lower() == 'online'),
+            'internet_problem': sum(1 for s in servers
+                                    if s.get('internet_status')
+                                    and str(s.get('internet_status')).lower() != 'online'),
+            'internet_unchecked': sum(1 for s in servers if not s.get('internet_status')),
+            'attention': len(attention),
             'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
             'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
@@ -771,8 +864,16 @@ def get_server_health():
         'hidden_stale': hidden_stale,
         'service_down': service_down,
         'pending_reboot': pending_reboot,
+        # Severity first: a lost connection outranks any metric merely climbing,
+        # however high that metric's percentage happens to compute.
+        'attention': sorted(
+            attention,
+            key=lambda item: (0 if item['severity'] == 'critical' else 1, -item['percent']),
+        ),
         'thresholds': {
             'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
+            'attention_min_percent': Config.ATTENTION_MIN_PERCENT,
+            'internet_slow_latency_ms': Config.INTERNET_SLOW_LATENCY_MS,
             'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
             'slow_ms': {
                 key: Config.MONITOR_THRESHOLDS.get(key, Config.DEFAULT_SLOW_THRESHOLD)

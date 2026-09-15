@@ -71,7 +71,7 @@
 
     .health-overview {
         display: grid;
-        grid-template-columns: 1.4fr repeat(4, minmax(150px, 1fr));
+        grid-template-columns: 1.15fr repeat(5, minmax(132px, 1fr));
         gap: 0.45rem;
         align-items: stretch;
     }
@@ -332,6 +332,7 @@
     }
 
     .health-summary-card.is-service,
+    .health-summary-card.is-internet,
     .health-summary-card.is-reboot {
         --summary-color: var(--warning);
         --summary-bg: rgba(245, 158, 11, 0.12);
@@ -1082,6 +1083,89 @@
         padding-top: 0.1rem;
     }
 
+    /* ===================== Needs Attention ============================= */
+    .attention-list {
+        display: grid;
+        gap: 2px;
+        padding: 0.4rem 0.55rem 0.5rem;
+        max-height: 232px;
+        overflow-y: auto;
+    }
+
+    .attention-row {
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.3rem 0.35rem;
+        border-left: 3px solid var(--tone, var(--warning));
+        border-radius: 0 6px 6px 0;
+        background: var(--tone-soft, rgba(245, 158, 11, 0.08));
+    }
+
+    .attention-kind {
+        color: var(--tone, var(--warning));
+        font-size: 0.58rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+    .attention-name {
+        color: var(--text-primary);
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-decoration: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .attention-name:hover {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    .attention-detail {
+        color: var(--text-secondary);
+        font-size: 0.62rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .attention-pct {
+        color: var(--tone, var(--warning));
+        font-size: 0.72rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .attention-row.is-critical {
+        --tone: var(--danger);
+        --tone-soft: rgba(239, 68, 68, 0.09);
+    }
+
+    /* ===================== Internet cell =============================== */
+    .internet-cell {
+        min-width: 104px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .internet-cell small {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.62rem;
+        font-weight: 500;
+    }
+
+    .internet-ok { color: var(--success); }
+    .internet-slow { color: var(--warning); }
+    .internet-bad { color: var(--danger); }
+    .internet-none { color: var(--text-muted); font-weight: 500; }
+
     /* ===================== Capacity Outlook: small multiples ============ */
     .capacity-grid {
         display: grid;
@@ -1428,7 +1512,7 @@
 
     @media (max-width: 1440px) {
         .health-overview {
-            grid-template-columns: repeat(4, minmax(150px, 1fr));
+            grid-template-columns: repeat(3, minmax(150px, 1fr));
         }
 
         .health-hero {
@@ -1572,6 +1656,17 @@
             <div class="health-summary-note" id="sum-service-note">Stopped services on checked hosts</div>
         </button>
 
+        <button type="button" class="health-summary-card is-internet" data-health-focus="internet" title="Filter the table to servers whose internet check is failing">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Internet</div>
+                    <div id="sum-internet" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-internet"></div>
+                </div>
+            </div>
+            <div class="health-summary-note" id="sum-internet-note">Outbound connectivity from each host.</div>
+        </button>
+
         <button type="button" class="health-summary-card is-reboot" data-health-focus="reboot" title="Filter the table to servers waiting for a restart">
             <div class="health-summary-header">
                 <div>
@@ -1636,13 +1731,14 @@
                             <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                             <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                             <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                                                    <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                                                    <th><button type="button" class="server-sort-button" data-sort-key="internet">Internet <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                             <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                             <th>Action</th>
                         </tr>
                     </thead>
                     <tbody id="server-table-body">
-                        <tr><td colspan="9" class="health-loading">Loading...</td></tr>
+                        <tr><td colspan="10" class="health-loading">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1650,6 +1746,19 @@
         </div>
 
         <aside class="health-rail">
+        <section class="health-panel is-rail" id="attention-card">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
+                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                       title="CPU, memory, disk and internet across every live host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
+                </h3>
+                <span id="attention-count" class="health-panel-count">-</span>
+            </div>
+            <div class="attention-list" id="attention-list">
+                <div class="health-loading">Loading...</div>
+            </div>
+        </section>
         <section class="health-chart-card" id="capacity-card">
             <div class="health-chart-header">
                 <h3 class="health-chart-title">
@@ -1754,6 +1863,11 @@ const FOCUS_DEFS = {
     service: { label: 'Service down', match: server => (server.service_status || []).some(item => !item.ok) },
     reboot: { label: 'Pending reboot', match: server => !!server.pending_reboot },
     stale: { label: 'Stale data', match: server => !!server.is_stale },
+    internet: {
+        label: 'Internet down',
+        match: server => !!server.internet_status
+            && String(server.internet_status).toLowerCase() !== 'online',
+    },
 };
 
 function esc(value) {
@@ -2019,6 +2133,34 @@ function serverFilterLink(id, name) {
 
 // Readings from a host that stopped reporting are not "top consumers", so
 // they are left out of the ranking rather than ranked against live numbers.
+const ATTENTION_ICONS = { cpu: 'CPU', ram: 'RAM', disk: 'DISK', internet: 'NET' };
+
+function renderAttention(items) {
+    const list = document.getElementById('attention-list');
+    const count = document.getElementById('attention-count');
+    if (!list) return;
+
+    const rows = (items || []).filter(item => serverMatchesSelection({ id: item.device_id }));
+    if (count) count.textContent = rows.length ? `${rows.length} items` : 'all clear';
+
+    if (!rows.length) {
+        const floor = latestServerHealthData?.thresholds?.attention_min_percent ?? 75;
+        list.innerHTML = `<div class="health-empty">Nothing is within ${100 - floor}% of its limit, and every internet check is passing.</div>`;
+        return;
+    }
+
+    list.innerHTML = rows.map(item => `
+        <div class="attention-row${item.severity === 'critical' ? ' is-critical' : ''}">
+            <span class="attention-kind">${esc(ATTENTION_ICONS[item.kind] || item.kind)}</span>
+            <div>
+                <a class="attention-name" href="#" data-server-filter="${esc(normalizeServerId(item.device_id))}">${esc(item.name || 'Unknown')}</a>
+                <div class="attention-detail">${esc(item.detail || '')}</div>
+            </div>
+            <span class="attention-pct">${item.kind === 'internet' && item.severity === 'critical' ? '!' : `${Math.round(item.percent)}%`}</span>
+        </div>
+    `).join('');
+}
+
 function setHiddenStaleNote(hidden) {
     const note = document.getElementById('top-disk-hidden');
     if (!note) return;
@@ -2079,6 +2221,14 @@ function sortValue(server, key) {
             return server.response_time === null || server.response_time === undefined || server.response_time === ''
                 ? null
                 : Number(server.response_time);
+        case 'internet': {
+            // Worst first: failing, then slow, then fast, then never checked.
+            const status = String(server.internet_status || '').trim().toLowerCase();
+            if (!status) return null;
+            if (status !== 'online') return -1;
+            const latency = Number(server.internet_latency_ms);
+            return Number.isFinite(latency) ? 1 / (latency + 1) : 0;
+        }
         case 'uptime':
             return Number(server.uptime_seconds);
         case 'services':
@@ -2245,7 +2395,7 @@ function updateFocusUi(shown, total) {
 
 // The KPI cards and these tabs drive the same focus, so the page never has two
 // filters disagreeing about what the table is showing.
-const TAB_ORDER = ['all', 'down', 'reboot', 'service', 'stale'];
+const TAB_ORDER = ['all', 'down', 'internet', 'reboot', 'service', 'stale'];
 
 function renderTabs(servers) {
     const host = document.getElementById('server-tabs');
@@ -2371,6 +2521,41 @@ function renderMetricCell(value, subtext = '', stale = false) {
     `;
 }
 
+// Reachable by the monitor and able to reach the internet are different
+// questions; a host can pass its check while having no route out.
+function internetState(server) {
+    const status = String(server.internet_status || '').trim().toLowerCase();
+    if (!status) return { css: 'internet-none', text: 'not checked', detail: '' };
+
+    const latency = Number(server.internet_latency_ms);
+    if (status !== 'online') {
+        return {
+            css: 'internet-bad',
+            text: status.replace(/_/g, ' '),
+            detail: server.internet_error ? String(server.internet_error).slice(0, 40) : '',
+        };
+    }
+
+    const slow = Number(latestServerHealthData?.thresholds?.internet_slow_latency_ms) || 800;
+    const over = Number.isFinite(latency) && latency > slow;
+    return {
+        css: over ? 'internet-slow' : 'internet-ok',
+        text: 'online',
+        detail: Number.isFinite(latency) ? `${Math.round(latency)} ms` : '',
+    };
+}
+
+function renderInternetCell(server) {
+    const state = internetState(server);
+    const target = server.internet_target ? ` (${server.internet_target})` : '';
+    return `
+        <div class="internet-cell ${state.css}" title="${esc(state.text)}${esc(target)}">
+            ${esc(state.text)}
+            ${state.detail ? `<small>${esc(state.detail)}</small>` : ''}
+        </div>
+    `;
+}
+
 function renderTrafficCell(server) {
     return `
         <div class="traffic-cell">
@@ -2430,7 +2615,7 @@ function renderServers(servers, totalServers = servers.length) {
         const message = healthFocus === 'all'
             ? 'No SSH/WinRM/WMI servers yet.'
             : `No server matches "${FOCUS_DEFS[healthFocus].label}".`;
-        body.innerHTML = `<tr><td colspan="9" class="health-empty">${esc(message)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="10" class="health-empty">${esc(message)}</td></tr>`;
         return;
     }
 
@@ -2476,6 +2661,7 @@ function renderServers(servers, totalServers = servers.length) {
                 <td>${renderMetricCell(server.ram, '', stale)}</td>
                 <td>${renderMetricCell(server.disk, '', stale)}</td>
                 <td>${renderTrafficCell(server)}</td>
+                <td>${renderInternetCell(server)}</td>
                 <td class="uptime-cell${stale ? ' is-stale' : ''}">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
                 <td class="service-cell col-services">${serviceText}</td>
                 <td class="server-action-cell">
@@ -2555,6 +2741,28 @@ function setSummary(summary) {
         );
     }
 
+    const internetProblem = Number(summary.internet_problem || 0);
+    const internetOnline = Number(summary.internet_online || 0);
+    const internetValue = document.getElementById('sum-internet');
+    if (internetValue) {
+        if (!internetOnline && !internetProblem) {
+            internetValue.textContent = 'Not checked';
+            internetValue.classList.add('is-empty');
+        } else {
+            internetValue.textContent = internetProblem;
+            internetValue.classList.remove('is-empty');
+        }
+    }
+    setNote('sum-internet-note',
+        internetProblem ? 'Hosts that cannot reach the internet' : `${internetOnline} hosts reaching the internet`,
+        internetProblem
+            ? `${internetProblem} host${internetProblem === 1 ? '' : 's'} failed their outbound connectivity check.`
+            : `Every checked host reached its connectivity target. ${summary.internet_unchecked || 0} have no internet check configured.`);
+    setText('delta-internet', summary.internet_unchecked
+        ? `${summary.internet_unchecked} not checked`
+        : '');
+    setCardState('internet', internetProblem);
+
     const stale = Number(summary.stale || 0);
     const staleChip = document.getElementById('sum-stale-chip');
     const staleValue = document.getElementById('sum-stale');
@@ -2576,7 +2784,7 @@ function setLastUpdated() {
 function renderError(message) {
     const target = document.getElementById('top-disk');
     if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
-    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="9" class="health-error">${esc(message)}</td></tr>`;
+    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
 }
 
 function renderServerHealthData(data) {
@@ -2584,6 +2792,7 @@ function renderServerHealthData(data) {
     const summary = filtered.summary || {};
     setSummary(summary);
     setHiddenStaleNote(data.hidden_stale || {});
+    renderAttention(data.attention || []);
     renderList('top-disk', filtered.top_disk || [], 'disk', 'No partition data from any live server.');
 
     const allServers = filtered.servers || [];

@@ -150,6 +150,15 @@ class Config:
         'wmi': 5000,      # WMI uses the same heavy Windows agent path as WinRM
     }
     
+    # An internet probe fetches a few bytes, so a second is already slow. Kept
+    # separate from the device thresholds because it measures the path out to
+    # the internet rather than the host.
+    INTERNET_SLOW_LATENCY_MS = int(os.environ.get('INTERNET_SLOW_LATENCY_MS') or 800)
+
+    # How close to its own limit a metric has to be before the overview calls
+    # it out, as a percentage of that limit.
+    ATTENTION_MIN_PERCENT = int(os.environ.get('ATTENTION_MIN_PERCENT') or 75)
+
     # Default fallback threshold
     DEFAULT_SLOW_THRESHOLD = 500
     

@@ -310,6 +310,7 @@ class Database:
             ('disk_threshold', 'REAL DEFAULT 90'),
             ('swap_threshold', 'REAL DEFAULT 80'),
             ('threshold_duration_minutes', 'INTEGER DEFAULT 5'),
+            ('slow_threshold_ms', 'INTEGER'),
             ('cpu_usage', 'REAL'),
             ('ram_usage', 'REAL'),
             ('disk_usage', 'REAL'),
@@ -1169,7 +1170,8 @@ class Database:
                      ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
                      ssh_port='__NOT_SET__',
                      wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__',
-                     monitored_services='__NOT_SET__', cpu_threshold='__NOT_SET__',
+                     monitored_services='__NOT_SET__', slow_threshold_ms='__NOT_SET__',
+                     cpu_threshold='__NOT_SET__',
                      ram_threshold='__NOT_SET__', disk_threshold='__NOT_SET__',
                      swap_threshold='__NOT_SET__', threshold_duration_minutes='__NOT_SET__',
                      plugin_config_json='__NOT_SET__'):
@@ -1267,6 +1269,9 @@ class Database:
             if monitored_services != '__NOT_SET__':
                 updates.append(f'monitored_services = {ph}')
                 params.append(monitored_services)
+            if slow_threshold_ms != '__NOT_SET__':
+                updates.append(f'slow_threshold_ms = {ph}')
+                params.append(slow_threshold_ms if slow_threshold_ms else None)
             if cpu_threshold != '__NOT_SET__':
                 updates.append(f'cpu_threshold = {ph}')
                 params.append(cpu_threshold)
@@ -2185,6 +2190,161 @@ class Database:
             return {'labels': labels, 'series': series}
         finally:
             self.release_connection(conn)
+
+    def _bucket_sql(self, column, bucket_seconds):
+        """Bucket expression, label expression and cutoff for one time column.
+
+        The two backends spell epoch extraction differently; both bucket on the
+        stored value itself, so the grid is consistent within a backend without
+        depending on how the application clock is set.
+        """
+        if self.db_type == 'postgresql':
+            return (
+                f"FLOOR(EXTRACT(EPOCH FROM {column}::timestamp) / {bucket_seconds})",
+                f"to_char(MIN({column}::timestamp), 'YYYY-MM-DD HH24:MI:SS')",
+            )
+        return (
+            f"CAST(strftime('%s', {column}) / {bucket_seconds} AS INTEGER)",
+            f"datetime(MIN({column}))",
+        )
+
+    def _cutoff_sql(self, unit, amount):
+        if self.db_type == 'postgresql':
+            return f"NOW() - INTERVAL '{int(amount)} {unit}'"
+        return f"datetime('now', '-{int(amount)} {unit}')"
+
+    def get_capacity_samples(self, device_ids, metric, days=30, buckets=40):
+        """Downsampled resource history per device, oldest bucket first.
+
+        Aggregation happens in SQL: the table holds ~1.6M rows and the caller
+        only ever draws a few dozen points per server.
+        """
+        if not device_ids:
+            return {}
+
+        days = max(2, min(int(days or 30), 90))
+        buckets = max(8, min(int(buckets or 40), 200))
+        bucket_seconds = max(60, int(days * 86400 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, label_expr = self._bucket_sql('timestamp', bucket_seconds)
+            cutoff = self._cutoff_sql('days', days)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       {label_expr} AS bucket_label,
+                       AVG(value) AS value
+                FROM system_metrics_history
+                WHERE metric_type = {ph}
+                  AND value IS NOT NULL
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY device_id, bucket_id ASC
+            ''', [metric] + list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_capacity_samples: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        # Age is measured from the newest bucket in the result rather than the
+        # application clock, so a timezone mismatch cannot skew the slope.
+        newest = max(int(row['bucket_id']) for row in rows)
+
+        result = {}
+        for row in rows:
+            bucket_id = int(row['bucket_id'])
+            result.setdefault(row['device_id'], []).append({
+                'bucket': row.get('bucket_label'),
+                'age_days': (newest - bucket_id) * bucket_seconds / 86400.0,
+                'value': float(row['value']),
+            })
+        return result
+
+    def get_status_timeline(self, device_ids, hours=24, buckets=96):
+        """Worst status per device per time bucket, plus the window's status mix.
+
+        Returns {device_id: {'band': [...], 'counts': {...}}} with a
+        '__labels__' entry carrying the bucket labels. Bucket 0 is the oldest.
+        """
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        buckets = max(12, min(int(buckets or 96), 480))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, label_expr = self._bucket_sql('checked_at', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       {label_expr} AS bucket_label,
+                       SUM(CASE WHEN status = 'down' THEN 1 ELSE 0 END) AS down_n,
+                       SUM(CASE WHEN status = 'slow' THEN 1 ELSE 0 END) AS slow_n,
+                       SUM(CASE WHEN status = 'up'   THEN 1 ELSE 0 END) AS up_n,
+                       COUNT(*) AS total_n
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_status_timeline: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+
+        labels = [None] * buckets
+        result = {}
+        for row in rows:
+            bucket_id = int(row['bucket_id'])
+            index = bucket_id - oldest
+            if index < 0 or index >= buckets:
+                continue
+            if labels[index] is None:
+                labels[index] = row.get('bucket_label')
+
+            entry = result.setdefault(row['device_id'], {
+                'band': ['none'] * buckets,
+                'counts': {'up': 0, 'slow': 0, 'down': 0},
+            })
+            down_n = int(row.get('down_n') or 0)
+            slow_n = int(row.get('slow_n') or 0)
+            up_n = int(row.get('up_n') or 0)
+            # A bucket is coloured by its worst check: one outage inside a
+            # ten-minute bucket must not be averaged away into "up".
+            entry['band'][index] = 'down' if down_n else ('slow' if slow_n else ('up' if up_n else 'unknown'))
+            entry['counts']['down'] += down_n
+            entry['counts']['slow'] += slow_n
+            entry['counts']['up'] += up_n
+
+        result['__labels__'] = labels
+        return result
     
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
         """Get historical data with optional filters"""

@@ -748,6 +748,21 @@ class NetworkMonitor:
                 'syscontact': None
             }
 
+    def _slow_threshold(self, monitor_type, override=None):
+        """Slow threshold for one check, in ms.
+
+        A device may set its own: agent checks on a slow host run for tens of
+        seconds by design, and judging those against the shared default marks
+        them "slow" on every single poll, which is noise rather than a signal.
+        """
+        try:
+            value = float(override)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+        return Config.MONITOR_THRESHOLDS.get(monitor_type, Config.DEFAULT_SLOW_THRESHOLD)
+
     def _parse_monitored_services(self, value):
         if not value:
             return []
@@ -755,7 +770,8 @@ class NetworkMonitor:
             return [str(v).strip() for v in value if str(v).strip()]
         return [part.strip() for part in str(value).replace('\n', ',').split(',') if part.strip()]
 
-    def check_ssh(self, ip_address, username, password, port=22, monitored_services=None):
+    def check_ssh(self, ip_address, username, password, port=22, monitored_services=None,
+                  slow_threshold_ms=None):
         """
         Check a Linux device via SSH and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -925,7 +941,8 @@ class NetworkMonitor:
             response_time = (time.time() - start_time) * 1000
             
             if success:
-                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('ssh', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                threshold = self._slow_threshold('ssh', slow_threshold_ms)
+                status = 'slow' if response_time > threshold else 'up'
                 return {
                     'status': status,
                     'response_time': round(response_time, 2),
@@ -1188,7 +1205,8 @@ class NetworkMonitor:
             result['error'] = str(e)
             return result
 
-    def check_winrm(self, ip_address, username, password, monitored_services=None):
+    def check_winrm(self, ip_address, username, password, monitored_services=None,
+                    slow_threshold_ms=None, monitor_type='winrm'):
         """
         Check a Windows device via WinRM and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -1396,7 +1414,8 @@ class NetworkMonitor:
             response_time = (time.time() - start_time) * 1000
             
             if success:
-                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('winrm', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                threshold = self._slow_threshold(monitor_type, slow_threshold_ms)
+                status = 'slow' if response_time > threshold else 'up'
                 return {
                     'status': status,
                     'response_time': round(response_time, 2),
@@ -1606,7 +1625,8 @@ class NetworkMonitor:
                 device.get('ssh_username'), 
                 device.get('ssh_password'),
                 device.get('ssh_port', 22),
-                device.get('monitored_services')
+                device.get('monitored_services'),
+                device.get('slow_threshold_ms')
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1624,7 +1644,9 @@ class NetworkMonitor:
                 device['ip_address'], 
                 device.get('wmi_username'), 
                 device.get('wmi_password'),
-                device.get('monitored_services')
+                device.get('monitored_services'),
+                device.get('slow_threshold_ms'),
+                monitor_type
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):

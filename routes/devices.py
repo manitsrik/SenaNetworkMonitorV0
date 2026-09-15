@@ -268,6 +268,7 @@ def update_device(device_id):
         wmi_password=data.get('wmi_password', '__NOT_SET__'),
         expected_ports=data.get('expected_ports', '__NOT_SET__'),
         monitored_services=data.get('monitored_services', '__NOT_SET__'),
+        slow_threshold_ms=data.get('slow_threshold_ms', '__NOT_SET__'),
         cpu_threshold=data.get('cpu_threshold', '__NOT_SET__'),
         ram_threshold=data.get('ram_threshold', '__NOT_SET__'),
         disk_threshold=data.get('disk_threshold', '__NOT_SET__'),
@@ -608,9 +609,21 @@ def _age_seconds(raw):
     return max(0.0, age)
 
 
-def _slow_threshold_ms(monitor_type):
-    """Slow threshold the monitor itself applies for this collection method."""
-    return Config.MONITOR_THRESHOLDS.get(monitor_type, Config.DEFAULT_SLOW_THRESHOLD)
+def _slow_threshold_ms(device):
+    """Slow threshold the monitor itself applies to this device.
+
+    Mirrors Monitor._slow_threshold: a per-device override wins, otherwise the
+    shared default for the collection method.
+    """
+    try:
+        override = float(device.get('slow_threshold_ms'))
+        if override > 0:
+            return override
+    except (TypeError, ValueError):
+        pass
+    return Config.MONITOR_THRESHOLDS.get(
+        device.get('monitor_type'), Config.DEFAULT_SLOW_THRESHOLD
+    )
 
 
 @devices_bp.route('/api/server-health', methods=['GET'])
@@ -649,7 +662,7 @@ def get_server_health():
         if metrics_age is None:
             metrics_age = _age_seconds(device.get('last_check'))
         services_configured = bool(str(device.get('monitored_services') or '').strip())
-        slow_threshold = _slow_threshold_ms(monitor_type)
+        slow_threshold = _slow_threshold_ms(device)
         server = {
             'id': device.get('id'),
             'name': device.get('name'),
@@ -688,6 +701,10 @@ def get_server_health():
             'is_stale': bool(metrics_age is not None and metrics_age > SERVER_HEALTH_STALE_AFTER_SECONDS),
             'slow_threshold_ms': slow_threshold,
             'critical_threshold_ms': slow_threshold * SERVER_HEALTH_CRITICAL_MULTIPLIER,
+            'slow_threshold_is_custom': bool(device.get('slow_threshold_ms')),
+            'cpu_threshold': device.get('cpu_threshold'),
+            'ram_threshold': device.get('ram_threshold'),
+            'disk_threshold': device.get('disk_threshold'),
         }
         servers.append(server)
         if server['pending_reboot']:
@@ -781,6 +798,184 @@ def get_server_health_response_time():
             'max_response_time': round(max(values), 2) if values else None,
             'server_count': len(series),
         }
+    })
+
+
+SERVER_MONITOR_TYPES = ('ssh', 'winrm', 'wmi')
+
+# Metrics worth projecting forward: they fill up and stay full.
+CAPACITY_METRICS = {
+    'ram': {'label': 'RAM', 'threshold_column': 'ram_threshold', 'default_limit': 90},
+    'disk': {'label': 'Disk', 'threshold_column': 'disk_threshold', 'default_limit': 90},
+    'cpu': {'label': 'CPU', 'threshold_column': 'cpu_threshold', 'default_limit': 85},
+}
+
+
+def _linear_slope_per_day(points):
+    """Least-squares slope in percentage points per day.
+
+    `points` is a list of (age_in_days_before_now, value). Ordinary least
+    squares over the whole window, rather than differencing two averages, so a
+    single spike cannot masquerade as a trend.
+    """
+    n = len(points)
+    if n < 3:
+        return None
+    mean_x = sum(x for x, _ in points) / n
+    mean_y = sum(y for _, y in points) / n
+    denom = sum((x - mean_x) ** 2 for x, _ in points)
+    if denom <= 0:
+        return None
+    numer = sum((x - mean_x) * (y - mean_y) for x, y in points)
+    # x counts days *into the past*, so invert to get change per day forward.
+    return -(numer / denom)
+
+
+@devices_bp.route('/api/server-health/capacity', methods=['GET'])
+def get_server_health_capacity():
+    """Resource trend per server, with a projection to its own alert threshold.
+
+    The table shows what a server uses right now; this answers the question it
+    cannot: which ones are on course to run out, and roughly when.
+    """
+    metric = (request.args.get('metric') or 'ram').lower()
+    if metric not in CAPACITY_METRICS:
+        return jsonify({'success': False, 'error': f'Unknown metric: {metric}'}), 400
+
+    days = max(2, min(request.args.get('days', 30, type=int) or 30, 90))
+    buckets = max(8, min(request.args.get('buckets', 40, type=int) or 40, 200))
+    spec = CAPACITY_METRICS[metric]
+
+    db = _get_db()
+    devices = {
+        device['id']: device
+        for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'metric': metric, 'days': days, 'servers': []})
+
+    raw = db.get_capacity_samples(list(devices), metric, days=days, buckets=buckets)
+
+    servers = []
+    for device_id, samples in raw.items():
+        device = devices.get(device_id)
+        if not device or not samples:
+            continue
+
+        values = [s['value'] for s in samples]
+        limit = device.get(spec['threshold_column']) or spec['default_limit']
+        try:
+            limit = float(limit)
+        except (TypeError, ValueError):
+            limit = spec['default_limit']
+
+        slope = _linear_slope_per_day([(s['age_days'], s['value']) for s in samples])
+        current = values[-1]
+
+        metrics_age = _age_seconds(device.get('last_metrics_time'))
+        if metrics_age is None:
+            metrics_age = _age_seconds(device.get('last_check'))
+        is_stale = bool(metrics_age is not None and metrics_age > SERVER_HEALTH_STALE_AFTER_SECONDS)
+
+        # Projecting forward from a host that stopped reporting days ago would
+        # invent a deadline out of history that has already stopped moving.
+        days_to_limit = None
+        if not is_stale and slope and slope > 0.01 and current < limit:
+            days_to_limit = round((limit - current) / slope, 1)
+
+        servers.append({
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'monitor_type': device.get('monitor_type'),
+            'status': device.get('status'),
+            'labels': [s['bucket'] for s in samples],
+            'values': [round(v, 2) for v in values],
+            'current': round(current, 2),
+            'first': round(values[0], 2),
+            'peak': round(max(values), 2),
+            'limit': limit,
+            'slope_per_day': round(slope, 4) if slope is not None else None,
+            'slope_per_month': round(slope * 30, 2) if slope is not None else None,
+            'days_to_limit': days_to_limit,
+            'over_limit': current >= limit,
+            'is_stale': is_stale,
+            'metrics_age_seconds': round(metrics_age, 1) if metrics_age is not None else None,
+            'sample_count': len(values),
+        })
+
+    # Most urgent first: already over, then soonest to cross, then fastest
+    # riser. Servers whose data has gone stale sort last -- their numbers are
+    # history, not a forecast.
+    def urgency(entry):
+        if entry['is_stale']:
+            return (3, entry['name'] or '')
+        if entry['over_limit']:
+            return (0, -entry['current'])
+        if entry['days_to_limit'] is not None:
+            return (1, entry['days_to_limit'])
+        return (2, -(entry['slope_per_day'] or 0))
+
+    servers.sort(key=urgency)
+
+    return jsonify({
+        'success': True,
+        'metric': metric,
+        'metric_label': spec['label'],
+        'days': days,
+        'servers': servers,
+    })
+
+
+@devices_bp.route('/api/server-health/status-timeline', methods=['GET'])
+def get_server_health_status_timeline():
+    """Per-server status band over time, plus the uptime split for the window."""
+    hours = max(1, min(request.args.get('hours', 24, type=int) or 24, 30 * 24))
+    buckets = max(12, min(request.args.get('buckets', 96, type=int) or 96, 480))
+
+    db = _get_db()
+    devices = {
+        device['id']: device
+        for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'hours': hours, 'buckets': buckets, 'servers': []})
+
+    timeline = db.get_status_timeline(list(devices), hours=hours, buckets=buckets)
+
+    rank = {'down': 0, 'slow': 1, 'unknown': 2, 'up': 3}
+    servers = []
+    for device_id, device in devices.items():
+        entry = timeline.get(device_id, {})
+        band = entry.get('band') or ['none'] * buckets
+        counts = entry.get('counts') or {}
+        total = sum(counts.values())
+        servers.append({
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'monitor_type': device.get('monitor_type'),
+            'status': device.get('status'),
+            'band': band,
+            'checks': total,
+            'up_pct': round(counts.get('up', 0) / total * 100, 1) if total else None,
+            'slow_pct': round(counts.get('slow', 0) / total * 100, 1) if total else None,
+            'down_pct': round(counts.get('down', 0) / total * 100, 1) if total else None,
+        })
+
+    # Worst first, matching how the table below is ordered.
+    servers.sort(key=lambda s: (
+        -(s['down_pct'] or 0), -(s['slow_pct'] or 0), rank.get(s['status'], 2), s['name'] or ''
+    ))
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'buckets': buckets,
+        'labels': timeline.get('__labels__', []),
+        'servers': servers,
     })
 
 

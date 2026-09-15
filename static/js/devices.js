@@ -893,6 +893,10 @@ async function editDevice(deviceId) {
                 document.getElementById('swap-threshold').value = device.swap_threshold || 80;
                 document.getElementById('threshold-duration').value = device.threshold_duration_minutes || 5;
             }
+            if (document.getElementById('slow-threshold')) {
+                // Empty means "use the default for this monitor type".
+                document.getElementById('slow-threshold').value = device.slow_threshold_ms || '';
+            }
 
             // Load parent device
             populateParentDeviceDropdown(deviceId);
@@ -1010,6 +1014,7 @@ async function saveDevice(event) {
             deviceData.disk_threshold = parseFloat(getElementValue('disk-threshold', '90')) || 90;
             deviceData.swap_threshold = parseFloat(getElementValue('swap-threshold', '80')) || 80;
             deviceData.threshold_duration_minutes = parseInt(getElementValue('threshold-duration', '5')) || 5;
+            deviceData.slow_threshold_ms = parseInt(getElementValue('slow-threshold', '')) || null;
         }
 
         // Add WinRM (WMI) credentials if WinRM monitor type is selected
@@ -1023,6 +1028,7 @@ async function saveDevice(event) {
             deviceData.disk_threshold = parseFloat(getElementValue('disk-threshold', '90')) || 90;
             deviceData.swap_threshold = parseFloat(getElementValue('swap-threshold', '80')) || 80;
             deviceData.threshold_duration_minutes = parseInt(getElementValue('threshold-duration', '5')) || 5;
+            deviceData.slow_threshold_ms = parseInt(getElementValue('slow-threshold', '')) || null;
         }
 
         if (pluginMonitorMetadata[monitorType]) {

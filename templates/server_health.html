@@ -406,17 +406,6 @@
         white-space: nowrap;
     }
 
-    .health-chart-body {
-        position: relative;
-        height: 210px;
-        padding: 0.5rem 0.7rem 0.55rem;
-    }
-
-    .health-chart-body canvas {
-        width: 100% !important;
-        height: 100% !important;
-    }
-
     .health-panel {
         min-height: 0;
         max-height: 312px;
@@ -776,7 +765,7 @@
     }
 
     .health-table-wrap {
-        max-height: calc(100vh - 470px);
+        max-height: calc(100vh - 430px);
         min-height: 264px;
     }
 
@@ -968,6 +957,247 @@
         color: var(--danger);
     }
 
+    /* ===================== Capacity Outlook: small multiples ============ */
+    .capacity-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+        gap: 0.4rem;
+        padding: 0.5rem 0.65rem;
+    }
+
+    .capacity-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.28rem;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--health-line);
+        border-left: 3px solid var(--cap-accent, var(--success));
+        border-radius: 7px;
+        background: var(--bg-secondary);
+    }
+
+    .capacity-cell.is-stale {
+        opacity: 0.6;
+        border-left-style: dashed;
+    }
+
+    .capacity-cell-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.4rem;
+    }
+
+    .capacity-name {
+        color: var(--text-primary);
+        font-size: 0.72rem;
+        font-weight: 800;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-decoration: none;
+    }
+
+    .capacity-name:hover {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    .capacity-current {
+        color: var(--cap-accent, var(--text-primary));
+        font-size: 0.86rem;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+
+    .capacity-spark {
+        display: block;
+        width: 100%;
+        height: 34px;
+        overflow: visible;
+    }
+
+    .capacity-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.35rem;
+        font-size: 0.62rem;
+        white-space: nowrap;
+    }
+
+    .capacity-eta {
+        color: var(--cap-accent, var(--text-secondary));
+        font-weight: 800;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .capacity-slope {
+        color: var(--text-muted);
+        font-weight: 700;
+    }
+
+    /* ===================== Availability Timeline ======================== */
+    .timeline-body {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0.5rem 0.65rem 0.55rem;
+        max-height: 268px;
+        overflow-y: auto;
+    }
+
+    .timeline-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 54px;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .timeline-label {
+        color: var(--text-primary);
+        font-size: 0.68rem;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-decoration: none;
+    }
+
+    .timeline-label:hover {
+        color: var(--primary);
+        text-decoration: underline;
+    }
+
+    .timeline-band {
+        display: flex;
+        gap: 1px;
+        height: 14px;
+        border-radius: 3px;
+        overflow: hidden;
+        background: var(--bg-tertiary);
+    }
+
+    .timeline-band span {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .timeline-band .is-up    { background: var(--success); }
+    .timeline-band .is-slow  { background: var(--warning); }
+    .timeline-band .is-down  { background: var(--danger); }
+    .timeline-band .is-unknown { background: rgba(107, 114, 128, 0.55); }
+    /* A gap is the monitor not running, which must not read as a healthy bar. */
+    .timeline-band .is-none  {
+        background: repeating-linear-gradient(
+            45deg,
+            rgba(148, 163, 184, 0.30) 0 3px,
+            rgba(148, 163, 184, 0.10) 3px 6px
+        );
+    }
+
+    .timeline-uptime {
+        color: var(--text-secondary);
+        font-size: 0.64rem;
+        font-weight: 800;
+        text-align: right;
+    }
+
+    .timeline-uptime.is-bad  { color: var(--danger); }
+    .timeline-uptime.is-warn { color: var(--warning); }
+
+    .timeline-key {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.22rem;
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        font-weight: 700;
+    }
+
+    .timeline-swatch {
+        width: 9px;
+        height: 9px;
+        border-radius: 2px;
+        display: inline-block;
+    }
+
+    .timeline-swatch.is-up   { background: var(--success); }
+    .timeline-swatch.is-slow { background: var(--warning); }
+    .timeline-swatch.is-down { background: var(--danger); }
+    .timeline-swatch.is-none {
+        background: repeating-linear-gradient(
+            45deg,
+            rgba(148, 163, 184, 0.45) 0 2px,
+            rgba(148, 163, 184, 0.12) 2px 4px
+        );
+    }
+
+    /* ===================== Monitoring Health: ranked bars =============== */
+    .collection-body {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 0.5rem 0.65rem 0.55rem;
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .collection-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 76px;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .collection-track {
+        position: relative;
+        height: 14px;
+        border-radius: 3px;
+        background: var(--bg-tertiary);
+        overflow: hidden;
+    }
+
+    .collection-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--col-color, var(--success));
+    }
+
+    /* Where this host's own slow threshold sits on the same scale. */
+    .collection-limit {
+        position: absolute;
+        top: -2px;
+        bottom: -2px;
+        width: 2px;
+        background: var(--danger);
+        opacity: 0.75;
+    }
+
+    .collection-value {
+        color: var(--text-primary);
+        font-size: 0.66rem;
+        font-weight: 800;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .collection-value.is-over { color: var(--danger); }
+
+    .custom-chip {
+        display: inline-block;
+        margin-left: 0.25rem;
+        padding: 0.02rem 0.28rem;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.16);
+        color: var(--info);
+        font-size: 0.54rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        vertical-align: middle;
+    }
+
     .health-chart-hint {
         padding: 0 0.7rem 0.4rem;
         color: var(--text-muted);
@@ -1073,8 +1303,19 @@
 
     @media (max-width: 760px) {
         .health-overview,
-        .health-panels {
+        .health-panels,
+        .capacity-grid {
             grid-template-columns: 1fr;
+        }
+
+        .timeline-row,
+        .collection-row {
+            grid-template-columns: minmax(0, 1fr) 54px;
+        }
+
+        .timeline-row .timeline-label,
+        .collection-row .timeline-label {
+            grid-column: 1 / -1;
         }
 
         .health-hero-top {
@@ -1191,36 +1432,60 @@
         </button>
     </section>
 
-    <section class="health-chart-card">
+    <section class="health-chart-card" id="capacity-card">
         <div class="health-chart-header">
             <h3 class="health-chart-title">
-                <i class="fa-solid fa-chart-line"></i> Collection Time by Server
+                <i class="fa-solid fa-chart-area"></i> Capacity Outlook
                 <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="How long a full SSH/WinRM/WMI metric collection takes end to end: connect, run every command, return. This is not ICMP ping latency, so several seconds is normal."></i>
+                   title="Each server's own trend over the window, projected forward to the alert threshold configured for that device. Answers what the table cannot: which servers are on course to run out."></i>
             </h3>
             <div class="health-chart-controls">
-                <div class="health-range-group" id="rt-range-group" role="group" aria-label="Chart time range">
-                    <button type="button" class="health-range-btn" data-range-minutes="60" data-range-sample="60">1h</button>
-                    <button type="button" class="health-range-btn is-active" data-range-minutes="360" data-range-sample="72">6h</button>
-                    <button type="button" class="health-range-btn" data-range-minutes="1440" data-range-sample="96">24h</button>
-                    <button type="button" class="health-range-btn" data-range-minutes="10080" data-range-sample="168">7d</button>
+                <div class="health-range-group" id="capacity-metric-group" role="group" aria-label="Capacity metric">
+                    <button type="button" class="health-range-btn is-active" data-capacity-metric="ram">RAM</button>
+                    <button type="button" class="health-range-btn" data-capacity-metric="disk">Disk</button>
+                    <button type="button" class="health-range-btn" data-capacity-metric="cpu">CPU</button>
                 </div>
-                <label class="health-toggle" title="Show only servers that crossed their slow threshold in this window">
-                    <input type="checkbox" id="rt-problem-only" checked>
-                    Problem only
+                <div class="health-range-group" id="capacity-range-group" role="group" aria-label="Capacity window">
+                    <button type="button" class="health-range-btn" data-capacity-days="7">7d</button>
+                    <button type="button" class="health-range-btn is-active" data-capacity-days="30">30d</button>
+                </div>
+                <label class="health-toggle" title="Hide servers that are flat or falling">
+                    <input type="checkbox" id="capacity-rising-only" checked>
+                    Rising only
                 </label>
-                <span class="health-chart-stat"><span id="rt-servers">-</span> shown</span>
-                <span class="health-chart-stat">Warn <span id="rt-warn">-</span></span>
-                <span class="health-chart-stat">Crit <span id="rt-crit">-</span></span>
-                <span class="health-chart-stat" id="rt-avg-chip">Avg <span id="rt-avg">-</span></span>
-                <span class="health-chart-stat" id="rt-max-chip">Peak <span id="rt-max">-</span></span>
+                <span class="health-chart-stat" id="capacity-count">-</span>
             </div>
         </div>
-        <div class="health-chart-body">
-            <canvas id="response-time-chart"></canvas>
-            <div id="response-time-empty" class="health-empty" style="display:none;">No collection-time history by server yet.</div>
+        <div class="capacity-grid" id="capacity-grid">
+            <div class="health-loading">Loading...</div>
         </div>
-        <div class="health-chart-hint" id="rt-hint"></div>
+        <div class="health-chart-hint" id="capacity-hint"></div>
+    </section>
+
+    <section class="health-chart-card" id="timeline-card">
+        <div class="health-chart-header">
+            <h3 class="health-chart-title">
+                <i class="fa-solid fa-timeline"></i> Availability Timeline
+                <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                   title="Each band is one server over time, coloured by the worst check in each slice. Grey means no check was recorded at all, which is a gap in monitoring rather than a healthy server."></i>
+            </h3>
+            <div class="health-chart-controls">
+                <div class="health-range-group" id="timeline-range-group" role="group" aria-label="Timeline window">
+                    <button type="button" class="health-range-btn" data-timeline-hours="6">6h</button>
+                    <button type="button" class="health-range-btn is-active" data-timeline-hours="24">24h</button>
+                    <button type="button" class="health-range-btn" data-timeline-hours="168">7d</button>
+                    <button type="button" class="health-range-btn" data-timeline-hours="720">30d</button>
+                </div>
+                <span class="timeline-key"><i class="timeline-swatch is-up"></i> up</span>
+                <span class="timeline-key"><i class="timeline-swatch is-slow"></i> slow</span>
+                <span class="timeline-key"><i class="timeline-swatch is-down"></i> down</span>
+                <span class="timeline-key"><i class="timeline-swatch is-none"></i> no data</span>
+            </div>
+        </div>
+        <div class="timeline-body" id="timeline-body">
+            <div class="health-loading">Loading...</div>
+        </div>
+        <div class="health-chart-hint" id="timeline-hint"></div>
     </section>
 
     <section class="health-panels">
@@ -1308,29 +1573,53 @@
             </table>
         </div>
     </section>
+
+    <section class="health-chart-card" id="collection-card">
+        <div class="health-chart-header">
+            <h3 class="health-chart-title">
+                <i class="fa-solid fa-stopwatch"></i> Monitoring Health
+                <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                   title="How long a full metric collection takes per host: connect over SSH/WinRM/WMI, run every command, return. This measures the monitoring path, not the server's own performance, so it lives below the server data rather than above it."></i>
+            </h3>
+            <div class="health-chart-controls">
+                <div class="health-range-group" id="collection-range-group" role="group" aria-label="Collection window">
+                    <button type="button" class="health-range-btn" data-collection-minutes="60" data-collection-sample="60">1h</button>
+                    <button type="button" class="health-range-btn is-active" data-collection-minutes="360" data-collection-sample="72">6h</button>
+                    <button type="button" class="health-range-btn" data-collection-minutes="1440" data-collection-sample="96">24h</button>
+                </div>
+                <span class="health-chart-stat" id="collection-count">-</span>
+            </div>
+        </div>
+        <div class="collection-body" id="collection-body">
+            <div class="health-loading">Loading...</div>
+        </div>
+        <div class="health-chart-hint" id="collection-hint"></div>
+    </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-let responseTimeChart = null;
 let latestServerHealthData = null;
+let latestCapacityData = null;
+let latestTimelineData = null;
+let latestCollectionData = null;
 let latestFetchedAt = Date.now();
 let selectedServerId = 'all';
 let serverSearchMap = new Map();
 // Triage first: the table opens on the worst servers instead of alphabetically.
 let serverSortState = { key: 'status', direction: 'asc' };
 let healthFocus = 'all';
-let chartRange = { minutes: 360, sample: 72 };
-let chartProblemOnly = true;
+let capacityMetric = 'ram';
+let capacityDays = 30;
+let capacityRisingOnly = true;
+let timelineHours = 24;
+let collectionRange = { minutes: 360, sample: 72 };
 
 // Fallbacks only. The API sends the real per-monitor-type thresholds, which is
 // what the monitor itself uses to mark a server "slow".
 const RESPONSE_WARNING_MS = 10000;
 const RESPONSE_CRITICAL_MS = 30000;
-let chartWarnMs = RESPONSE_WARNING_MS;
-let chartCritMs = RESPONSE_CRITICAL_MS;
 let staleAfterSeconds = 300;
 
 const FOCUS_DEFS = {
@@ -1429,64 +1718,6 @@ function responseThresholds(server) {
         critical: Number.isFinite(critical) && critical > 0 ? critical : RESPONSE_CRITICAL_MS,
     };
 }
-
-function formatChartTime(value) {
-    const date = new Date(String(value || '').replace(' ', 'T'));
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-const responseThresholdPlugin = {
-    id: 'responseThresholdPlugin',
-    beforeDatasetsDraw(chart) {
-        const { ctx, chartArea, scales } = chart;
-        const yScale = scales.y;
-        if (!chartArea || !yScale) return;
-
-        const warningY = yScale.getPixelForValue(chartWarnMs);
-        const criticalY = yScale.getPixelForValue(chartCritMs);
-
-        ctx.save();
-        if (criticalY > chartArea.top && criticalY < chartArea.bottom) {
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.06)';
-            ctx.fillRect(chartArea.left, chartArea.top, chartArea.right - chartArea.left, criticalY - chartArea.top);
-        }
-        if (warningY > chartArea.top && warningY < chartArea.bottom) {
-            const top = Math.max(criticalY, chartArea.top);
-            ctx.fillStyle = 'rgba(245, 158, 11, 0.06)';
-            ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, warningY - top);
-        }
-        ctx.restore();
-    },
-    afterDatasetsDraw(chart) {
-        const { ctx, chartArea, scales } = chart;
-        const yScale = scales.y;
-        if (!chartArea || !yScale) return;
-
-        [
-            { value: chartWarnMs, label: `Warning ${formatThreshold(chartWarnMs)}`, color: '#f59e0b' },
-            { value: chartCritMs, label: `Critical ${formatThreshold(chartCritMs)}`, color: '#ef4444' }
-        ].forEach(item => {
-            const y = yScale.getPixelForValue(item.value);
-            if (y < chartArea.top || y > chartArea.bottom) return;
-            ctx.save();
-            ctx.strokeStyle = item.color;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 4]);
-            ctx.beginPath();
-            ctx.moveTo(chartArea.left, y);
-            ctx.lineTo(chartArea.right, y);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.fillStyle = item.color;
-            ctx.font = '700 10px Inter, sans-serif';
-            // Anchored left: the right edge used to clip the label off-canvas.
-            ctx.textAlign = 'left';
-            ctx.fillText(item.label, chartArea.left + 6, y - 5);
-            ctx.restore();
-        });
-    }
-};
 
 function numeric(value) {
     const num = Number(value);
@@ -1745,7 +1976,11 @@ function applyServerFilter(id) {
     if (select) select.value = selectedServerId;
     updateFilterStatus();
     if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
-    loadResponseTimeChart();
+    // The three lower sections all narrow to the selected server; re-render
+    // from cache rather than refetching everything on every filter click.
+    if (latestCapacityData) renderCapacity(latestCapacityData);
+    if (latestTimelineData) renderTimeline(latestTimelineData);
+    if (latestCollectionData) renderCollectionHealth(latestCollectionData);
 }
 
 function renderList(targetId, rows, kind, emptyText = 'No data') {
@@ -2080,182 +2315,283 @@ async function loadServerHealth() {
     }
 }
 
-function setChipSeverity(id, value) {
-    const chip = document.getElementById(id);
-    if (!chip) return;
-    const num = Number(value);
-    chip.classList.remove('is-warning', 'is-critical');
-    if (!Number.isFinite(num)) return;
-    if (num > chartCritMs) chip.classList.add('is-critical');
-    else if (num > chartWarnMs) chip.classList.add('is-warning');
+// ============================ Capacity Outlook ============================
+
+function capacityAccent(entry) {
+    if (entry.is_stale) return 'var(--text-muted)';
+    if (entry.over_limit) return 'var(--danger)';
+    if (entry.days_to_limit !== null && entry.days_to_limit <= 30) return 'var(--danger)';
+    if (entry.days_to_limit !== null && entry.days_to_limit <= 90) return 'var(--warning)';
+    return 'var(--success)';
 }
 
-async function loadResponseTimeChart() {
-    const empty = document.getElementById('response-time-empty');
-    const canvas = document.getElementById('response-time-chart');
-    if (!canvas || !window.Chart) return;
+function formatEta(days) {
+    if (days === null || days === undefined) return null;
+    if (days < 60) return `${Math.round(days)} days`;
+    if (days < 730) return `${Math.round(days / 30)} months`;
+    return `${(days / 365).toFixed(1)} years`;
+}
 
-    const hint = document.getElementById('rt-hint');
+// A hand-rolled SVG beats a chart instance per card: a dozen of these render
+// in one pass and cost nothing to redraw.
+function sparkline(values, limit, accent) {
+    if (!values || values.length < 2) return '<div class="capacity-spark"></div>';
+    const w = 100;
+    const h = 34;
+    const ceiling = Math.max(limit, ...values) * 1.08 || 1;
+    const x = index => (index / (values.length - 1)) * w;
+    const y = value => h - (value / ceiling) * h;
 
+    const line = values.map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(2)},${y(value).toFixed(2)}`).join(' ');
+    const area = `${line} L${w},${h} L0,${h} Z`;
+    const limitY = y(limit);
+    const limitLine = limitY >= 0 && limitY <= h
+        ? `<line x1="0" y1="${limitY.toFixed(2)}" x2="${w}" y2="${limitY.toFixed(2)}" stroke="var(--danger)" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.65" vector-effect="non-scaling-stroke"/>`
+        : '';
+
+    return `
+        <svg class="capacity-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+            <path d="${area}" fill="${accent}" opacity="0.12"/>
+            <path d="${line}" fill="none" stroke="${accent}" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+            ${limitLine}
+        </svg>
+    `;
+}
+
+function renderCapacity(data) {
+    const grid = document.getElementById('capacity-grid');
+    const hint = document.getElementById('capacity-hint');
+    const count = document.getElementById('capacity-count');
+    if (!grid) return;
+
+    const all = (data.servers || []).filter(serverMatchesSelection);
+    const rising = all.filter(entry => !entry.is_stale && (entry.slope_per_day || 0) > 0.01);
+    const shown = capacityRisingOnly && rising.length ? rising : all;
+
+    if (count) count.textContent = `${shown.length}/${all.length} shown`;
+
+    if (!shown.length) {
+        grid.innerHTML = '<div class="health-empty">No resource history for these servers yet.</div>';
+        if (hint) hint.textContent = '';
+        return;
+    }
+
+    grid.innerHTML = shown.map(entry => {
+        const accent = capacityAccent(entry);
+        const eta = formatEta(entry.days_to_limit);
+        let footLeft;
+        if (entry.is_stale) {
+            footLeft = 'stale data, no forecast';
+        } else if (entry.over_limit) {
+            footLeft = `over its ${entry.limit}% limit`;
+        } else if (eta) {
+            footLeft = `${entry.limit}% in ${eta}`;
+        } else {
+            footLeft = 'flat or falling';
+        }
+        const slope = entry.slope_per_month;
+        const slopeText = slope === null || slope === undefined
+            ? ''
+            : `${slope > 0 ? '+' : ''}${slope.toFixed(1)}pt/mo`;
+
+        return `
+            <div class="capacity-cell${entry.is_stale ? ' is-stale' : ''}" style="--cap-accent:${accent};">
+                <div class="capacity-cell-top">
+                    <a class="capacity-name" href="#" data-server-filter="${esc(normalizeServerId(entry.id))}" title="${esc(entry.name || '')} (${esc(entry.ip_address || '')})">${esc(entry.name || 'Unknown')}</a>
+                    <span class="capacity-current">${entry.current}%</span>
+                </div>
+                ${sparkline(entry.values, entry.limit, accent)}
+                <div class="capacity-foot">
+                    <span class="capacity-eta">${esc(footLeft)}</span>
+                    <span class="capacity-slope">${esc(slopeText)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const urgent = shown.filter(e => !e.is_stale && (e.over_limit || (e.days_to_limit !== null && e.days_to_limit <= 90)));
+    const notes = [`${data.metric_label} over the last ${data.days} days, projected to each device's own alert threshold.`];
+    if (urgent.length) {
+        notes.push(`${urgent.length} server${urgent.length === 1 ? '' : 's'} reach that threshold within 90 days at the current rate.`);
+    }
+    if (hint) hint.textContent = notes.join(' ');
+}
+
+async function loadCapacity() {
+    const grid = document.getElementById('capacity-grid');
     try {
-        const query = `minutes=${chartRange.minutes}&sample=${chartRange.sample}`;
+        const query = `metric=${capacityMetric}&days=${capacityDays}&buckets=40`;
+        const res = await fetch(`/api/server-health/capacity?${query}&_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success === false) throw new Error(data.error || 'Unable to load capacity trend');
+        latestCapacityData = data;
+        renderCapacity(data);
+    } catch (error) {
+        if (grid) grid.innerHTML = `<div class="health-error">Unable to load capacity trend: ${esc(error.message)}</div>`;
+    }
+}
+
+// ========================= Availability Timeline ==========================
+
+function renderTimeline(data) {
+    const body = document.getElementById('timeline-body');
+    const hint = document.getElementById('timeline-hint');
+    if (!body) return;
+
+    const servers = (data.servers || []).filter(serverMatchesSelection);
+    if (!servers.length) {
+        body.innerHTML = '<div class="health-empty">No status history for these servers yet.</div>';
+        if (hint) hint.textContent = '';
+        return;
+    }
+
+    const labels = data.labels || [];
+    body.innerHTML = servers.map(server => {
+        const band = (server.band || []).map((state, index) => {
+            const when = labels[index] || '';
+            const label = state === 'none' ? 'no check recorded' : state;
+            return `<span class="is-${esc(state)}" title="${esc(when)} ${esc(label)}"></span>`;
+        }).join('');
+
+        const up = server.up_pct;
+        let cssClass = '';
+        if (up !== null && up !== undefined) {
+            if (up < 90) cssClass = ' is-bad';
+            else if (up < 99) cssClass = ' is-warn';
+        }
+
+        return `
+            <div class="timeline-row">
+                <a class="timeline-label" href="#" data-server-filter="${esc(normalizeServerId(server.id))}" title="${esc(server.name || '')} (${esc(server.ip_address || '')})">${esc(server.name || 'Unknown')}</a>
+                <div class="timeline-band">${band}</div>
+                <span class="timeline-uptime${cssClass}">${up === null || up === undefined ? '-' : `${up}%`}</span>
+            </div>
+        `;
+    }).join('');
+
+    // A slice with no check on any server is the monitor having stopped, which
+    // is worth saying out loud rather than leaving as an unexplained gap.
+    const bucketCount = (servers[0].band || []).length;
+    let blind = 0;
+    for (let index = 0; index < bucketCount; index += 1) {
+        if (servers.every(server => (server.band || [])[index] === 'none')) blind += 1;
+    }
+    const notes = [];
+    if (blind) {
+        const hoursPerBucket = data.hours / (bucketCount || 1);
+        const missing = blind * hoursPerBucket;
+        notes.push(`No check was recorded for any server across ${missing < 1 ? `${Math.round(missing * 60)} minutes` : `${missing.toFixed(1)} hours`} of this window: monitoring was not running.`);
+    }
+    notes.push('Percentages are the share of checks that came back up.');
+    if (hint) hint.textContent = notes.join(' ');
+}
+
+async function loadTimeline() {
+    const body = document.getElementById('timeline-body');
+    try {
+        const buckets = timelineHours > 168 ? 120 : 96;
+        const res = await fetch(`/api/server-health/status-timeline?hours=${timelineHours}&buckets=${buckets}&_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success === false) throw new Error(data.error || 'Unable to load timeline');
+        latestTimelineData = data;
+        renderTimeline(data);
+    } catch (error) {
+        if (body) body.innerHTML = `<div class="health-error">Unable to load availability timeline: ${esc(error.message)}</div>`;
+    }
+}
+
+// ========================== Monitoring Health =============================
+
+function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function renderCollectionHealth(data) {
+    const body = document.getElementById('collection-body');
+    const hint = document.getElementById('collection-hint');
+    const count = document.getElementById('collection-count');
+    if (!body) return;
+
+    const rows = (data.series || [])
+        .filter(entry => selectedServerId === 'all' || normalizeServerId(entry.device_id) === selectedServerId)
+        .map(entry => {
+            const values = (entry.values || [])
+                .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)))
+                .map(Number);
+            const server = serverById(entry.device_id);
+            const { warn } = responseThresholds(server);
+            return {
+                id: entry.device_id,
+                name: entry.device_name,
+                median: median(values),
+                peak: values.length ? Math.max(...values) : null,
+                warn,
+                custom: !!server?.slow_threshold_is_custom,
+                monitorType: server?.monitor_type,
+            };
+        })
+        .filter(row => row.median !== null)
+        .sort((a, b) => b.median - a.median);
+
+    if (count) count.textContent = `${rows.length} hosts`;
+
+    if (!rows.length) {
+        body.innerHTML = '<div class="health-empty">No collection-time history yet.</div>';
+        if (hint) hint.textContent = '';
+        return;
+    }
+
+    // One shared scale so the bars are comparable across hosts.
+    const ceiling = Math.max(...rows.map(row => Math.max(row.median, row.warn))) * 1.08 || 1;
+
+    body.innerHTML = rows.map(row => {
+        const over = row.median > row.warn;
+        const color = over ? 'var(--danger)' : (row.median > row.warn * 0.75 ? 'var(--warning)' : 'var(--success)');
+        return `
+            <div class="collection-row">
+                <a class="timeline-label" href="#" data-server-filter="${esc(normalizeServerId(row.id))}" title="${esc(row.name || '')} - slow after ${esc(formatThreshold(row.warn))}">${esc(row.name || 'Unknown')}${row.custom ? '<span class="custom-chip">custom</span>' : ''}</a>
+                <div class="collection-track" title="median ${esc(formatMs(row.median))}, peak ${esc(formatMs(row.peak))}, slow after ${esc(formatThreshold(row.warn))}">
+                    <div class="collection-fill" style="width:${Math.min(100, row.median / ceiling * 100).toFixed(1)}%; --col-color:${color};"></div>
+                    <div class="collection-limit" style="left:${Math.min(100, row.warn / ceiling * 100).toFixed(1)}%;"></div>
+                </div>
+                <span class="collection-value${over ? ' is-over' : ''}">${esc(formatMs(row.median))}</span>
+            </div>
+        `;
+    }).join('');
+
+    const over = rows.filter(row => row.median > row.warn);
+    const notes = ['Median collection time per host; the red mark is that host\'s own slow threshold.'];
+    if (over.length) {
+        notes.push(`${over.length} host${over.length === 1 ? '' : 's'} sit above their threshold on a typical poll, so they report SLOW almost every cycle. Raise the threshold on the device if that is simply how long its agent takes.`);
+    }
+    if (hint) hint.textContent = notes.join(' ');
+}
+
+async function loadCollectionHealth() {
+    const body = document.getElementById('collection-body');
+    try {
+        const query = `minutes=${collectionRange.minutes}&sample=${collectionRange.sample}`;
         const res = await fetch(`/api/server-health/response-time?${query}&_t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        const candidates = selectedServerId === 'all'
-            ? (data.series || [])
-            : (data.series || []).filter(server => normalizeServerId(server.device_id) === selectedServerId);
-
-        // Twelve overlapping lines say nothing. Default to the servers that
-        // actually crossed their own slow threshold in this window.
-        const breaching = candidates.filter(entry => {
-            const { warn } = responseThresholds(serverById(entry.device_id));
-            return (entry.values || []).some(value => Number.isFinite(Number(value)) && Number(value) > warn);
-        });
-
-        let series = candidates;
-        const notes = [];
-        if (chartProblemOnly && candidates.length > 1) {
-            if (breaching.length) {
-                series = breaching;
-                notes.push(`Showing ${breaching.length} of ${candidates.length} servers that crossed their slow threshold in this window.`);
-            } else {
-                notes.push(`No server crossed its slow threshold in this window, so all ${candidates.length} are shown.`);
-            }
-        }
-        if (series.length > 1) {
-            notes.push('Click a server in the legend to isolate it; click it again to bring the rest back.');
-        }
-        if (hint) hint.textContent = notes.join(' ');
-
-        // Use the strictest threshold among the drawn servers so the bands never
-        // claim a server is fine when its own limit is lower.
-        const warnValues = series.map(entry => responseThresholds(serverById(entry.device_id)).warn);
-        const critValues = series.map(entry => responseThresholds(serverById(entry.device_id)).critical);
-        chartWarnMs = warnValues.length ? Math.min(...warnValues) : RESPONSE_WARNING_MS;
-        chartCritMs = critValues.length ? Math.min(...critValues) : RESPONSE_CRITICAL_MS;
-
-        const labels = (data.labels || []).map(label => formatChartTime(label));
-        const hasData = series.some(server => (server.values || []).some(value => value !== null && value !== undefined));
-        const chartValues = series
-            .flatMap(server => server.values || [])
-            .filter(value => value !== null && value !== undefined && Number.isFinite(Number(value)))
-            .map(Number);
-        const avgValue = chartValues.length ? chartValues.reduce((sum, value) => sum + value, 0) / chartValues.length : null;
-        const maxValue = chartValues.length ? Math.max(...chartValues) : null;
-
-        document.getElementById('rt-avg').textContent = formatMs(avgValue);
-        document.getElementById('rt-max').textContent = formatMs(maxValue);
-        document.getElementById('rt-servers').textContent = `${series.length}/${candidates.length}`;
-        document.getElementById('rt-warn').textContent = formatThreshold(chartWarnMs);
-        document.getElementById('rt-crit').textContent = formatThreshold(chartCritMs);
-        setChipSeverity('rt-avg-chip', avgValue);
-        setChipSeverity('rt-max-chip', maxValue);
-
-        if (!hasData) {
-            if (empty) empty.style.display = 'block';
-            if (responseTimeChart) {
-                responseTimeChart.destroy();
-                responseTimeChart = null;
-            }
-            return;
-        }
-        if (empty) empty.style.display = 'none';
-
-        const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim() || '#64748b';
-        const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim() || '#e5e7eb';
-        const palette = [
-            '#0f766e', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2',
-            '#16a34a', '#ea580c', '#4f46e5', '#be123c', '#65a30d', '#0284c7'
-        ];
-
-        const ctx = canvas.getContext('2d');
-
-        const chartData = {
-            labels,
-            datasets: series.map((server, index) => {
-                const color = palette[index % palette.length];
-                return {
-                label: server.device_name || `Server ${server.device_id || index + 1}`,
-                data: server.values || [],
-                borderColor: color,
-                backgroundColor: color,
-                borderWidth: 1.8,
-                pointRadius: 0,
-                pointHoverRadius: 3,
-                tension: 0.28,
-                fill: false,
-                spanGaps: false
-                };
-            })
-        };
-
-        const options = {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'bottom',
-                    labels: {
-                        boxWidth: 10,
-                        boxHeight: 10,
-                        color: textColor,
-                        font: { size: 10 },
-                        usePointStyle: true,
-                        pointStyle: 'line'
-                    },
-                    onClick(event, legendItem, legend) {
-                        const chart = legend.chart;
-                        const index = legendItem.datasetIndex;
-                        const isolated = chart.data.datasets
-                            .every((_, i) => chart.isDatasetVisible(i) === (i === index));
-                        chart.data.datasets.forEach((_, i) => {
-                            chart.setDatasetVisibility(i, isolated ? true : i === index);
-                        });
-                        chart.update();
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: context => `${context.dataset.label}: ${formatMs(context.parsed.y)}`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: { color: textColor, maxTicksLimit: 10, font: { size: 10 } }
-                },
-                y: {
-                    beginAtZero: true,
-                    suggestedMax: chartCritMs,
-                    grid: { color: gridColor },
-                    ticks: {
-                        color: textColor,
-                        font: { size: 10 },
-                        callback: value => `${value} ms`
-                    }
-                }
-            }
-        };
-
-        if (responseTimeChart) {
-            responseTimeChart.data = chartData;
-            responseTimeChart.options = options;
-            responseTimeChart.update('none');
-        } else {
-            responseTimeChart = new Chart(ctx, { type: 'line', data: chartData, options, plugins: [responseThresholdPlugin] });
-        }
+        latestCollectionData = data;
+        renderCollectionHealth(data);
     } catch (error) {
-        if (empty) {
-            empty.style.display = 'block';
-            empty.textContent = `Unable to load collection-time graph: ${error.message}`;
-        }
+        if (body) body.innerHTML = `<div class="health-error">Unable to load monitoring health: ${esc(error.message)}</div>`;
     }
 }
+
+function refreshCharts() {
+    loadCapacity();
+    loadTimeline();
+    loadCollectionHealth();
+}
+
 
 document.addEventListener('DOMContentLoaded', () => {
     const filterSelect = document.getElementById('server-filter-select');
@@ -2309,24 +2645,46 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    document.querySelectorAll('[data-range-minutes]').forEach(button => {
-        button.addEventListener('click', () => {
-            chartRange = {
-                minutes: Number(button.getAttribute('data-range-minutes')) || 360,
-                sample: Number(button.getAttribute('data-range-sample')) || 72,
-            };
-            document.querySelectorAll('[data-range-minutes]').forEach(other => {
-                other.classList.toggle('is-active', other === button);
+    // Each control group highlights its own active button and reloads its section.
+    function bindGroup(attribute, apply) {
+        document.querySelectorAll(`[${attribute}]`).forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll(`[${attribute}]`).forEach(other => {
+                    other.classList.toggle('is-active', other === button);
+                });
+                apply(button);
             });
-            loadResponseTimeChart();
         });
+    }
+
+    bindGroup('data-capacity-metric', button => {
+        capacityMetric = button.getAttribute('data-capacity-metric') || 'ram';
+        loadCapacity();
     });
 
-    const problemOnly = document.getElementById('rt-problem-only');
-    if (problemOnly) {
-        problemOnly.addEventListener('change', () => {
-            chartProblemOnly = problemOnly.checked;
-            loadResponseTimeChart();
+    bindGroup('data-capacity-days', button => {
+        capacityDays = Number(button.getAttribute('data-capacity-days')) || 30;
+        loadCapacity();
+    });
+
+    bindGroup('data-timeline-hours', button => {
+        timelineHours = Number(button.getAttribute('data-timeline-hours')) || 24;
+        loadTimeline();
+    });
+
+    bindGroup('data-collection-minutes', button => {
+        collectionRange = {
+            minutes: Number(button.getAttribute('data-collection-minutes')) || 360,
+            sample: Number(button.getAttribute('data-collection-sample')) || 72,
+        };
+        loadCollectionHealth();
+    });
+
+    const risingOnly = document.getElementById('capacity-rising-only');
+    if (risingOnly) {
+        risingOnly.addEventListener('change', () => {
+            capacityRisingOnly = risingOnly.checked;
+            if (latestCapacityData) renderCapacity(latestCapacityData);
         });
     }
 
@@ -2337,9 +2695,11 @@ document.addEventListener('DOMContentLoaded', () => {
         applyServerFilter(trigger.getAttribute('data-server-filter') || 'all');
     });
 
-    loadServerHealth().finally(loadResponseTimeChart);
+    // Server health lands first: the other sections read each device's own
+    // thresholds out of it.
+    loadServerHealth().finally(refreshCharts);
     setInterval(loadServerHealth, 30000);
-    setInterval(loadResponseTimeChart, 30000);
+    setInterval(refreshCharts, 60000);
 });
 </script>
 {% endblock %}

@@ -525,6 +525,11 @@
                         <input type="number" id="threshold-duration" class="form-input" value="5" min="1" max="1440">
                     </div>
                 </div>
+                <div class="form-group" style="margin-top: 0.5rem;">
+                    <label class="form-label" for="slow-threshold">Slow after (ms)</label>
+                    <input type="number" id="slow-threshold" class="form-input" placeholder="Leave empty for the default (SSH/WinRM 10000, WMI 5000)" min="100" max="600000" step="100">
+                    <small style="color: var(--text-muted); font-size: 0.8rem;">How long a full metric collection may take before the server is marked SLOW. Raise it for a host whose agent is simply slow, so the status means something.</small>
+                </div>
             </div>
 
             <div id="plugin-settings" style="display: none; border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; margin-top: 0.75rem; background: rgba(16, 185, 129, 0.05);">

@@ -117,10 +117,36 @@ def test_services_configured_distinguishes_zero_from_unconfigured():
 # -------------------------------------------------------- thresholds ----
 
 def test_slow_threshold_matches_the_monitor_per_collection_method():
-    assert _slow_threshold_ms('ssh') == 10000
-    assert _slow_threshold_ms('winrm') == 10000
+    assert _slow_threshold_ms({'monitor_type': 'ssh'}) == 10000
+    assert _slow_threshold_ms({'monitor_type': 'winrm'}) == 10000
     # WMI is stricter, so a 6s collection is already slow there.
-    assert _slow_threshold_ms('wmi') == 5000
+    assert _slow_threshold_ms({'monitor_type': 'wmi'}) == 5000
+
+
+def test_device_slow_threshold_overrides_the_shared_default():
+    """A host whose agent is simply slow should not report SLOW on every poll."""
+    device = {'monitor_type': 'winrm', 'slow_threshold_ms': 45000}
+    assert _slow_threshold_ms(device) == 45000
+
+
+@pytest.mark.parametrize('override', [None, '', 0, -1, 'abc'])
+def test_unusable_override_falls_back_to_the_default(override):
+    device = {'monitor_type': 'winrm', 'slow_threshold_ms': override}
+    assert _slow_threshold_ms(device) == 10000
+
+
+def test_payload_flags_a_custom_threshold():
+    plain = ssh_device(id=1, name='plain')
+    tuned = ssh_device(id=2, name='tuned', monitor_type='winrm', slow_threshold_ms=45000)
+
+    payload = make_client([plain, tuned]).get('/api/server-health').get_json()
+    by_name = {server['name']: server for server in payload['servers']}
+
+    assert by_name['plain']['slow_threshold_ms'] == 10000
+    assert by_name['plain']['slow_threshold_is_custom'] is False
+    assert by_name['tuned']['slow_threshold_ms'] == 45000
+    assert by_name['tuned']['slow_threshold_is_custom'] is True
+    assert by_name['tuned']['critical_threshold_ms'] == 135000
 
 
 def test_each_server_carries_its_own_thresholds():

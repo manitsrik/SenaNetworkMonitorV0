@@ -1337,7 +1337,14 @@ class NetworkMonitor:
                     result['pending_reboot'] = r.std_out.decode().strip().lower() == 'true'
                 
                 # Get Network Traffic (Sum of all adapters) - Using more universal WMI class
-                ps_net = "$n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface; $in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; $out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; \"$in $out\""
+                ps_net = (
+                    "$n = Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface "
+                    "-Property BytesReceivedPersec,BytesSentPersec -ErrorAction SilentlyContinue; "
+                    "if (-not $n) { $n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface }; "
+                    "$in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; "
+                    "$out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; "
+                    "\"$in $out\""
+                )
                 r = run_ps('network', ps_net)
                 if r.status_code == 0:
                     parts = r.std_out.decode().strip().split()

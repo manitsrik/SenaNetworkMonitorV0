@@ -142,10 +142,17 @@ def test_capacity_sorts_most_urgent_first_and_stale_last():
     assert names[-1] == 'stale'
 
 
-def test_capacity_rejects_an_unknown_metric():
-    response = make_client(FakeDB([device()])).get('/api/server-health/capacity?metric=voltage')
+@pytest.mark.parametrize('metric', ['voltage', 'cpu'])
+def test_capacity_rejects_a_metric_it_cannot_project(metric):
+    """CPU oscillates rather than accumulating, so it is not offered here."""
+    response = make_client(FakeDB([device()])).get(f'/api/server-health/capacity?metric={metric}')
     assert response.status_code == 400
     assert response.get_json()['success'] is False
+
+
+def test_capacity_offers_only_the_metrics_that_fill_up():
+    from routes.devices import CAPACITY_METRICS
+    assert set(CAPACITY_METRICS) == {'ram', 'disk'}
 
 
 def test_capacity_only_asks_about_server_devices():

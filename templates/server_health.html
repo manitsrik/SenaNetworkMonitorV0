@@ -1661,7 +1661,6 @@
                     <div class="health-range-group" id="capacity-metric-group" role="group" aria-label="Capacity metric">
                         <button type="button" class="health-range-btn is-active" data-capacity-metric="ram">RAM</button>
                         <button type="button" class="health-range-btn" data-capacity-metric="disk">Disk</button>
-                        <button type="button" class="health-range-btn" data-capacity-metric="cpu">CPU</button>
                     </div>
                     <div class="health-range-group" id="capacity-range-group" role="group" aria-label="Capacity window">
                         <button type="button" class="health-range-btn" data-capacity-days="7">7d</button>
@@ -1831,6 +1830,9 @@ function markActive(attribute, value) {
 function applyStoredPrefs() {
     const prefs = loadPrefs();
 
+    // markActive returns false for a metric that no longer has a button, which
+    // leaves a browser that stored "cpu" on the default rather than asking the
+    // API for something it will now reject.
     if (prefs.capacityMetric && markActive('data-capacity-metric', prefs.capacityMetric)) {
         capacityMetric = prefs.capacityMetric;
     }

@@ -814,11 +814,14 @@ def get_server_health_response_time():
 
 SERVER_MONITOR_TYPES = ('ssh', 'winrm', 'wmi')
 
-# Metrics worth projecting forward: they fill up and stay full.
+# Metrics worth projecting forward: they fill up and stay full. CPU is not one
+# of them -- it oscillates rather than accumulating, so a trend line through it
+# is noise. Fitting one over 7 days and over 30 days picked different servers
+# and disagreed on the rate by more than a factor of two, which is what a
+# meaningless fit looks like.
 CAPACITY_METRICS = {
     'ram': {'label': 'RAM', 'threshold_column': 'ram_threshold', 'default_limit': 90},
     'disk': {'label': 'Disk', 'threshold_column': 'disk_threshold', 'default_limit': 90},
-    'cpu': {'label': 'CPU', 'threshold_column': 'cpu_threshold', 'default_limit': 85},
 }
 
 

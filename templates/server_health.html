@@ -294,19 +294,6 @@
         align-items: center;
     }
 
-    .health-summary-icon {
-        width: 24px;
-        height: 24px;
-        font-size: 0.78rem;
-        border-radius: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--summary-bg, var(--health-soft));
-        color: var(--summary-color, var(--primary));
-        flex: 0 0 auto;
-    }
-
     .health-summary-label {
         color: var(--text-muted);
         font-size: 0.68rem;
@@ -783,7 +770,7 @@
     }
 
     .health-table-wrap {
-        max-height: calc(100vh - 380px);
+        max-height: calc(100vh - 330px);
         min-height: 264px;
     }
 
@@ -846,10 +833,6 @@
        the counts that still need someone. */
     button.health-summary-card:disabled .health-summary-value {
         color: var(--text-muted);
-    }
-
-    button.health-summary-card:disabled .health-summary-icon {
-        opacity: 0.45;
     }
 
     button.health-summary-card:disabled::after {
@@ -975,6 +958,162 @@
         color: var(--danger);
     }
 
+    /* ===================== Two-column body ============================= */
+    /* The timeline and the table are what an operator works in; the trend,
+       the partition list and the actions support them from the side instead
+       of pushing them below the fold. */
+    .health-cols {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 0.45rem;
+        align-items: start;
+    }
+
+    .health-main,
+    .health-rail {
+        display: grid;
+        gap: 0.45rem;
+        align-content: start;
+        min-width: 0;
+    }
+
+    .health-rail .health-chart-header,
+    .health-rail .health-panel-header {
+        padding: 0.42rem 0.6rem;
+    }
+
+    .health-rail .capacity-grid {
+        grid-template-columns: 1fr;
+        padding: 0.4rem 0.55rem;
+    }
+
+    .health-panel.is-rail {
+        max-height: none;
+    }
+
+    /* ===================== Tabs over the table ========================== */
+    .health-tabs {
+        display: flex;
+        gap: 0.2rem;
+        padding: 0.4rem 0.65rem 0;
+        flex-wrap: wrap;
+    }
+
+    .health-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.32rem;
+        min-height: 26px;
+        padding: 0.24rem 0.6rem;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 7px 7px 0 0;
+        background: none;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .health-tab:hover {
+        color: var(--text-primary);
+    }
+
+    .health-tab[aria-selected="true"] {
+        background: var(--bg-tertiary);
+        border-color: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .health-tab:disabled {
+        opacity: 0.45;
+        cursor: default;
+    }
+
+    .health-tab .tab-count {
+        padding: 0.02rem 0.3rem;
+        border-radius: 999px;
+        background: var(--health-soft);
+        font-size: 0.66rem;
+    }
+
+    .health-tab[aria-selected="true"] .tab-count {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    /* ===================== KPI sparklines ============================== */
+    .health-summary-header {
+        align-items: flex-start;
+    }
+
+    .health-summary-spark {
+        display: block;
+        width: 68px;
+        height: 24px;
+        margin-top: 0.1rem;
+    }
+
+    .health-summary-delta {
+        margin-top: 0.1rem;
+        color: var(--text-muted);
+        font-size: 0.62rem;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ===================== Timeline groups ============================= */
+    .timeline-group {
+        padding: 0.35rem 0.65rem 0.1rem;
+        color: var(--text-muted);
+        font-size: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+    }
+
+    .timeline-group:first-child {
+        padding-top: 0.1rem;
+    }
+
+    /* ===================== Quick actions =============================== */
+    .health-quick {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.35rem;
+        padding: 0.45rem 0.6rem 0.55rem;
+    }
+
+    .health-quick-btn {
+        display: grid;
+        gap: 0.1rem;
+        padding: 0.42rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        text-decoration: none;
+    }
+
+    .health-quick-btn:hover {
+        border-color: var(--primary);
+        color: var(--text-primary);
+        text-decoration: none;
+    }
+
+    .health-quick-btn b {
+        font-size: 0.72rem;
+        font-weight: 700;
+    }
+
+    .health-quick-btn span {
+        color: var(--text-muted);
+        font-size: 0.62rem;
+    }
+
     /* ===================== Capacity Outlook: small multiples ============ */
     .capacity-grid {
         display: grid;
@@ -1061,16 +1200,16 @@
         display: flex;
         flex-direction: column;
         gap: 2px;
-        padding: 0.5rem 0.65rem 0.55rem;
-        max-height: 268px;
+        padding: 0.4rem 0.65rem 0.5rem;
+        max-height: 300px;
         overflow-y: auto;
     }
 
     .timeline-row {
         display: grid;
-        grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 54px;
+        grid-template-columns: minmax(110px, 150px) minmax(0, 1fr) 46px;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.45rem;
     }
 
     .timeline-label {
@@ -1305,6 +1444,20 @@
         white-space: nowrap;
     }
 
+    @media (max-width: 1180px) {
+        .health-cols {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .health-rail {
+            grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+        }
+
+        .health-rail .capacity-grid {
+            grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+        }
+    }
+
     @media (max-width: 1440px) {
         .health-overview {
             grid-template-columns: repeat(4, minmax(150px, 1fr));
@@ -1330,7 +1483,9 @@
     @media (max-width: 760px) {
         .health-overview,
         .health-panels,
-        .capacity-grid {
+        .capacity-grid,
+        .health-rail,
+        .health-quick {
             grid-template-columns: 1fr;
         }
 
@@ -1377,6 +1532,8 @@
         .main-content, .content-area { margin: 0 !important; padding: 0 !important; }
         body { background: #fff !important; color: #111 !important; }
         .health-overview, .health-panels { grid-template-columns: 1fr 1fr !important; }
+        .health-cols { grid-template-columns: 1fr !important; }
+        .health-quick, .health-tabs { display: none !important; }
         .health-hero, .health-summary-card, .health-panel, .health-table-card {
             box-shadow: none !important;
             break-inside: avoid;
@@ -1417,8 +1574,9 @@
                 <div>
                     <div class="health-summary-label">Servers</div>
                     <div id="sum-total" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-total"></div>
                 </div>
-                <div class="health-summary-icon"><i class="fa-solid fa-server"></i></div>
+                <svg class="health-summary-spark" id="spark-total" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" title="SSH, WinRM, and WMI targets currently included.">SSH &middot; WinRM &middot; WMI</div>
         </button>
@@ -1428,8 +1586,9 @@
                 <div>
                     <div class="health-summary-label">Down</div>
                     <div id="sum-down" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-down"></div>
                 </div>
-                <div class="health-summary-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <svg class="health-summary-spark" id="spark-down" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-down-note">Need connectivity review</div>
         </button>
@@ -1439,8 +1598,9 @@
                 <div>
                     <div class="health-summary-label">Service Down</div>
                     <div id="sum-service" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-service"></div>
                 </div>
-                <div class="health-summary-icon"><i class="fa-solid fa-gears"></i></div>
+                <svg class="health-summary-spark" id="spark-service" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-service-note">Stopped services on checked hosts</div>
         </button>
@@ -1450,121 +1610,149 @@
                 <div>
                     <div class="health-summary-label">Pending Reboot</div>
                     <div id="sum-reboot" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-reboot"></div>
                 </div>
-                <div class="health-summary-icon"><i class="fa-solid fa-power-off"></i></div>
+                <svg class="health-summary-spark" id="spark-reboot" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-reboot-note">Waiting for a restart</div>
         </button>
     </section>
 
-    <section class="health-chart-card" id="capacity-card">
-        <div class="health-chart-header">
-            <h3 class="health-chart-title">
-                <i class="fa-solid fa-chart-area"></i> Capacity Outlook
-                <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="Each server's own trend over the window, projected forward to the alert threshold configured for that device. Answers what the table cannot: which servers are on course to run out."></i>
-            </h3>
-            <div class="health-chart-controls">
-                <div class="health-range-group" id="capacity-metric-group" role="group" aria-label="Capacity metric">
-                    <button type="button" class="health-range-btn is-active" data-capacity-metric="ram">RAM</button>
-                    <button type="button" class="health-range-btn" data-capacity-metric="disk">Disk</button>
-                    <button type="button" class="health-range-btn" data-capacity-metric="cpu">CPU</button>
-                </div>
-                <div class="health-range-group" id="capacity-range-group" role="group" aria-label="Capacity window">
-                    <button type="button" class="health-range-btn" data-capacity-days="7">7d</button>
-                    <button type="button" class="health-range-btn is-active" data-capacity-days="30">30d</button>
-                </div>
-                <label class="health-toggle" title="Hide servers that are flat or falling">
-                    <input type="checkbox" id="capacity-rising-only" checked>
-                    Rising only
-                </label>
-                <span class="health-chart-stat" id="capacity-count">-</span>
-            </div>
-        </div>
-        <div class="capacity-grid" id="capacity-grid">
-            <div class="health-loading">Loading...</div>
-        </div>
-        <div class="health-chart-hint" id="capacity-hint"></div>
-    </section>
-
-    <section class="health-chart-card" id="timeline-card">
-        <div class="health-chart-header">
-            <h3 class="health-chart-title">
-                <i class="fa-solid fa-timeline"></i> Availability Timeline
-                <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="Each row is one server over time. A block is shaded by the mix of results in its slice, with brief incidents drawn at a minimum width so they stay visible. Hatched grey means no check was recorded at all: a gap in monitoring, not a healthy server. The percentage on the right is the share of checks that came back up. A blue line marks when the slow thresholds were last recalibrated, since checks to its left keep the verdict they were given at the time and cannot be re-judged."></i>
-            </h3>
-            <div class="health-chart-controls">
-                <div class="health-range-group" id="timeline-range-group" role="group" aria-label="Timeline window">
-                    <button type="button" class="health-range-btn" data-timeline-hours="6">6h</button>
-                    <button type="button" class="health-range-btn is-active" data-timeline-hours="24">24h</button>
-                    <button type="button" class="health-range-btn" data-timeline-hours="168">7d</button>
-                    <button type="button" class="health-range-btn" data-timeline-hours="720">30d</button>
-                </div>
-                <span class="health-chart-stat" id="timeline-resolution">-</span>
-                <span class="health-chart-stat is-warning" id="timeline-gap" hidden></span>
-                <span class="timeline-key"><i class="timeline-swatch is-up"></i> up</span>
-                <span class="timeline-key"><i class="timeline-swatch is-slow"></i> slow</span>
-                <span class="timeline-key"><i class="timeline-swatch is-down"></i> down</span>
-                <span class="timeline-key"><i class="timeline-swatch is-none"></i> no data</span>
-            </div>
-        </div>
-        <div class="timeline-body" id="timeline-body">
-            <div class="health-loading">Loading...</div>
-        </div>
-    </section>
-
-    <section class="health-panels">
-        <div class="health-panel is-wide">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title">
-                    <i class="fa-solid fa-hard-drive"></i> Top Disk / Partition
+    <div class="health-cols">
+        <div class="health-main">
+        <section class="health-chart-card" id="timeline-card">
+            <div class="health-chart-header">
+                <h3 class="health-chart-title">
+                    <i class="fa-solid fa-timeline"></i> Availability Timeline
                     <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                       title="Usage per mounted partition. The table's Disk column carries one figure per server, so a full D: behind a mostly empty C: only shows up here."></i>
+                       title="Each row is one server over time. A block is shaded by the mix of results in its slice, with brief incidents drawn at a minimum width so they stay visible. Hatched grey means no check was recorded at all: a gap in monitoring, not a healthy server. The percentage on the right is the share of checks that came back up. A blue line marks when the slow thresholds were last recalibrated, since checks to its left keep the verdict they were given at the time and cannot be re-judged."></i>
                 </h3>
-                <span class="health-panel-meta">
-                    <span id="top-disk-hidden" class="stale-chip" hidden></span>
-                    <span id="top-disk-count" class="health-panel-count">0 items</span>
-                </span>
+                <div class="health-chart-controls">
+                    <div class="health-range-group" id="timeline-range-group" role="group" aria-label="Timeline window">
+                        <button type="button" class="health-range-btn" data-timeline-hours="6">6h</button>
+                        <button type="button" class="health-range-btn is-active" data-timeline-hours="24">24h</button>
+                        <button type="button" class="health-range-btn" data-timeline-hours="168">7d</button>
+                        <button type="button" class="health-range-btn" data-timeline-hours="720">30d</button>
+                    </div>
+                    <span class="health-chart-stat" id="timeline-resolution">-</span>
+                    <span class="health-chart-stat is-warning" id="timeline-gap" hidden></span>
+                    <span class="timeline-key"><i class="timeline-swatch is-up"></i> up</span>
+                    <span class="timeline-key"><i class="timeline-swatch is-slow"></i> slow</span>
+                    <span class="timeline-key"><i class="timeline-swatch is-down"></i> down</span>
+                    <span class="timeline-key"><i class="timeline-swatch is-none"></i> no data</span>
+                </div>
             </div>
-            <div id="top-disk" class="health-list is-columns"><div class="health-loading">Loading...</div></div>
-        </div>
-    </section>
+            <div class="timeline-body" id="timeline-body">
+                <div class="health-loading">Loading...</div>
+            </div>
+        </section>
 
-    <section class="health-table-card">
-        <div class="health-table-header">
-            <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
-            <div class="health-table-header-right">
-                <span id="health-focus-chip" class="health-focus-chip" hidden>
-                    <span id="health-focus-label"></span>
-                    <button type="button" id="health-focus-clear" title="Clear this filter" aria-label="Clear filter">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </span>
-                <span id="server-count-label" class="health-panel-count">0 servers</span>
+        <section class="health-table-card">
+            <div class="health-tabs" id="server-tabs" role="tablist" aria-label="Server filter"></div>
+            <div class="health-table-header">
+                <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
+                <div class="health-table-header-right">
+                    <span id="health-focus-chip" class="health-focus-chip" hidden>
+                        <span id="health-focus-label"></span>
+                        <button type="button" id="health-focus-clear" title="Clear this filter" aria-label="Clear filter">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </span>
+                    <span id="server-count-label" class="health-panel-count">0 servers</span>
+                </div>
             </div>
+            <div class="health-table-wrap">
+                <table class="server-health-table">
+                    <thead>
+                        <tr>
+                            <th><button type="button" class="server-sort-button" data-sort-key="server">Server <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th><button type="button" class="server-sort-button" data-sort-key="status">Status <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th><button type="button" class="server-sort-button" data-sort-key="cpu">CPU <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                                                    <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="server-table-body">
+                        <tr><td colspan="9" class="health-loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
         </div>
-        <div class="health-table-wrap">
-            <table class="server-health-table">
-                <thead>
-                    <tr>
-                        <th><button type="button" class="server-sort-button" data-sort-key="server">Server <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="status">Status <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="cpu">CPU <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                                                <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody id="server-table-body">
-                    <tr><td colspan="9" class="health-loading">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </section>
+
+        <aside class="health-rail">
+        <section class="health-chart-card" id="capacity-card">
+            <div class="health-chart-header">
+                <h3 class="health-chart-title">
+                    <i class="fa-solid fa-chart-area"></i> Capacity Outlook
+                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                       title="Each server's own trend over the window, projected forward to the alert threshold configured for that device. Answers what the table cannot: which servers are on course to run out."></i>
+                </h3>
+                <div class="health-chart-controls">
+                    <div class="health-range-group" id="capacity-metric-group" role="group" aria-label="Capacity metric">
+                        <button type="button" class="health-range-btn is-active" data-capacity-metric="ram">RAM</button>
+                        <button type="button" class="health-range-btn" data-capacity-metric="disk">Disk</button>
+                        <button type="button" class="health-range-btn" data-capacity-metric="cpu">CPU</button>
+                    </div>
+                    <div class="health-range-group" id="capacity-range-group" role="group" aria-label="Capacity window">
+                        <button type="button" class="health-range-btn" data-capacity-days="7">7d</button>
+                        <button type="button" class="health-range-btn is-active" data-capacity-days="30">30d</button>
+                    </div>
+                    <label class="health-toggle" title="Hide servers that are flat or falling">
+                        <input type="checkbox" id="capacity-rising-only" checked>
+                        Rising only
+                    </label>
+                    <span class="health-chart-stat" id="capacity-count">-</span>
+                </div>
+            </div>
+            <div class="capacity-grid" id="capacity-grid">
+                <div class="health-loading">Loading...</div>
+            </div>
+            <div class="health-chart-hint" id="capacity-hint"></div>
+        </section>
+
+        <section class="health-panels">
+            <div class="health-panel is-wide">
+                <div class="health-panel-header">
+                    <h3 class="health-panel-title">
+                        <i class="fa-solid fa-hard-drive"></i> Top Disk / Partition
+                        <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                           title="Usage per mounted partition. The table's Disk column carries one figure per server, so a full D: behind a mostly empty C: only shows up here."></i>
+                    </h3>
+                    <span class="health-panel-meta">
+                        <span id="top-disk-hidden" class="stale-chip" hidden></span>
+                        <span id="top-disk-count" class="health-panel-count">0 items</span>
+                    </span>
+                </div>
+                <div id="top-disk" class="health-list is-columns"><div class="health-loading">Loading...</div></div>
+            </div>
+        </section>
+
+        <section class="health-panel is-rail">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title"><i class="fa-solid fa-bolt"></i> Quick Actions</h3>
+            </div>
+            <div class="health-quick">
+                <a class="health-quick-btn" href="/api/server-health/export.pdf">
+                    <b>Export PDF</b><span>current snapshot</span>
+                </a>
+                <a class="health-quick-btn" href="/api/server-health/export.csv">
+                    <b>Export CSV</b><span>all metrics</span>
+                </a>
+                <a class="health-quick-btn" href="/devices">
+                    <b>Service checks</b><span id="quick-services">-</span>
+                </a>
+                <a class="health-quick-btn" href="/devices">
+                    <b>Thresholds</b><span id="quick-thresholds">-</span>
+                </a>
+            </div>
+        </section>
+        </aside>
+    </div>
 
     <section class="health-chart-card" id="collection-card">
         <div class="health-chart-header">
@@ -1597,6 +1785,7 @@ let latestServerHealthData = null;
 let latestCapacityData = null;
 let latestTimelineData = null;
 let latestCollectionData = null;
+let latestTrendData = null;
 let latestFetchedAt = Date.now();
 let selectedServerId = 'all';
 let serverSearchMap = new Map();
@@ -1716,6 +1905,73 @@ function applyStoredPrefs() {
         capacityRisingOnly = prefs.capacityRisingOnly;
         const toggle = document.getElementById('capacity-rising-only');
         if (toggle) toggle.checked = capacityRisingOnly;
+    }
+}
+
+// A small filled line, drawn straight into the card's <svg>. The last point
+// is marked because "where it is now" is the part being compared with the
+// figure beside it.
+function drawSparkline(id, values, colour) {
+    const svg = document.getElementById(id);
+    if (!svg) return;
+    const points = (values || []).filter(value => Number.isFinite(Number(value))).map(Number);
+    if (points.length < 2) {
+        svg.innerHTML = '';
+        return;
+    }
+
+    const width = 68;
+    const height = 24;
+    const max = Math.max(1, ...points);
+    const x = index => (index / (points.length - 1)) * width;
+    const y = value => height - 2 - (value / max) * (height - 4);
+    const line = points.map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
+
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.innerHTML = `
+        <path d="${line} L${width},${height} L0,${height} Z" fill="${colour}" opacity="0.13"/>
+        <path d="${line}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linejoin="round"/>
+        <circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(points[points.length - 1]).toFixed(1)}" r="2.2" fill="${colour}"/>
+    `;
+}
+
+function describeTrend(values, noun) {
+    const points = (values || []).map(Number).filter(Number.isFinite);
+    if (points.length < 2) return '';
+    const now = points[points.length - 1];
+    const before = points[0];
+    if (now === before) return `no change in ${formatWindowHours((latestTrendData?.hours) || 24)}`;
+    const direction = now > before ? 'up' : 'down';
+    return `${direction} from ${before} ${noun} ${formatWindowHours((latestTrendData?.hours) || 24)} ago`;
+}
+
+function renderTrend(data) {
+    latestTrendData = data;
+    const total = (data.seen || []).map((value, index) => value);
+    drawSparkline('spark-total', total, 'var(--primary)');
+    drawSparkline('spark-down', data.down, 'var(--danger)');
+    drawSparkline('spark-reboot', data.slow, 'var(--warning)');
+
+    setText('delta-total', describeTrend(total, 'hosts'));
+    setText('delta-down', describeTrend(data.down, 'down'));
+    setText('delta-reboot', describeTrend(data.slow, 'slow'));
+}
+
+function setText(id, text) {
+    const node = document.getElementById(id);
+    if (node) node.textContent = text || '';
+}
+
+async function loadTrend() {
+    try {
+        const res = await fetch(`/api/server-health/summary-trend?hours=24&_t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success === false) throw new Error(data.error || 'trend unavailable');
+        renderTrend(data);
+    } catch (error) {
+        // A missing sparkline must not take the figures down with it.
+        ['spark-total', 'spark-down', 'spark-reboot'].forEach(id => drawSparkline(id, [], ''));
     }
 }
 
@@ -2036,6 +2292,31 @@ function updateFocusUi(shown, total) {
     label.textContent = `${FOCUS_DEFS[healthFocus].label}: ${shown} of ${total}`;
 }
 
+// The KPI cards and these tabs drive the same focus, so the page never has two
+// filters disagreeing about what the table is showing.
+const TAB_ORDER = ['all', 'down', 'reboot', 'service', 'stale'];
+
+function renderTabs(servers) {
+    const host = document.getElementById('server-tabs');
+    if (!host) return;
+
+    host.innerHTML = TAB_ORDER.map(key => {
+        const count = servers.filter(focusMatcher(key)).length;
+        const selected = key === healthFocus;
+        const disabled = key !== 'all' && count === 0;
+        return `
+            <button type="button" class="health-tab" role="tab" data-tab-focus="${key}"
+                    aria-selected="${selected}" ${disabled ? 'disabled' : ''}>
+                ${esc(FOCUS_DEFS[key].label)}<span class="tab-count">${count}</span>
+            </button>
+        `;
+    }).join('');
+
+    host.querySelectorAll('[data-tab-focus]').forEach(button => {
+        button.addEventListener('click', () => setHealthFocus(button.getAttribute('data-tab-focus')));
+    });
+}
+
 function setHealthFocus(key) {
     const next = FOCUS_DEFS[key] ? key : 'all';
     // Clicking the active card clears it, so the cards work as toggles.
@@ -2329,6 +2610,12 @@ function setSummary(summary) {
     if (staleValue) staleValue.textContent = stale;
     if (staleChip) staleChip.hidden = stale === 0;
 
+    setText('quick-services', monitored
+        ? `${monitored} of ${summary.total_servers} hosts`
+        : `none of ${summary.total_servers} hosts yet`);
+    const custom = (latestServerHealthData?.servers || []).filter(server => server.slow_threshold_is_custom).length;
+    setText('quick-thresholds', custom ? `${custom} tuned per host` : 'using shared defaults');
+
     setCardState('down', summary.down || 0);
     setCardState('service', monitored ? (summary.service_down || 0) : 0);
     setCardState('reboot', summary.pending_reboot || 0);
@@ -2356,6 +2643,7 @@ function renderServerHealthData(data) {
 
     const allServers = filtered.servers || [];
     const focused = allServers.filter(focusMatcher(healthFocus));
+    renderTabs(allServers);
     renderServers(focused, allServers.length);
     updateFocusUi(focused.length, allServers.length);
     updateFilterStatus();
@@ -2568,7 +2856,14 @@ function renderTimeline(data) {
         calibrationIndex = labels.findIndex(label => label && label >= data.calibrated_at);
     }
 
-    body.innerHTML = servers.map(server => {
+    // Windows and Linux hosts collect over different protocols at very
+    // different speeds, so reading them as two groups is easier than one list.
+    const groups = [
+        { label: 'Windows hosts \u00b7 WinRM / WMI', match: server => String(server.monitor_type || '').toLowerCase() !== 'ssh' },
+        { label: 'Linux hosts \u00b7 SSH', match: server => String(server.monitor_type || '').toLowerCase() === 'ssh' },
+    ];
+
+    const renderRow = server => {
         const mix = server.mix || [];
         const band = (server.band || []).map((state, index) => {
             const when = labels[index] || '';
@@ -2595,6 +2890,12 @@ function renderTimeline(data) {
                 <span class="timeline-uptime${cssClass}">${up === null || up === undefined ? '-' : `${up}%`}</span>
             </div>
         `;
+    };
+
+    body.innerHTML = groups.map(group => {
+        const rows = servers.filter(group.match);
+        if (!rows.length) return '';
+        return `<div class="timeline-group">${esc(group.label)} (${rows.length})</div>${rows.map(renderRow).join('')}`;
     }).join('');
 
     const bucketCount = (servers[0].band || []).length;
@@ -2835,6 +3136,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.addEventListener('keydown', event => {
+        if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') {
+            const search = document.getElementById('server-filter-search');
+            if (search) {
+                event.preventDefault();
+                search.focus();
+                search.select();
+            }
+        }
+    });
+
     document.addEventListener('click', event => {
         const trigger = event.target.closest('[data-server-filter]');
         if (!trigger) return;
@@ -2847,8 +3159,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Server health lands first: the other sections read each device's own
     // thresholds out of it.
     loadServerHealth().finally(refreshCharts);
+    loadTrend();
     setInterval(loadServerHealth, 30000);
     setInterval(refreshCharts, 60000);
+    // An hourly series does not move between 30-second polls.
+    setInterval(loadTrend, 300000);
 });
 </script>
 {% endblock %}

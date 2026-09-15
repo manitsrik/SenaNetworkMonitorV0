@@ -46,3 +46,6 @@ device_notes/
 # Local database backups and operational snapshots
 backups/*.dump
 backups/*.json
+
+# Design mockups: these embed real hostnames and IPs
+server_health_mockup.html

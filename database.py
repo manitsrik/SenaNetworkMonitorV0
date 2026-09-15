@@ -2271,6 +2271,46 @@ class Database:
             })
         return result
 
+    def get_status_counts_by_hour(self, device_ids, hours=24):
+        """Distinct devices in each status, per hour, over the window.
+
+        Counts devices rather than checks so the series reads on the same scale
+        as the headline figures: "2 hosts were down", not "118 checks failed".
+        """
+        if not device_ids:
+            return []
+
+        hours = max(2, min(int(hours or 24), 7 * 24))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours)
+            if self.db_type == 'postgresql':
+                bucket = "to_char(date_trunc('hour', checked_at), 'YYYY-MM-DD HH24:MI')"
+            else:
+                bucket = "strftime('%Y-%m-%d %H:00', checked_at)"
+
+            cursor.execute(f'''
+                SELECT {bucket} AS hour_label,
+                       COUNT(DISTINCT CASE WHEN status = 'down' THEN device_id END) AS down_n,
+                       COUNT(DISTINCT CASE WHEN status = 'slow' THEN device_id END) AS slow_n,
+                       COUNT(DISTINCT CASE WHEN status = 'up'   THEN device_id END) AS up_n,
+                       COUNT(DISTINCT device_id) AS seen_n
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}
+                GROUP BY {bucket}
+                ORDER BY hour_label ASC
+            ''', list(device_ids))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_status_counts_by_hour: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
     def get_status_timeline(self, device_ids, hours=24, buckets=96):
         """Status make-up per device per time bucket, plus the window total.
 

@@ -939,6 +939,33 @@ def get_server_health_capacity():
     })
 
 
+@devices_bp.route('/api/server-health/summary-trend', methods=['GET'])
+def get_server_health_summary_trend():
+    """Hourly host counts behind the headline figures, for the KPI sparklines.
+
+    Separate from /api/server-health so the figures themselves stay on a fast
+    query: a sparkline does not need the 30-second refresh the counts do.
+    """
+    hours = max(2, min(request.args.get('hours', 24, type=int) or 24, 7 * 24))
+
+    db = _get_db()
+    device_ids = [
+        device['id'] for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    ]
+    rows = db.get_status_counts_by_hour(device_ids, hours=hours)
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'labels': [row['hour_label'] for row in rows],
+        'up': [int(row['up_n'] or 0) for row in rows],
+        'slow': [int(row['slow_n'] or 0) for row in rows],
+        'down': [int(row['down_n'] or 0) for row in rows],
+        'seen': [int(row['seen_n'] or 0) for row in rows],
+    })
+
+
 @devices_bp.route('/api/server-health/status-timeline', methods=['GET'])
 def get_server_health_status_timeline():
     """Per-server status band over time, plus the uptime split for the window."""

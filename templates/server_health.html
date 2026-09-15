@@ -2938,7 +2938,11 @@ function renderTopCards(data) {
                     <span class="topcard-value" style="color:${colour}">${esc(figure)}${
                         mode === 'soonest' || !TOPCARD_STAT[card.key]
                             ? ''
-                            : `<span class="topcard-stat">${esc(TOPCARD_STAT[card.key])}</span>`
+                            : `<span class="topcard-stat">${esc(TOPCARD_STAT[card.key])}${
+                                row.current === null || row.current === undefined
+                                    ? ''
+                                    : ` · now ${esc(topValueText({ rank_value: row.current }, card.unit))}`
+                              }</span>`
                     }</span>
                     ${topSpark(row.series, colour)}
                 </div>

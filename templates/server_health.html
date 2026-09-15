@@ -720,7 +720,7 @@
     }
 
     .health-table-wrap {
-        max-height: calc(100vh - 330px);
+        max-height: calc(100vh - 300px);
         min-height: 264px;
     }
 
@@ -912,11 +912,15 @@
     /* The timeline and the table are what an operator works in; the trend,
        the partition list and the actions support them from the side instead
        of pushing them below the fold. */
+    /* The timeline and Needs Attention are close in height, so they share a
+       band. The table follows at full width: it carries ten columns and was
+       being squeezed by a rail holding three rows. */
     .health-cols {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 330px;
+        grid-template-columns: minmax(0, 1fr) 340px;
         gap: 0.45rem;
-        align-items: start;
+        align-items: stretch;
+        margin-bottom: 0.45rem;
     }
 
     .health-main,
@@ -925,6 +929,11 @@
         gap: 0.45rem;
         align-content: start;
         min-width: 0;
+    }
+
+    .health-rail > .health-panel {
+        display: flex;
+        flex-direction: column;
     }
 
     .health-rail .health-chart-header,
@@ -1024,9 +1033,10 @@
     .attention-list {
         display: grid;
         gap: 2px;
+        align-content: start;
         padding: 0.35rem 0.5rem 0.45rem;
         /* One row per host keeps this short; the cap is a guard, not a plan. */
-        max-height: 216px;
+        max-height: 268px;
         overflow-y: auto;
     }
 
@@ -1571,10 +1581,6 @@
             grid-template-columns: minmax(0, 1fr);
         }
 
-        .health-rail {
-            grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
-        }
-
     }
 
     @media (max-width: 1440px) {
@@ -1772,42 +1778,6 @@
             </div>
         </section>
 
-        <section class="health-table-card">
-            <div class="health-tabs" id="server-tabs" role="tablist" aria-label="Server filter"></div>
-            <div class="health-table-header">
-                <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
-                <div class="health-table-header-right">
-                    <span id="health-focus-chip" class="health-focus-chip" hidden>
-                        <span id="health-focus-label"></span>
-                        <button type="button" id="health-focus-clear" title="Clear this filter" aria-label="Clear filter">
-                            <i class="fa-solid fa-xmark"></i>
-                        </button>
-                    </span>
-                    <span id="server-count-label" class="health-panel-count">0 servers</span>
-                </div>
-            </div>
-            <div class="health-table-wrap">
-                <table class="server-health-table">
-                    <thead>
-                        <tr>
-                            <th><button type="button" class="server-sort-button" data-sort-key="server">Server <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th><button type="button" class="server-sort-button" data-sort-key="status">Status <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th><button type="button" class="server-sort-button" data-sort-key="cpu">CPU <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                                                    <th><button type="button" class="server-sort-button" data-sort-key="internet">Internet <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="server-table-body">
-                        <tr><td colspan="10" class="health-loading">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
         </div>
 
         <aside class="health-rail">
@@ -1826,6 +1796,43 @@
         </section>
         </aside>
     </div>
+
+    <section class="health-table-card">
+        <div class="health-tabs" id="server-tabs" role="tablist" aria-label="Server filter"></div>
+        <div class="health-table-header">
+            <h3 class="health-table-title"><i class="fa-solid fa-list-check"></i> All Servers</h3>
+            <div class="health-table-header-right">
+                <span id="health-focus-chip" class="health-focus-chip" hidden>
+                    <span id="health-focus-label"></span>
+                    <button type="button" id="health-focus-clear" title="Clear this filter" aria-label="Clear filter">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </span>
+                <span id="server-count-label" class="health-panel-count">0 servers</span>
+            </div>
+        </div>
+        <div class="health-table-wrap">
+            <table class="server-health-table">
+                <thead>
+                    <tr>
+                        <th><button type="button" class="server-sort-button" data-sort-key="server">Server <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="status">Status <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="cpu">CPU <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                                                <th><button type="button" class="server-sort-button" data-sort-key="internet">Internet <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                    <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="server-table-body">
+                    <tr><td colspan="10" class="health-loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
 
     <section class="topcards" id="topcards">
         <div class="health-panel"><div class="health-loading">Loading...</div></div>

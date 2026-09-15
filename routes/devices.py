@@ -1063,9 +1063,11 @@ def get_server_health_top_metrics():
         ram = series.get((device_id, 'ram'))
         current_ram = numeric(devices[device_id].get('ram_usage'))
         if ram and current_ram is not None:
-            ram_rows.append(dict(base(device_id), rank_value=round(current_ram, 1),
-                                 current=round(current_ram, 1), unit='%', series=ram,
-                                 **projection(device_id, 'ram', 'ram_threshold', 90)))
+            entry = dict(base(device_id), rank_value=round(current_ram, 1),
+                         current=round(current_ram, 1), unit='%', series=ram,
+                         limit=_threshold_for(devices[device_id], 'ram_threshold', 90))
+            entry.update(projection(device_id, 'ram', 'ram_threshold', 90))
+            ram_rows.append(entry)
 
         # One line for the interface, in and out together, as the table shows it.
         inbound = series.get((device_id, 'network_in')) or []
@@ -1101,15 +1103,17 @@ def get_server_health_top_metrics():
                 continue
             points = series.get((device_id, 'disk:%s' % str(mount).strip()[:120]))
             metric_key = 'disk:%s' % str(mount).strip()[:120]
-            disk_rows.append(dict(
+            entry = dict(
                 base(device_id),
                 rank_value=round(usage, 1),
                 current=round(usage, 1),
                 unit='%',
                 label=str(mount),
                 series=points or [],
-                **projection(device_id, metric_key, 'disk_threshold', 90),
-            ))
+                limit=_threshold_for(device, 'disk_threshold', 90),
+            )
+            entry.update(projection(device_id, metric_key, 'disk_threshold', 90))
+            disk_rows.append(entry)
 
     latency_rows = []
     for device_id, points in latency.items():

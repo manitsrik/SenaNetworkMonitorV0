@@ -131,6 +131,23 @@ def test_cpu_ordering_follows_the_live_reading_the_card_shows():
     assert [row['current'] for row in rows] == [90.0, 50.0, 10.0]
 
 
+def test_every_percentage_row_carries_its_hosts_own_limit():
+    """The bar is coloured against this, so it cannot depend on having enough
+    history to forecast from: a host with two samples still has a threshold."""
+    db = FakeDB([device(1, 'APP-1', ram_threshold=95.0, disk_threshold=95.0,
+                        disk_details_json='[{"mount":"C:","use_percent":40.0}]')])
+    # Two points is below the three the projection needs.
+    db.series = {(1, 'cpu'): [10.0, 12.0], (1, 'ram'): [50.0, 51.0]}
+    db.cpu_medians = {1: {'median': 11.0, 'samples': 10}}
+
+    payload = make_client(db).get('/api/server-health/top-metrics').get_json()
+    cards = {c['key']: c for c in payload['cards']}
+
+    assert cards['ram']['rows'][0].get('days_to_limit') is None
+    assert cards['ram']['rows'][0]['limit'] == 95.0
+    assert cards['cpu']['rows'][0]['limit'] == 85.0
+
+
 # ------------------------------------------------- collection times ----
 
 def test_response_time_carries_a_median_measured_over_the_raw_checks():

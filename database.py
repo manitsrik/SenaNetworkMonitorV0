@@ -19,6 +19,34 @@ try:
 except ImportError:
     PG_AVAILABLE = False
 
+
+def fold_hourly_statuses(rows):
+    """Turn one last-status-per-device-per-hour row set into hourly counts.
+
+    Rows must be ordered by hour, each carrying `hour_label`, `device_id` and
+    the `status` of that device's last check in that hour.
+
+    A device keeps its status in the hours it was not checked in, so each
+    point answers "how many were down as this hour ended" -- the same question
+    the headline figure answers about now. `seen_n` is the opposite: it counts
+    only the devices actually checked, so a collection outage stays visible as
+    a dip instead of being carried over it.
+    """
+    latest = {}
+    result = []
+    for row in rows:
+        if not result or result[-1]['hour_label'] != row['hour_label']:
+            result.append({'hour_label': row['hour_label'], 'seen_n': 0})
+        result[-1]['seen_n'] += 1
+        latest[row['device_id']] = row['status']
+
+        statuses = list(latest.values())
+        result[-1]['down_n'] = statuses.count('down')
+        result[-1]['slow_n'] = statuses.count('slow')
+        result[-1]['up_n'] = statuses.count('up')
+    return result
+
+
 class Database:
     _pool = None  # Class-level pool (shared across instances)
     
@@ -2493,10 +2521,21 @@ class Database:
         return result
 
     def get_status_counts_by_hour(self, device_ids, hours=24):
-        """Distinct devices in each status, per hour, over the window.
+        """Devices in each status as each hour ended, over the window.
 
         Counts devices rather than checks so the series reads on the same scale
         as the headline figures: "2 hosts were down", not "118 checks failed".
+
+        Each device contributes the status of its *last* check in the hour, and
+        is carried forward into hours it was not checked in. Counting every
+        device that was down at any point in the hour instead made the newest
+        point mean something different from the headline sitting above it: a
+        host that failed twice and recovered left the line at 2 while the card
+        read 1, which looks like one of the two is broken.
+
+        `seen_n` is deliberately not carried forward. It counts the devices
+        actually checked in the hour, so a collection outage still shows up as
+        the dip it is rather than being smoothed into a flat line.
         """
         if not device_ids:
             return []
@@ -2514,18 +2553,21 @@ class Database:
                 bucket = "strftime('%Y-%m-%d %H:00', checked_at)"
 
             cursor.execute(f'''
-                SELECT {bucket} AS hour_label,
-                       COUNT(DISTINCT CASE WHEN status = 'down' THEN device_id END) AS down_n,
-                       COUNT(DISTINCT CASE WHEN status = 'slow' THEN device_id END) AS slow_n,
-                       COUNT(DISTINCT CASE WHEN status = 'up'   THEN device_id END) AS up_n,
-                       COUNT(DISTINCT device_id) AS seen_n
-                FROM status_history
-                WHERE device_id IN ({placeholders})
-                  AND checked_at >= {cutoff}
-                GROUP BY {bucket}
+                SELECT hour_label, device_id, status FROM (
+                    SELECT {bucket} AS hour_label, device_id, status,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY {bucket}, device_id
+                               ORDER BY checked_at DESC
+                           ) AS rn
+                    FROM status_history
+                    WHERE device_id IN ({placeholders})
+                      AND checked_at >= {cutoff}
+                ) ranked
+                WHERE rn = 1
                 ORDER BY hour_label ASC
             ''', list(device_ids))
-            return self._rows_to_dicts(cursor.fetchall())
+
+            return fold_hourly_statuses(self._rows_to_dicts(cursor.fetchall()))
         except Exception as e:
             print(f"[DB ERROR] get_status_counts_by_hour: {e}")
             return []

@@ -765,13 +765,16 @@ class NetworkMonitor:
         
         start_time = time.time()
         service_names = self._parse_monitored_services(monitored_services)
-        result = {
-            'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
-            'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
-            'net_in': None, 'net_out': None, 'uptime_seconds': None,
-            'uptime_text': None, 'last_boot_time': None,
-            'disk_details': [], 'service_status': [], 'service_summary': None
-        }
+        def _blank_result():
+            return {
+                'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
+                'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
+                'net_in': None, 'net_out': None, 'uptime_seconds': None,
+                'uptime_text': None, 'last_boot_time': None,
+                'disk_details': [], 'service_status': [], 'service_summary': None
+            }
+
+        result = _blank_result()
         last_error = None
         
         def _ssh_task():
@@ -908,8 +911,10 @@ class NetworkMonitor:
             if not success and last_error and 'No existing session' in last_error:
                 # A transport can disappear between authentication and the first
                 # command. Reconnect once before counting the device as failed.
-                result['service_status'] = []
-                result['service_summary'] = None
+                # Drop everything the failed attempt collected so the retry
+                # cannot report a mix of values from two different sessions.
+                result.clear()
+                result.update(_blank_result())
                 success = _ssh_task()
             response_time = (time.time() - start_time) * 1000
             

@@ -363,12 +363,15 @@ This is an automated message from Network Monitor.
         alert_on_down = self._get_setting('alert_on_down', 'true').lower() == 'true'
         alert_on_recovery = self._get_setting('alert_on_recovery', 'true').lower() == 'true'
         alert_on_ssl = self._get_setting('alert_on_ssl_expiry', 'true').lower() == 'true'
+        alert_on_internet = self._get_setting('alert_on_internet', 'true').lower() == 'true'
         
         if event_type == 'down' and not alert_on_down:
             return
         if event_type == 'recovery' and not alert_on_recovery:
             return
         if event_type == 'ssl_expiry' and not alert_on_ssl:
+            return
+        if event_type in ('internet_down', 'internet_recovery') and not alert_on_internet:
             return
         
         # Format message with device info

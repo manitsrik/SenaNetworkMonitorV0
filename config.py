@@ -55,7 +55,8 @@ class Config:
     SERVER_PORT = int(os.environ.get('SERVER_PORT') or 5000)
     DEBUG = _env_bool('DEBUG', False)
     # Reload Jinja templates when their files change, without a server restart.
-    TEMPLATES_AUTO_RELOAD = _env_bool('TEMPLATES_AUTO_RELOAD', True)
+    # Only useful while developing, and it stats every template on each render.
+    TEMPLATES_AUTO_RELOAD = _env_bool('TEMPLATES_AUTO_RELOAD', DEBUG)
     STRICT_STARTUP_VALIDATION = _env_bool('STRICT_STARTUP_VALIDATION', False)
     ENABLE_SWAGGER_UI = _env_bool('ENABLE_SWAGGER_UI', True)
     EXPOSE_INTERNAL_DOCS = _env_bool('EXPOSE_INTERNAL_DOCS', False)
@@ -166,7 +167,7 @@ class Config:
     DNS_LIFETIME = 15  # seconds total time for all retries (increased for stability)
     
     # Failure Threshold - require consecutive failures before marking as down
-    FAILURE_THRESHOLD = 2  # device must fail 2 consecutive checks to be marked as down
+    FAILURE_THRESHOLD = max(1, int(os.environ.get('FAILURE_THRESHOLD') or 2))
     
     # Device defaults
     DEFAULT_DEVICE_TYPE = 'server'

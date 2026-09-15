@@ -100,6 +100,20 @@ from routes import ALL_BLUEPRINTS
 for bp in ALL_BLUEPRINTS:
     app.register_blueprint(bp)
 
+@app.after_request
+def set_security_headers(response):
+    """Baseline hardening headers.
+
+    No Content-Security-Policy here on purpose: the templates rely on inline
+    scripts and styles, so a policy has to be introduced together with that
+    cleanup rather than as a silent page-breaking default.
+    """
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return response
+
+
 @app.context_processor
 def inject_monitor_thresholds():
     return {

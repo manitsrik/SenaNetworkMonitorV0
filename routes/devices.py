@@ -1121,7 +1121,10 @@ def get_server_health_top_metrics():
                                  unit='ms', series=points))
 
     def top(rows):
-        return sorted(rows, key=lambda r: -(r['rank_value'] or 0))[:limit]
+        def live(row):
+            current = row.get('current')
+            return current if current is not None else row.get('rank_value')
+        return sorted(rows, key=lambda r: -(live(r) or 0))[:limit]
 
     def soonest(rows):
         """Nearest to running out first: already over, then by days remaining.
@@ -1144,7 +1147,7 @@ def get_server_health_top_metrics():
         'projection_days': projection_days,
         'cards': [
             {'key': 'cpu', 'title': 'Top CPU Usage', 'unit': '%',
-             'ranked_by': 'median over the window, because a single CPU reading swings too far to rank on', 'rows': top(cpu_rows)},
+             'ranked_by': 'the current reading, with the median over the window beside it', 'rows': top(cpu_rows)},
             {'key': 'ram', 'title': 'Top Memory Usage', 'unit': '%',
              'ranked_by': 'current usage', 'rows': top(ram_rows),
              'soonest': soonest(ram_rows)},
@@ -1154,7 +1157,7 @@ def get_server_health_top_metrics():
             {'key': 'network', 'title': 'Top Network I/O', 'unit': 'bps',
              'ranked_by': 'current throughput, in and out combined', 'rows': top(net_rows)},
             {'key': 'internet', 'title': 'Top Internet Latency', 'unit': 'ms',
-             'ranked_by': 'average round-trip over the window', 'rows': top(latency_rows)},
+             'ranked_by': 'the latest round-trip, with the average over the window beside it', 'rows': top(latency_rows)},
         ],
     })
 

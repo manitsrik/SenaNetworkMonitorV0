@@ -105,10 +105,17 @@ def test_cpu_row_is_dropped_when_no_raw_median_exists():
     assert cpu_card(make_client(db).get('/api/server-health/top-metrics').get_json())['rows'] == []
 
 
-def test_cpu_ordering_follows_the_raw_medians():
-    db = FakeDB([device(1, 'APP-1'), device(2, 'DB-1'), device(3, 'WEB-1')])
+def test_cpu_ordering_follows_the_live_reading_the_card_shows():
+    """The card leads with the current value, so that is what orders it.
+
+    The medians here rank the hosts in exactly the opposite order, so a card
+    that went back to ranking on them would fail this rather than pass by
+    coincidence.
+    """
+    db = FakeDB([device(1, 'APP-1', cpu_usage=90.0),
+                 device(2, 'DB-1', cpu_usage=10.0),
+                 device(3, 'WEB-1', cpu_usage=50.0)])
     db.series = {(1, 'cpu'): [80.0, 90.0], (2, 'cpu'): [5.0, 6.0], (3, 'cpu'): [50.0, 50.0]}
-    # APP-1 draws highest but idles; DB-1 draws lowest and is the busy one.
     db.cpu_medians = {
         1: {'median': 4.0, 'samples': 900},
         2: {'median': 61.0, 'samples': 900},
@@ -117,7 +124,11 @@ def test_cpu_ordering_follows_the_raw_medians():
 
     rows = cpu_card(make_client(db).get('/api/server-health/top-metrics').get_json())['rows']
 
-    assert [row['name'] for row in rows] == ['DB-1', 'WEB-1', 'APP-1']
+    assert [row['name'] for row in rows] == ['APP-1', 'WEB-1', 'DB-1']
+    # The median is still the raw one, now shown beside the figure as the
+    # baseline it is being compared against rather than as the sort key.
+    assert [row['rank_value'] for row in rows] == [4.0, 30.0, 61.0]
+    assert [row['current'] for row in rows] == [90.0, 50.0, 10.0]
 
 
 # ------------------------------------------------- collection times ----

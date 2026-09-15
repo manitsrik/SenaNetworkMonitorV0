@@ -354,6 +354,13 @@
         overflow: visible;
     }
 
+    /* In the rail the list is one column, so ten mounts would run the whole
+       panel past the table beside it. */
+    .health-rail .health-list.is-columns {
+        max-height: 218px;
+        overflow-y: auto;
+    }
+
     .health-chart-card {
         background: var(--health-surface);
         border: 1px solid var(--border-color);
@@ -1264,7 +1271,7 @@
 
     .collection-row {
         display: grid;
-        grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 76px;
+        grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 100px;
         align-items: center;
         gap: 0.5rem;
     }
@@ -1570,9 +1577,7 @@
                 <div>
                     <div class="health-summary-label">Pending Reboot</div>
                     <div id="sum-reboot" class="health-summary-value">-</div>
-                    <div class="health-summary-delta" id="delta-reboot"></div>
                 </div>
-                <svg class="health-summary-spark" id="spark-reboot" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-reboot-note">Waiting for a restart</div>
         </button>
@@ -1666,8 +1671,7 @@
                         <input type="checkbox" id="capacity-rising-only" checked>
                         Rising only
                     </label>
-                    <span class="health-chart-stat" id="capacity-count">-</span>
-                </div>
+                    </div>
             </div>
             <div class="capacity-grid" id="capacity-grid">
                 <div class="health-loading">Loading...</div>
@@ -1863,15 +1867,21 @@ function drawSparkline(id, values, colour) {
 
     const width = 68;
     const height = 24;
-    const max = Math.max(1, ...points);
+    const max = Math.max(...points);
+    const min = Math.min(...points);
     const x = index => (index / (points.length - 1)) * width;
-    const y = value => height - 2 - (value / max) * (height - 4);
+    // A series that never moves has no shape to show. Drawing it against a
+    // zero baseline filled the whole box with tint, which read as a grey
+    // block rather than a flat line, so a constant sits in the middle with
+    // no fill under it.
+    const flat = max === min;
+    const y = value => flat ? height / 2 : height - 2 - ((value - min) / (max - min)) * (height - 4);
     const line = points.map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
 
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.innerHTML = `
-        <path d="${line} L${width},${height} L0,${height} Z" fill="${colour}" opacity="0.13"/>
-        <path d="${line}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linejoin="round"/>
+        ${flat ? '' : `<path d="${line} L${width},${height} L0,${height} Z" fill="${colour}" opacity="0.13"/>`}
+        <path d="${line}" fill="none" stroke="${colour}" stroke-width="1.5" stroke-linejoin="round" opacity="${flat ? 0.5 : 1}"/>
         <circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(points[points.length - 1]).toFixed(1)}" r="2.2" fill="${colour}"/>
     `;
 }
@@ -1891,11 +1901,9 @@ function renderTrend(data) {
     const total = (data.seen || []).map((value, index) => value);
     drawSparkline('spark-total', total, 'var(--primary)');
     drawSparkline('spark-down', data.down, 'var(--danger)');
-    drawSparkline('spark-reboot', data.slow, 'var(--warning)');
 
     setText('delta-total', describeTrend(total, 'hosts'));
     setText('delta-down', describeTrend(data.down, 'down'));
-    setText('delta-reboot', describeTrend(data.slow, 'slow'));
 }
 
 function setText(id, text) {
@@ -1912,7 +1920,7 @@ async function loadTrend() {
         renderTrend(data);
     } catch (error) {
         // A missing sparkline must not take the figures down with it.
-        ['spark-total', 'spark-down', 'spark-reboot'].forEach(id => drawSparkline(id, [], ''));
+        ['spark-total', 'spark-down'].forEach(id => drawSparkline(id, [], ''));
     }
 }
 
@@ -2648,14 +2656,11 @@ function sparkline(values, limit, accent) {
 function renderCapacity(data) {
     const grid = document.getElementById('capacity-grid');
     const hint = document.getElementById('capacity-hint');
-    const count = document.getElementById('capacity-count');
     if (!grid) return;
 
     const all = (data.servers || []).filter(serverMatchesSelection);
     const rising = all.filter(entry => !entry.is_stale && (entry.slope_per_day || 0) > 0.01);
     const shown = capacityRisingOnly && rising.length ? rising : all;
-
-    if (count) count.textContent = `${shown.length}/${all.length} shown`;
 
     if (!shown.length) {
         grid.innerHTML = '<div class="health-empty">No resource history for these servers yet.</div>';

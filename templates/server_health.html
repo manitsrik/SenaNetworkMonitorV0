@@ -748,11 +748,7 @@
 
     /* A card at zero is not the one to look at: mute it so the eye lands on
        the counts that still need someone. */
-    .health-meta-chip.is-clickable {
-        font-family: inherit;
-        font-size: 0.68rem;
-        line-height: inherit;
-        cursor: pointer;
+    .health-meta-chip.is-stale-count {
         border-color: rgba(245, 158, 11, 0.45);
         background: rgba(245, 158, 11, 0.12);
         color: var(--warning);
@@ -1662,9 +1658,9 @@
                     <i class="fa-solid fa-arrow-down"></i> <span id="sum-net-in">-</span>
                     <i class="fa-solid fa-arrow-up"></i> <span id="sum-net-out">-</span>
                 </span>
-                <button type="button" id="sum-stale-chip" class="health-meta-chip is-clickable" data-health-focus="stale" hidden>
+                <span id="sum-stale-chip" class="health-meta-chip is-stale-count" hidden>
                     <i class="fa-solid fa-hourglass-half"></i> <span id="sum-stale">0</span> stale
-                </button>
+                </span>
             </div>
         </div>
 
@@ -2319,10 +2315,6 @@ function focusMatcher(key) {
 function updateFocusUi(shown, total) {
     const chip = document.getElementById('health-focus-chip');
     const label = document.getElementById('health-focus-label');
-
-    document.querySelectorAll('[data-health-focus]').forEach(node => {
-        node.classList.toggle('is-active', node.getAttribute('data-health-focus') === healthFocus);
-    });
 
     if (!chip || !label) return;
     if (healthFocus === 'all') {
@@ -3269,12 +3261,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-sort-key]').forEach(button => {
         button.addEventListener('click', () => {
             setServerSort(button.getAttribute('data-sort-key'));
-        });
-    });
-
-    document.querySelectorAll('[data-health-focus]').forEach(node => {
-        node.addEventListener('click', () => {
-            setHealthFocus(node.getAttribute('data-health-focus'));
         });
     });
 

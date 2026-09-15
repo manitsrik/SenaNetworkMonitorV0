@@ -211,6 +211,15 @@ def main():
         db.update_device(f['id'], slow_threshold_ms=f['suggested'])
         print(f"  {f['name'][:28]:28s} {str(f['current'] or 'default'):>8s} -> {f['suggested']}")
 
+    # status_history stores the verdict, not the raw timing, so everything
+    # recorded before now keeps the old labels. The Server Health timeline
+    # marks this moment rather than letting that look like a failed fix.
+    try:
+        db.save_alert_setting('slow_thresholds_calibrated_at',
+                              datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    except Exception as exc:
+        print(f'  (could not record the calibration time: {exc})')
+
     print(f'\nWrote {len(changes)} thresholds. They take effect on the next monitoring cycle.')
     return 0
 

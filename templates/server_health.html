@@ -96,14 +96,6 @@
         gap: 0.75rem;
     }
 
-    .health-eyebrow {
-        color: var(--text-muted);
-        font-size: 0.72rem;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-
     .health-title {
         margin: 0.08rem 0 0;
         color: var(--text-primary);
@@ -351,8 +343,19 @@
 
     .health-panels {
         display: grid;
-        grid-template-columns: repeat(6, minmax(190px, 1fr));
+        grid-template-columns: 1fr;
         gap: 0.45rem;
+    }
+
+    .health-panel.is-wide {
+        max-height: none;
+    }
+
+    .health-list.is-columns {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 0 0.9rem;
+        overflow: visible;
     }
 
     .health-chart-card {
@@ -445,6 +448,12 @@
         color: var(--text-muted);
         font-size: 0.66rem;
         font-weight: 700;
+    }
+
+    .health-panel-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
     }
 
     .health-list {
@@ -765,7 +774,7 @@
     }
 
     .health-table-wrap {
-        max-height: calc(100vh - 430px);
+        max-height: calc(100vh - 380px);
         min-height: 264px;
     }
 
@@ -1165,16 +1174,6 @@
         background: var(--col-color, var(--success));
     }
 
-    /* Where this host's own slow threshold sits on the same scale. */
-    .collection-limit {
-        position: absolute;
-        top: -2px;
-        bottom: -2px;
-        width: 2px;
-        background: var(--danger);
-        opacity: 0.75;
-    }
-
     .collection-value {
         color: var(--text-primary);
         font-size: 0.66rem;
@@ -1184,6 +1183,28 @@
     }
 
     .collection-value.is-over { color: var(--danger); }
+
+    /* Services has nothing to say until some device configures a check. */
+    .server-health-table.hide-services .col-services {
+        display: none;
+    }
+
+    /* Metrics are dimmed on a stale row; uptime and boot time are just as old. */
+    .uptime-cell.is-stale {
+        opacity: 0.45;
+    }
+
+    /* Where the slow threshold was last recalibrated. Everything to the left of
+       this line was judged by the previous limits and cannot be re-judged. */
+    .timeline-band .is-calibration {
+        box-shadow: inset 2px 0 0 0 var(--info);
+    }
+
+    .collection-headroom {
+        color: var(--text-muted);
+        font-size: 0.58rem;
+        font-weight: 700;
+    }
 
     .custom-chip {
         display: inline-block;
@@ -1285,10 +1306,6 @@
             min-height: auto;
         }
 
-        .health-panels {
-            grid-template-columns: repeat(2, minmax(280px, 1fr));
-        }
-
         .health-filter-header {
             width: min(760px, 46vw);
             min-width: 420px;
@@ -1365,7 +1382,6 @@
         <div class="health-hero">
             <div class="health-hero-top">
                 <div>
-                    <div class="health-eyebrow">Infrastructure health</div>
                     <h2 class="health-title">Server Health Overview</h2>
                 </div>
                 <div class="health-live-pill" title="Refreshes every 30 seconds">
@@ -1489,52 +1505,19 @@
     </section>
 
     <section class="health-panels">
-        <div class="health-panel">
+        <div class="health-panel is-wide">
             <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-microchip"></i> Top CPU</h3>
-                <span id="top-cpu-count" class="health-panel-count">0 items</span>
+                <h3 class="health-panel-title">
+                    <i class="fa-solid fa-hard-drive"></i> Top Disk / Partition
+                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                       title="Usage per mounted partition. The table's Disk column carries one figure per server, so a full D: behind a mostly empty C: only shows up here."></i>
+                </h3>
+                <span class="health-panel-meta">
+                    <span id="top-disk-hidden" class="stale-chip" hidden></span>
+                    <span id="top-disk-count" class="health-panel-count">0 items</span>
+                </span>
             </div>
-            <div id="top-cpu" class="health-list"><div class="health-loading">Loading...</div></div>
-        </div>
-
-        <div class="health-panel">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-memory"></i> Top RAM</h3>
-                <span id="top-ram-count" class="health-panel-count">0 items</span>
-            </div>
-            <div id="top-ram" class="health-list"><div class="health-loading">Loading...</div></div>
-        </div>
-
-        <div class="health-panel">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-hard-drive"></i> Top Disk / Partition</h3>
-                <span id="top-disk-count" class="health-panel-count">0 items</span>
-            </div>
-            <div id="top-disk" class="health-list"><div class="health-loading">Loading...</div></div>
-        </div>
-
-        <div class="health-panel">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-network-wired"></i> Top Network</h3>
-                <span id="top-network-count" class="health-panel-count">0 items</span>
-            </div>
-            <div id="top-network" class="health-list"><div class="health-loading">Loading...</div></div>
-        </div>
-
-        <div class="health-panel">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-wave-square"></i> Slowest Collection</h3>
-                <span id="top-response-count" class="health-panel-count">0 items</span>
-            </div>
-            <div id="top-response" class="health-list"><div class="health-loading">Loading...</div></div>
-        </div>
-
-        <div class="health-panel">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title"><i class="fa-solid fa-server"></i> Server Down</h3>
-                <span id="server-down-count" class="health-panel-count">0 items</span>
-            </div>
-            <div id="server-down" class="health-list"><div class="health-loading">Loading...</div></div>
+            <div id="top-disk" class="health-list is-columns"><div class="health-loading">Loading...</div></div>
         </div>
     </section>
 
@@ -1561,14 +1544,13 @@
                         <th><button type="button" class="server-sort-button" data-sort-key="ram">RAM <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="disk">Disk <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="response" title="Full agent collection round-trip, not ICMP ping">Collection <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
-                        <th><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                                                <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody id="server-table-body">
-                    <tr><td colspan="10" class="health-loading">Loading...</td></tr>
+                    <tr><td colspan="9" class="health-loading">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1747,6 +1729,18 @@ function normalizeServerId(id) {
 function serverFilterLink(id, name) {
     const normalized = normalizeServerId(id);
     return `<a href="#" data-server-filter="${esc(normalized)}" title="Filter this server">${esc(name || 'Unknown')}</a>`;
+}
+
+// Readings from a host that stopped reporting are not "top consumers", so
+// they are left out of the ranking rather than ranked against live numbers.
+function setHiddenStaleNote(hidden) {
+    const note = document.getElementById('top-disk-hidden');
+    if (!note) return;
+    const count = Number(hidden.disk || 0);
+    note.hidden = count === 0;
+    note.textContent = count
+        ? `${count} partition${count === 1 ? '' : 's'} hidden: their server is down or stale`
+        : '';
 }
 
 function setCount(id, count, noun = 'items') {
@@ -2110,6 +2104,10 @@ function renderResponseCell(server) {
 function renderServers(servers, totalServers = servers.length) {
     const body = document.getElementById('server-table-body');
     const countLabel = document.getElementById('server-count-label');
+    const table = body?.closest('.server-health-table');
+    if (table) {
+        table.classList.toggle('hide-services', !servers.some(server => server.services_configured));
+    }
     if (countLabel) {
         countLabel.textContent = servers.length === totalServers
             ? `${servers.length} servers`
@@ -2121,7 +2119,7 @@ function renderServers(servers, totalServers = servers.length) {
         const message = healthFocus === 'all'
             ? 'No SSH/WinRM/WMI servers yet.'
             : `No server matches "${FOCUS_DEFS[healthFocus].label}".`;
-        body.innerHTML = `<tr><td colspan="10" class="health-empty">${esc(message)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="9" class="health-empty">${esc(message)}</td></tr>`;
         return;
     }
 
@@ -2167,9 +2165,8 @@ function renderServers(servers, totalServers = servers.length) {
                 <td>${renderMetricCell(server.ram, '', stale)}</td>
                 <td>${renderMetricCell(server.disk, '', stale)}</td>
                 <td>${renderTrafficCell(server)}</td>
-                <td>${renderResponseCell(server)}</td>
-                <td class="uptime-cell">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
-                <td class="service-cell">${serviceText}</td>
+                <td class="uptime-cell${stale ? ' is-stale' : ''}">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
+                <td class="service-cell col-services">${serviceText}</td>
                 <td class="server-action-cell">
                     <a class="server-dashboard-link" href="/server-dashboard/${encodeURIComponent(server.id)}" title="Open server dashboard">
                         <i class="fa-solid fa-chart-line"></i>
@@ -2266,29 +2263,17 @@ function setLastUpdated() {
 }
 
 function renderError(message) {
-    ['top-cpu', 'top-ram', 'top-disk', 'top-network', 'top-response', 'server-down'].forEach(id => {
-        const target = document.getElementById(id);
-        if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
-    });
-    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
-}
-
-function downServers(servers) {
-    return servers
-        .filter(server => String(server.status || '').toLowerCase() === 'down')
-        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    const target = document.getElementById('top-disk');
+    if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
+    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="9" class="health-error">${esc(message)}</td></tr>`;
 }
 
 function renderServerHealthData(data) {
     const filtered = buildFilteredData(data);
     const summary = filtered.summary || {};
     setSummary(summary);
-    renderList('top-cpu', filtered.top_cpu || [], 'cpu');
-    renderList('top-ram', filtered.top_ram || [], 'ram');
-    renderList('top-disk', filtered.top_disk || [], 'disk');
-    renderList('top-network', filtered.top_network || [], 'network');
-    renderList('top-response', filtered.top_response || [], 'response');
-    renderList('server-down', downServers(filtered.servers || []), 'down', 'All servers responding');
+    setHiddenStaleNote(data.hidden_stale || {});
+    renderList('top-disk', filtered.top_disk || [], 'disk', 'No partition data from any live server.');
 
     const allServers = filtered.servers || [];
     const focused = allServers.filter(focusMatcher(healthFocus));
@@ -2447,11 +2432,21 @@ function renderTimeline(data) {
     }
 
     const labels = data.labels || [];
+
+    // Everything left of this point was judged by the previous thresholds.
+    // status_history stores the verdict, not the timing, so it cannot be
+    // re-judged; without the marker a fixed fleet still looks broken.
+    let calibrationIndex = -1;
+    if (data.calibrated_at) {
+        calibrationIndex = labels.findIndex(label => label && label >= data.calibrated_at);
+    }
+
     body.innerHTML = servers.map(server => {
         const band = (server.band || []).map((state, index) => {
             const when = labels[index] || '';
             const label = state === 'none' ? 'no check recorded' : state;
-            return `<span class="is-${esc(state)}" title="${esc(when)} ${esc(label)}"></span>`;
+            const marker = index === calibrationIndex ? ' is-calibration' : '';
+            return `<span class="is-${esc(state)}${marker}" title="${esc(when)} ${esc(label)}"></span>`;
         }).join('');
 
         const up = server.up_pct;
@@ -2482,6 +2477,9 @@ function renderTimeline(data) {
         const hoursPerBucket = data.hours / (bucketCount || 1);
         const missing = blind * hoursPerBucket;
         notes.push(`No check was recorded for any server across ${missing < 1 ? `${Math.round(missing * 60)} minutes` : `${missing.toFixed(1)} hours`} of this window: monitoring was not running.`);
+    }
+    if (calibrationIndex > 0) {
+        notes.push(`The blue line marks ${data.calibrated_at}, when the slow thresholds were recalibrated. Checks to its left keep the verdict they were given at the time and cannot be re-judged.`);
     }
     notes.push('Percentages are the share of checks that came back up.');
     if (hint) hint.textContent = notes.join(' ');
@@ -2536,7 +2534,8 @@ function renderCollectionHealth(data) {
             };
         })
         .filter(row => row.median !== null)
-        .sort((a, b) => b.median - a.median);
+        // Rank by how much of its own allowance each host is using.
+        .sort((a, b) => (b.median / (b.warn || 1)) - (a.median / (a.warn || 1)));
 
     if (count) count.textContent = `${rows.length} hosts`;
 
@@ -2546,28 +2545,31 @@ function renderCollectionHealth(data) {
         return;
     }
 
-    // One shared scale so the bars are comparable across hosts.
-    const ceiling = Math.max(...rows.map(row => Math.max(row.median, row.warn))) * 1.08 || 1;
-
+    // A shared millisecond scale let the slowest host flatten every other bar
+    // into a sliver. Each bar is now the share of that host's own allowance,
+    // which is both comparable and the thing worth knowing: who is close to
+    // tripping, not who takes the longest.
     body.innerHTML = rows.map(row => {
-        const over = row.median > row.warn;
-        const color = over ? 'var(--danger)' : (row.median > row.warn * 0.75 ? 'var(--warning)' : 'var(--success)');
+        const used = row.warn > 0 ? (row.median / row.warn) * 100 : 0;
+        const over = used > 100;
+        const color = over ? 'var(--danger)' : (used > 75 ? 'var(--warning)' : 'var(--success)');
         return `
             <div class="collection-row">
                 <a class="timeline-label" href="#" data-server-filter="${esc(normalizeServerId(row.id))}" title="${esc(row.name || '')} - slow after ${esc(formatThreshold(row.warn))}">${esc(row.name || 'Unknown')}${row.custom ? '<span class="custom-chip">custom</span>' : ''}</a>
-                <div class="collection-track" title="median ${esc(formatMs(row.median))}, peak ${esc(formatMs(row.peak))}, slow after ${esc(formatThreshold(row.warn))}">
-                    <div class="collection-fill" style="width:${Math.min(100, row.median / ceiling * 100).toFixed(1)}%; --col-color:${color};"></div>
-                    <div class="collection-limit" style="left:${Math.min(100, row.warn / ceiling * 100).toFixed(1)}%;"></div>
+                <div class="collection-track" title="median ${esc(formatMs(row.median))} of a ${esc(formatThreshold(row.warn))} allowance (${used.toFixed(0)}%), peak ${esc(formatMs(row.peak))}">
+                    <div class="collection-fill" style="width:${Math.min(100, used).toFixed(1)}%; --col-color:${color};"></div>
                 </div>
-                <span class="collection-value${over ? ' is-over' : ''}">${esc(formatMs(row.median))}</span>
+                <span class="collection-value${over ? ' is-over' : ''}">${used.toFixed(0)}%<span class="collection-headroom"> of ${esc(formatThreshold(row.warn))}</span></span>
             </div>
         `;
     }).join('');
 
     const over = rows.filter(row => row.median > row.warn);
-    const notes = ['Median collection time per host; the red mark is that host\'s own slow threshold.'];
+    const notes = ['Share of each host\'s own slow threshold used by a typical collection.'];
     if (over.length) {
-        notes.push(`${over.length} host${over.length === 1 ? '' : 's'} sit above their threshold on a typical poll, so they report SLOW almost every cycle. Raise the threshold on the device if that is simply how long its agent takes.`);
+        notes.push(over.length === 1
+            ? `1 host sits above its threshold on a typical poll, so it reports SLOW almost every cycle. Raise the threshold on that device if this is simply how long its agent takes.`
+            : `${over.length} hosts sit above their thresholds on a typical poll, so they report SLOW almost every cycle. Raise the threshold on those devices if this is simply how long their agents take.`);
     }
     if (hint) hint.textContent = notes.join(' ');
 }

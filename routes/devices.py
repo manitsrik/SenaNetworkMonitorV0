@@ -729,13 +729,23 @@ def get_server_health():
                 'metrics_age_seconds': server['metrics_age_seconds'],
             })
 
-    def _top(items, key, limit=10):
+    def _is_live(item):
+        return not item.get('is_stale') and str(item.get('status') or '').lower() != 'down'
+
+    hidden_stale = {}
+
+    def _top(items, key, limit=10, label=None):
+        candidates = [item for item in items if item.get(key) is not None]
+        live = [item for item in candidates if _is_live(item)]
+        if label is not None:
+            hidden_stale[label] = len(candidates) - len(live)
+
         def value(item):
             try:
                 return float(item.get(key))
             except Exception:
                 return -1
-        return sorted([item for item in items if item.get(key) is not None], key=value, reverse=True)[:limit]
+        return sorted(live, key=value, reverse=True)[:limit]
 
     return jsonify({
         'success': True,
@@ -753,11 +763,12 @@ def get_server_health():
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
         },
         'servers': servers,
-        'top_cpu': _top(servers, 'cpu'),
-        'top_ram': _top(servers, 'ram'),
-        'top_disk': _top(disk_rows, 'use_percent'),
-        'top_network': _top(servers, 'network_total_bps'),
-        'top_response': _top(servers, 'response_time'),
+        'top_cpu': _top(servers, 'cpu', label='cpu'),
+        'top_ram': _top(servers, 'ram', label='ram'),
+        'top_disk': _top(disk_rows, 'use_percent', label='disk'),
+        'top_network': _top(servers, 'network_total_bps', label='network'),
+        'top_response': _top(servers, 'response_time', label='response'),
+        'hidden_stale': hidden_stale,
         'service_down': service_down,
         'pending_reboot': pending_reboot,
         'thresholds': {
@@ -945,6 +956,11 @@ def get_server_health_status_timeline():
 
     timeline = db.get_status_timeline(list(devices), hours=hours, buckets=buckets)
 
+    try:
+        calibrated_at = db.get_alert_setting('slow_thresholds_calibrated_at')
+    except Exception:
+        calibrated_at = None
+
     rank = {'down': 0, 'slow': 1, 'unknown': 2, 'up': 3}
     servers = []
     for device_id, device in devices.items():
@@ -975,6 +991,7 @@ def get_server_health_status_timeline():
         'hours': hours,
         'buckets': buckets,
         'labels': timeline.get('__labels__', []),
+        'calibrated_at': calibrated_at,
         'servers': servers,
     })
 

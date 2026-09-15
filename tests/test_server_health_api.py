@@ -85,15 +85,38 @@ def test_server_without_metrics_reports_unknown_age():
     assert payload['servers'][0]['is_stale'] is False
 
 
+def test_top_lists_exclude_hosts_that_stopped_reporting():
+    """A reading from days ago is not a current top consumer."""
+    stale_at = (datetime.now() - timedelta(seconds=SERVER_HEALTH_STALE_AFTER_SECONDS + 60))
+    live = ssh_device(id=1, name='live', cpu_usage=10, ram_usage=10)
+    dead = ssh_device(
+        id=2, name='dead', status='down', cpu_usage=99, ram_usage=99,
+        last_metrics_time=stale_at.strftime('%Y-%m-%d %H:%M:%S'),
+        disk_details_json='[{"mount":"/","use_percent":99.0}]',
+    )
+
+    payload = make_client([live, dead]).get('/api/server-health').get_json()
+
+    # 'dead' has the highest numbers and would otherwise top every list.
+    assert [row['name'] for row in payload['top_cpu']] == ['live']
+    assert [row['name'] for row in payload['top_ram']] == ['live']
+    assert [row['device_name'] for row in payload['top_disk']] == ['live']
+    # The count is reported so the panel can say something was left out.
+    assert payload['hidden_stale']['cpu'] == 1
+    assert payload['hidden_stale']['disk'] == 1
+    # The server itself is still listed in full; only the ranking drops it.
+    assert {s['name'] for s in payload['servers']} == {'live', 'dead'}
+
+
 def test_disk_rows_carry_owning_server_freshness():
+    """The freshness fields are what let _top decide which rows are live."""
     stale_at = (datetime.now() - timedelta(seconds=SERVER_HEALTH_STALE_AFTER_SECONDS + 60))
     device = ssh_device(status='down', last_metrics_time=stale_at.strftime('%Y-%m-%d %H:%M:%S'))
 
     payload = make_client([device]).get('/api/server-health').get_json()
-    disk = payload['top_disk'][0]
 
-    assert disk['status'] == 'down'
-    assert disk['is_stale'] is True
+    assert payload['top_disk'] == []
+    assert payload['hidden_stale']['disk'] == 1
 
 
 # ---------------------------------------------------------- services ----

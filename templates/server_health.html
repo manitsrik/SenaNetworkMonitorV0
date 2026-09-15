@@ -50,6 +50,15 @@
         --health-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
     }
 
+    /* Several chips below are laid out with display:inline-flex and toggled via
+       el.hidden. An author rule outranks the UA stylesheet's [hidden] rule
+       whatever its specificity, so that display value kept them on screen with
+       nothing in them. Put the intent back explicitly. */
+    .server-health-page [hidden],
+    .server-health-header-actions [hidden] {
+        display: none !important;
+    }
+
     .server-health-page .card {
         box-shadow: none;
         transform: none;

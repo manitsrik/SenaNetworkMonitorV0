@@ -1337,6 +1337,13 @@
         margin-bottom: 0.45rem;
     }
 
+    /* A card shows every row it was given. The shared panel cap belongs to the
+       side lists it was written for, not here. */
+    .topcards .health-panel {
+        max-height: none;
+        overflow: visible;
+    }
+
     .topcard-list {
         display: grid;
         gap: 1px;
@@ -1400,6 +1407,16 @@
         font-weight: 800;
         white-space: nowrap;
         text-align: right;
+    }
+
+    /* CPU and latency are ranked on a window, so the figure beside them is not
+       the reading in the table. Saying which it is costs one small word. */
+    .topcard-stat {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.56rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
     }
 
     .topcard-spark {
@@ -3065,6 +3082,12 @@ function topValueText(row, unit) {
     return String(row.rank_value);
 }
 
+// Memory, disk and network are ranked on the current reading, so their figure
+// matches the table. CPU and latency are ranked on a window because the latest
+// sample swings too far to order a list by, and that has to be said next to the
+// number or it reads as a contradiction.
+const TOPCARD_STAT = { cpu: 'median 24h', internet: 'avg 24h' };
+
 function topTone(card, row, index) {
     if (card.key === 'internet') {
         const slow = Number(latestServerHealthData?.thresholds?.internet_slow_latency_ms) || 800;
@@ -3103,6 +3126,9 @@ function topDetail(card, row, colour) {
     const limitY = limit === null ? null : y(limit);
     const facts = [];
     facts.push(`now <b>${esc(topValueText({ rank_value: row.current ?? row.rank_value }, card.unit))}</b>`);
+    if (TOPCARD_STAT[card.key]) {
+        facts.push(`${esc(TOPCARD_STAT[card.key])} <b>${esc(topValueText(row, card.unit))}</b>`);
+    }
     facts.push(`peak <b>${esc(topValueText({ rank_value: Math.max(...points) }, card.unit))}</b>`);
     facts.push(`low <b>${esc(topValueText({ rank_value: Math.min(...points) }, card.unit))}</b>`);
 
@@ -3162,7 +3188,11 @@ function renderTopCards(data) {
                         <a class="topcard-name" href="#" data-server-filter="${esc(normalizeServerId(row.id))}">${esc(row.name || 'Unknown')}</a>
                         <span class="topcard-ip">${esc(row.label ? `Partition ${row.label}` : (row.ip_address || ''))}</span>
                     </div>
-                    <span class="topcard-value" style="color:${colour}">${esc(figure)}</span>
+                    <span class="topcard-value" style="color:${colour}">${esc(figure)}${
+                        mode === 'soonest' || !TOPCARD_STAT[card.key]
+                            ? ''
+                            : `<span class="topcard-stat">${esc(TOPCARD_STAT[card.key])}</span>`
+                    }</span>
                     ${topSpark(row.series, colour)}
                 </div>
                 ${open ? topDetail(card, row, colour) : ''}

@@ -6,7 +6,8 @@ import csv
 import io
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+from config import Config
 from .auth import login_required, operator_required
 from .audit import log_audit
 
@@ -267,6 +268,7 @@ def update_device(device_id):
         wmi_password=data.get('wmi_password', '__NOT_SET__'),
         expected_ports=data.get('expected_ports', '__NOT_SET__'),
         monitored_services=data.get('monitored_services', '__NOT_SET__'),
+        slow_threshold_ms=data.get('slow_threshold_ms', '__NOT_SET__'),
         cpu_threshold=data.get('cpu_threshold', '__NOT_SET__'),
         ram_threshold=data.get('ram_threshold', '__NOT_SET__'),
         disk_threshold=data.get('disk_threshold', '__NOT_SET__'),
@@ -364,22 +366,26 @@ def get_snmp_interfaces(device_id):
 def get_device_performance(device_id):
     """Get performance metrics history for a device"""
     hours = request.args.get('hours', 24, type=int)
+    minutes = request.args.get('minutes', default=None, type=int)
+    if minutes is not None:
+        minutes = max(5, min(minutes, 7 * 24 * 60))
     db = _get_db()
     device = db.get_device(device_id)
     if not device:
         return jsonify({'error': 'Device not found'}), 404
     
-    cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours)
-    ram_history = db.get_system_metrics_history(device_id, 'ram', hours)
-    disk_history = db.get_system_metrics_history(device_id, 'disk', hours)
-    swap_history = db.get_system_metrics_history(device_id, 'swap', hours)
-    inode_history = db.get_system_metrics_history(device_id, 'inode', hours)
-    load1_history = db.get_system_metrics_history(device_id, 'load1', hours)
-    load5_history = db.get_system_metrics_history(device_id, 'load5', hours)
-    load15_history = db.get_system_metrics_history(device_id, 'load15', hours)
-    network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours)
-    network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours)
-    disk_partition_history = db.get_disk_partition_history(device_id, hours)
+    cpu_history = db.get_system_metrics_history(device_id, 'cpu', hours, minutes=minutes)
+    ram_history = db.get_system_metrics_history(device_id, 'ram', hours, minutes=minutes)
+    disk_history = db.get_system_metrics_history(device_id, 'disk', hours, minutes=minutes)
+    swap_history = db.get_system_metrics_history(device_id, 'swap', hours, minutes=minutes)
+    inode_history = db.get_system_metrics_history(device_id, 'inode', hours, minutes=minutes)
+    load1_history = db.get_system_metrics_history(device_id, 'load1', hours, minutes=minutes)
+    load5_history = db.get_system_metrics_history(device_id, 'load5', hours, minutes=minutes)
+    load15_history = db.get_system_metrics_history(device_id, 'load15', hours, minutes=minutes)
+    network_in_history = db.get_system_metrics_history(device_id, 'network_in', hours, minutes=minutes)
+    network_out_history = db.get_system_metrics_history(device_id, 'network_out', hours, minutes=minutes)
+    disk_partition_history = db.get_disk_partition_history(device_id, hours, minutes=minutes)
+    internet_history = db.get_internet_check_history(device_id, hours, minutes=minutes)
 
     def _json_field(name, fallback):
         try:
@@ -406,6 +412,7 @@ def get_device_performance(device_id):
         'network_in': network_in_history,
         'network_out': network_out_history,
         'disk_partitions': disk_partition_history,
+        'internet': internet_history,
         'current': {
             'status': device.get('status'),
             'response_time': device.get('response_time'),
@@ -428,6 +435,13 @@ def get_device_performance(device_id):
             'disk_details': _json_field('disk_details_json', []),
             'service_status': _json_field('service_status_json', []),
             'service_summary': _json_field('service_summary_json', {}),
+            'internet_status': device.get('internet_status'),
+            'internet_latency_ms': device.get('internet_latency_ms'),
+            'internet_dns_ok': device.get('internet_dns_ok'),
+            'internet_http_status': device.get('internet_http_status'),
+            'internet_target': device.get('internet_target'),
+            'internet_error': device.get('internet_error'),
+            'internet_checked_at': _iso(device.get('internet_checked_at')),
         },
         'thresholds': {
             'cpu': device.get('cpu_threshold', 85),
@@ -452,6 +466,7 @@ def get_device_events(device_id):
 
     status_history = db.get_device_history(device_id, limit=limit, minutes=minutes)
     alert_history = db.get_device_alert_history(device_id, limit=limit)
+    internet_history = db.get_internet_check_history(device_id, minutes=minutes)
 
     def _iso(value):
         if isinstance(value, datetime):
@@ -462,6 +477,8 @@ def get_device_events(device_id):
         row['checked_at'] = _iso(row.get('checked_at'))
     for row in alert_history:
         row['created_at'] = _iso(row.get('created_at'))
+    for row in internet_history:
+        row['checked_at'] = _iso(row.get('checked_at'))
 
     events = []
     for row in status_history:
@@ -483,6 +500,28 @@ def get_device_events(device_id):
             'title': row.get('event_type') or 'alert',
             'message': row.get('message') or row.get('error_message') or '',
         })
+    for row in internet_history:
+        status = str(row.get('status') or 'unknown')
+        details = []
+        if row.get('dns_ok') is not None:
+            details.append('DNS OK' if row.get('dns_ok') else 'DNS failed')
+        if row.get('http_status') is not None:
+            details.append(f"HTTP {row.get('http_status')}")
+        if row.get('latency_ms') is not None:
+            details.append(f"{round(float(row.get('latency_ms')), 1)} ms")
+        if row.get('error'):
+            details.append(str(row.get('error')))
+        events.append({
+            'kind': 'internet',
+            'time': row.get('checked_at'),
+            'status': status,
+            'latency_ms': row.get('latency_ms'),
+            'dns_ok': row.get('dns_ok'),
+            'http_status': row.get('http_status'),
+            'target': row.get('target'),
+            'title': f"Internet {status}",
+            'message': ' · '.join(details) or 'No Internet check details',
+        })
 
     events.sort(key=lambda item: item.get('time') or '', reverse=True)
     events = events[:limit]
@@ -494,6 +533,7 @@ def get_device_events(device_id):
         'minutes': minutes,
         'status_history': status_history,
         'alert_history': alert_history,
+        'internet_history': internet_history,
         'events': events,
     })
 
@@ -515,6 +555,88 @@ def get_device_down_intervals(device_id):
         'intervals': db.get_device_down_intervals(device_id, minutes=minutes),
         'points': db.get_device_down_points(device_id, minutes=minutes),
     })
+
+
+# A metrics row is treated as stale once it is several polling cycles old.
+# A healthy fleet was measured at 52-221s between metric writes: agent checks are
+# slow and queue behind each other, so the ceiling sits well above the nominal
+# PING_INTERVAL to keep a merely slow cycle from being reported as stale data.
+SERVER_HEALTH_STALE_AFTER_SECONDS = max(600, int(getattr(Config, 'PING_INTERVAL', 60)) * 10)
+
+# The agent checks report the full collection round-trip, not an ICMP latency,
+# so the "critical" line sits well above the slow threshold the monitor uses.
+SERVER_HEALTH_CRITICAL_MULTIPLIER = 3
+
+
+def _parse_timestamp(raw):
+    """Parse a timestamp coming from either the SQLite or PostgreSQL driver."""
+    if raw is None or raw == '':
+        return None
+    if isinstance(raw, datetime):
+        return raw
+    text = str(raw).strip().replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    for fmt in ('%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S'):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _age_seconds(raw):
+    """Age of a stored timestamp in seconds, or None when it cannot be read.
+
+    Naive timestamps are written by two different paths: `last_check` uses local
+    time while `last_metrics_time` uses the database CURRENT_TIMESTAMP, which is
+    UTC on SQLite. Comparing against both clocks and keeping the smallest
+    non-negative answer gives the right age either way.
+    """
+    parsed = _parse_timestamp(raw)
+    if parsed is None:
+        return None
+    if parsed.tzinfo is not None:
+        return max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+    candidates = [
+        (datetime.now() - parsed).total_seconds(),
+        (datetime.utcnow() - parsed).total_seconds(),
+    ]
+    non_negative = [value for value in candidates if value >= -60]
+    age = min(non_negative) if non_negative else max(candidates)
+    return max(0.0, age)
+
+
+def _is_live(item):
+    """A reading from a host that stopped reporting is history, not a state."""
+    return not item.get('is_stale') and str(item.get('status') or '').lower() != 'down'
+
+
+def _threshold_for(device, column, default):
+    try:
+        value = float(device.get(column))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _slow_threshold_ms(device):
+    """Slow threshold the monitor itself applies to this device.
+
+    Mirrors Monitor._slow_threshold: a per-device override wins, otherwise the
+    shared default for the collection method.
+    """
+    try:
+        override = float(device.get('slow_threshold_ms'))
+        if override > 0:
+            return override
+    except (TypeError, ValueError):
+        pass
+    return Config.MONITOR_THRESHOLDS.get(
+        device.get('monitor_type'), Config.DEFAULT_SLOW_THRESHOLD
+    )
 
 
 @devices_bp.route('/api/server-health', methods=['GET'])
@@ -548,6 +670,12 @@ def get_server_health():
         service_status = _json_field(device, 'service_status_json', [])
         service_summary = _json_field(device, 'service_summary_json', {})
         disk_details = _json_field(device, 'disk_details_json', [])
+        monitor_type = device.get('monitor_type')
+        metrics_age = _age_seconds(device.get('last_metrics_time'))
+        if metrics_age is None:
+            metrics_age = _age_seconds(device.get('last_check'))
+        services_configured = bool(str(device.get('monitored_services') or '').strip())
+        slow_threshold = _slow_threshold_ms(device)
         server = {
             'id': device.get('id'),
             'name': device.get('name'),
@@ -569,9 +697,27 @@ def get_server_health():
             'pending_reboot': bool(device.get('pending_reboot')),
             'uptime_text': device.get('server_uptime_text'),
             'last_boot_time': device.get('last_boot_time'),
+            'internet_status': device.get('internet_status'),
+            'internet_latency_ms': device.get('internet_latency_ms'),
+            'internet_dns_ok': device.get('internet_dns_ok'),
+            'internet_http_status': device.get('internet_http_status'),
+            'internet_target': device.get('internet_target'),
+            'internet_error': device.get('internet_error'),
+            'internet_checked_at': device.get('internet_checked_at'),
             'service_status': service_status,
             'service_summary': service_summary,
             'disk_details': disk_details,
+            'services_configured': services_configured,
+            'last_check': device.get('last_check'),
+            'last_metrics_time': device.get('last_metrics_time'),
+            'metrics_age_seconds': round(metrics_age, 1) if metrics_age is not None else None,
+            'is_stale': bool(metrics_age is not None and metrics_age > SERVER_HEALTH_STALE_AFTER_SECONDS),
+            'slow_threshold_ms': slow_threshold,
+            'critical_threshold_ms': slow_threshold * SERVER_HEALTH_CRITICAL_MULTIPLIER,
+            'slow_threshold_is_custom': bool(device.get('slow_threshold_ms')),
+            'cpu_threshold': device.get('cpu_threshold'),
+            'ram_threshold': device.get('ram_threshold'),
+            'disk_threshold': device.get('disk_threshold'),
         }
         servers.append(server)
         if server['pending_reboot']:
@@ -591,15 +737,25 @@ def get_server_health():
                 'mount': disk.get('mount') or disk.get('name'),
                 'use_percent': disk.get('use_percent'),
                 'size_kb': disk.get('size_kb'),
+                'status': server['status'],
+                'is_stale': server['is_stale'],
+                'metrics_age_seconds': server['metrics_age_seconds'],
             })
 
-    def _top(items, key, limit=10):
+    hidden_stale = {}
+
+    def _top(items, key, limit=10, label=None):
+        candidates = [item for item in items if item.get(key) is not None]
+        live = [item for item in candidates if _is_live(item)]
+        if label is not None:
+            hidden_stale[label] = len(candidates) - len(live)
+
         def value(item):
             try:
                 return float(item.get(key))
             except Exception:
                 return -1
-        return sorted([item for item in items if item.get(key) is not None], key=value, reverse=True)[:limit]
+        return sorted(live, key=value, reverse=True)[:limit]
 
     return jsonify({
         'success': True,
@@ -610,18 +766,36 @@ def get_server_health():
             'down': sum(1 for s in servers if s.get('status') == 'down'),
             'pending_reboot': len(pending_reboot),
             'service_down': len(service_down),
+            'service_monitored_servers': sum(1 for s in servers if s.get('services_configured')),
+            'stale': sum(1 for s in servers if s.get('is_stale')),
+            'internet_online': sum(1 for s in servers
+                                   if str(s.get('internet_status') or '').lower() == 'online'),
+            'internet_problem': sum(1 for s in servers
+                                    if s.get('internet_status')
+                                    and str(s.get('internet_status')).lower() != 'online'),
+            'internet_unchecked': sum(1 for s in servers if not s.get('internet_status')),
             'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
             'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
         },
         'servers': servers,
-        'top_cpu': _top(servers, 'cpu'),
-        'top_ram': _top(servers, 'ram'),
-        'top_disk': _top(disk_rows, 'use_percent'),
-        'top_network': _top(servers, 'network_total_bps'),
-        'top_response': _top(servers, 'response_time'),
+        'top_cpu': _top(servers, 'cpu', label='cpu'),
+        'top_ram': _top(servers, 'ram', label='ram'),
+        'top_disk': _top(disk_rows, 'use_percent', label='disk'),
+        'top_network': _top(servers, 'network_total_bps', label='network'),
+        'top_response': _top(servers, 'response_time', label='response'),
+        'hidden_stale': hidden_stale,
         'service_down': service_down,
         'pending_reboot': pending_reboot,
+        'thresholds': {
+            'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
+            'internet_slow_latency_ms': Config.INTERNET_SLOW_LATENCY_MS,
+            'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
+            'slow_ms': {
+                key: Config.MONITOR_THRESHOLDS.get(key, Config.DEFAULT_SLOW_THRESHOLD)
+                for key in ('ssh', 'winrm', 'wmi')
+            },
+        },
     })
 
 
@@ -632,8 +806,12 @@ def get_server_health_response_time():
     sample_count = request.args.get('sample', 60, type=int)
     minutes = max(5, min(7 * 24 * 60, minutes or 360))
     sample_count = max(12, min(240, sample_count or 60))
-    result = _get_db().get_server_response_time_series(minutes=minutes, sample_count=sample_count)
+    db = _get_db()
+    result = db.get_server_response_time_series(minutes=minutes, sample_count=sample_count)
     series = result.get('series', [])
+    medians = db.get_response_time_medians(minutes=minutes)
+    for entry in series:
+        entry['median_response_time'] = medians.get(entry.get('device_id'))
     values = [
         value
         for device_series in series
@@ -652,6 +830,421 @@ def get_server_health_response_time():
             'max_response_time': round(max(values), 2) if values else None,
             'server_count': len(series),
         }
+    })
+
+
+SERVER_MONITOR_TYPES = ('ssh', 'winrm', 'wmi')
+
+# Metrics worth projecting forward: they fill up and stay full. CPU is not one
+# of them -- it oscillates rather than accumulating, so a trend line through it
+# is noise. Fitting one over 7 days and over 30 days picked different servers
+# and disagreed on the rate by more than a factor of two, which is what a
+# meaningless fit looks like.
+CAPACITY_METRICS = {
+    'ram': {'label': 'RAM', 'threshold_column': 'ram_threshold', 'default_limit': 90},
+    'disk': {'label': 'Disk', 'threshold_column': 'disk_threshold', 'default_limit': 90},
+}
+
+
+def _linear_slope_per_day(points):
+    """Least-squares slope in percentage points per day.
+
+    `points` is a list of (age_in_days_before_now, value). Ordinary least
+    squares over the whole window, rather than differencing two averages, so a
+    single spike cannot masquerade as a trend.
+    """
+    n = len(points)
+    if n < 3:
+        return None
+    mean_x = sum(x for x, _ in points) / n
+    mean_y = sum(y for _, y in points) / n
+    denom = sum((x - mean_x) ** 2 for x, _ in points)
+    if denom <= 0:
+        return None
+    numer = sum((x - mean_x) * (y - mean_y) for x, y in points)
+    # x counts days *into the past*, so invert to get change per day forward.
+    return -(numer / denom)
+
+
+@devices_bp.route('/api/server-health/capacity', methods=['GET'])
+def get_server_health_capacity():
+    """Resource trend per server, with a projection to its own alert threshold.
+
+    The table shows what a server uses right now; this answers the question it
+    cannot: which ones are on course to run out, and roughly when.
+    """
+    metric = (request.args.get('metric') or 'ram').lower()
+    if metric not in CAPACITY_METRICS:
+        return jsonify({'success': False, 'error': f'Unknown metric: {metric}'}), 400
+
+    days = max(2, min(request.args.get('days', 30, type=int) or 30, 90))
+    buckets = max(8, min(request.args.get('buckets', 40, type=int) or 40, 200))
+    spec = CAPACITY_METRICS[metric]
+
+    db = _get_db()
+    devices = {
+        device['id']: device
+        for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'metric': metric, 'days': days, 'servers': []})
+
+    raw = db.get_capacity_samples(list(devices), metric, days=days, buckets=buckets)
+
+    servers = []
+    for device_id, samples in raw.items():
+        device = devices.get(device_id)
+        if not device or not samples:
+            continue
+
+        values = [s['value'] for s in samples]
+        limit = device.get(spec['threshold_column']) or spec['default_limit']
+        try:
+            limit = float(limit)
+        except (TypeError, ValueError):
+            limit = spec['default_limit']
+
+        slope = _linear_slope_per_day([(s['age_days'], s['value']) for s in samples])
+        current = values[-1]
+
+        metrics_age = _age_seconds(device.get('last_metrics_time'))
+        if metrics_age is None:
+            metrics_age = _age_seconds(device.get('last_check'))
+        is_stale = bool(metrics_age is not None and metrics_age > SERVER_HEALTH_STALE_AFTER_SECONDS)
+
+        # Projecting forward from a host that stopped reporting days ago would
+        # invent a deadline out of history that has already stopped moving.
+        days_to_limit = None
+        if not is_stale and slope and slope > 0.01 and current < limit:
+            days_to_limit = round((limit - current) / slope, 1)
+
+        servers.append({
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'monitor_type': device.get('monitor_type'),
+            'status': device.get('status'),
+            'labels': [s['bucket'] for s in samples],
+            'values': [round(v, 2) for v in values],
+            'current': round(current, 2),
+            'first': round(values[0], 2),
+            'peak': round(max(values), 2),
+            'limit': limit,
+            'slope_per_day': round(slope, 4) if slope is not None else None,
+            'slope_per_month': round(slope * 30, 2) if slope is not None else None,
+            'days_to_limit': days_to_limit,
+            'over_limit': current >= limit,
+            'is_stale': is_stale,
+            'metrics_age_seconds': round(metrics_age, 1) if metrics_age is not None else None,
+            'sample_count': len(values),
+        })
+
+    # Most urgent first: already over, then soonest to cross, then fastest
+    # riser. Servers whose data has gone stale sort last -- their numbers are
+    # history, not a forecast.
+    def urgency(entry):
+        if entry['is_stale']:
+            return (3, entry['name'] or '')
+        if entry['over_limit']:
+            return (0, -entry['current'])
+        if entry['days_to_limit'] is not None:
+            return (1, entry['days_to_limit'])
+        return (2, -(entry['slope_per_day'] or 0))
+
+    servers.sort(key=urgency)
+
+    return jsonify({
+        'success': True,
+        'metric': metric,
+        'metric_label': spec['label'],
+        'days': days,
+        'servers': servers,
+    })
+
+
+def _series_stats(series):
+    values = [v for v in (series or []) if v is not None]
+    if not values:
+        return None, None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    median = ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+    return median, sum(values) / len(values)
+
+
+@devices_bp.route('/api/server-health/top-metrics', methods=['GET'])
+def get_server_health_top_metrics():
+    """Top consumers per metric, each with its own history beside the figure.
+
+    CPU is ranked on its median over the window rather than the latest sample:
+    the instant reading reorders the list on every refresh, which makes a
+    ranking nobody can read. The others are steady enough to rank on current.
+    """
+    hours = max(1, min(request.args.get('hours', 24, type=int) or 24, 7 * 24))
+    buckets = max(8, min(request.args.get('buckets', 48, type=int) or 48, 120))
+    limit = max(3, min(request.args.get('limit', 10, type=int) or 10, 25))
+
+    db = _get_db()
+    devices = {
+        d['id']: d for d in db.get_all_devices()
+        if d.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'hours': hours, 'cards': []})
+
+    ids = list(devices)
+    # The sparkline window is far too short to fit a trend line through: over
+    # seven days the slope flipped sign on half the fleet. The projection comes
+    # from its own long window, the same one Capacity Outlook used.
+    projection_days = max(7, min(request.args.get('projection_days', 30, type=int) or 30, 90))
+    partition_types = db.get_partition_metric_types(ids, hours=hours)
+    series = db.get_metric_series(ids, ['cpu', 'ram', 'network_in', 'network_out'] + partition_types,
+                                  hours=hours, buckets=buckets)
+    latency = db.get_internet_latency_series(ids, hours=hours, buckets=buckets)
+
+    # Only the metrics that accumulate get a forecast.
+    long_series = db.get_metric_series(ids, ['ram'] + partition_types,
+                                       hours=projection_days * 24, buckets=40)
+
+    # Straight from the samples. Taking it across the drawn buckets instead
+    # reported CPU up to 45% higher than the readings ever were, because an
+    # average inside a bucket lifts the whole bucket on a spiky metric.
+    cpu_medians = db.get_recent_metric_medians(ids, 'cpu', hours * 60)
+
+    def projection(device_id, metric_key, limit_column, default_limit):
+        points = long_series.get((device_id, metric_key))
+        if not points:
+            return {}
+        bucket_days = projection_days / float(len(points))
+        samples = [((len(points) - 1 - i) * bucket_days, v)
+                   for i, v in enumerate(points) if v is not None]
+        if len(samples) < 3:
+            return {}
+        slope = _linear_slope_per_day(samples)
+        current = samples[-1][1]
+        limit = _threshold_for(devices[device_id], limit_column, default_limit)
+        days = None
+        if slope and slope > 0.01 and current < limit:
+            days = round((limit - current) / slope, 1)
+        return {
+            'limit': round(limit, 1),
+            'slope_per_month': round(slope * 30, 2) if slope is not None else None,
+            'days_to_limit': days,
+            'over_limit': current >= limit,
+            'projection_days': projection_days,
+        }
+
+    def base(device_id):
+        device = devices[device_id]
+        return {
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'status': device.get('status'),
+        }
+
+    def numeric(value):
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    cpu_rows, ram_rows, net_rows, net_series = [], [], [], {}
+    for device_id in ids:
+        cpu = series.get((device_id, 'cpu'))
+        cpu_median = (cpu_medians.get(device_id) or {}).get('median')
+        if cpu and cpu_median is not None:
+            cpu_rows.append(dict(base(device_id), rank_value=round(cpu_median, 1),
+                                 current=numeric(devices[device_id].get('cpu_usage')),
+                                 unit='%', series=cpu,
+                                 limit=_threshold_for(devices[device_id], 'cpu_threshold', 85)))
+
+        ram = series.get((device_id, 'ram'))
+        current_ram = numeric(devices[device_id].get('ram_usage'))
+        if ram and current_ram is not None:
+            ram_rows.append(dict(base(device_id), rank_value=round(current_ram, 1),
+                                 current=round(current_ram, 1), unit='%', series=ram,
+                                 **projection(device_id, 'ram', 'ram_threshold', 90)))
+
+        # One line for the interface, in and out together, as the table shows it.
+        inbound = series.get((device_id, 'network_in')) or []
+        outbound = series.get((device_id, 'network_out')) or []
+        if inbound or outbound:
+            width = max(len(inbound), len(outbound))
+            combined = []
+            for i in range(width):
+                a = inbound[i] if i < len(inbound) else None
+                b = outbound[i] if i < len(outbound) else None
+                combined.append(None if a is None and b is None else (a or 0) + (b or 0))
+            net_series[device_id] = combined
+            total = (numeric(devices[device_id].get('network_in_bps')) or 0) \
+                + (numeric(devices[device_id].get('network_out_bps')) or 0)
+            net_rows.append(dict(base(device_id), rank_value=round(total), current=round(total),
+                                 unit='bps', series=combined))
+
+    # Per partition rather than per host: a full D: behind a mostly empty C:
+    # is invisible in the single per-server figure the table carries.
+    disk_rows = []
+    for device_id in ids:
+        device = devices[device_id]
+        if not _is_live({'status': device.get('status')}):
+            continue
+        try:
+            details = json.loads(device.get('disk_details_json') or '[]')
+        except Exception:
+            details = []
+        for entry in details:
+            mount = entry.get('mount') or entry.get('name')
+            usage = numeric(entry.get('use_percent'))
+            if not mount or usage is None:
+                continue
+            points = series.get((device_id, 'disk:%s' % str(mount).strip()[:120]))
+            metric_key = 'disk:%s' % str(mount).strip()[:120]
+            disk_rows.append(dict(
+                base(device_id),
+                rank_value=round(usage, 1),
+                current=round(usage, 1),
+                unit='%',
+                label=str(mount),
+                series=points or [],
+                **projection(device_id, metric_key, 'disk_threshold', 90),
+            ))
+
+    latency_rows = []
+    for device_id, points in latency.items():
+        _, mean = _series_stats(points)
+        if mean is None:
+            continue
+        latency_rows.append(dict(base(device_id), rank_value=round(mean),
+                                 current=numeric(devices[device_id].get('internet_latency_ms')),
+                                 unit='ms', series=points))
+
+    def top(rows):
+        def live(row):
+            current = row.get('current')
+            return current if current is not None else row.get('rank_value')
+        return sorted(rows, key=lambda r: -(live(r) or 0))[:limit]
+
+    def soonest(rows):
+        """Nearest to running out first: already over, then by days remaining.
+
+        A different list from the one above, not a reshuffle of it: a host at
+        61% climbing 36 points a month reaches its limit before one sitting
+        steady at 89%, and ranking on the current figure never shows that.
+        """
+        forecast = [r for r in rows if r.get('over_limit') or r.get('days_to_limit') is not None]
+        return sorted(
+            forecast,
+            key=lambda r: (0, -(r['current'] or 0)) if r.get('over_limit')
+            else (1, r['days_to_limit']),
+        )[:limit]
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'buckets': buckets,
+        'projection_days': projection_days,
+        'cards': [
+            {'key': 'cpu', 'title': 'Top CPU Usage', 'unit': '%',
+             'ranked_by': 'the current reading, with the median over the window beside it', 'rows': top(cpu_rows)},
+            {'key': 'ram', 'title': 'Top Memory Usage', 'unit': '%',
+             'ranked_by': 'current usage', 'rows': top(ram_rows),
+             'soonest': soonest(ram_rows)},
+            {'key': 'disk', 'title': 'Top Disk / Partition', 'unit': '%',
+             'ranked_by': 'current usage of each mounted partition', 'rows': top(disk_rows),
+             'soonest': soonest(disk_rows)},
+            {'key': 'network', 'title': 'Top Network I/O', 'unit': 'bps',
+             'ranked_by': 'current throughput, in and out combined', 'rows': top(net_rows)},
+            {'key': 'internet', 'title': 'Top Internet Latency', 'unit': 'ms',
+             'ranked_by': 'the latest round-trip, with the average over the window beside it', 'rows': top(latency_rows)},
+        ],
+    })
+
+
+@devices_bp.route('/api/server-health/summary-trend', methods=['GET'])
+def get_server_health_summary_trend():
+    """Hourly host counts behind the headline figures, for the KPI sparklines.
+
+    Separate from /api/server-health so the figures themselves stay on a fast
+    query: a sparkline does not need the 30-second refresh the counts do.
+    """
+    hours = max(2, min(request.args.get('hours', 24, type=int) or 24, 7 * 24))
+
+    db = _get_db()
+    device_ids = [
+        device['id'] for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    ]
+    rows = db.get_status_counts_by_hour(device_ids, hours=hours)
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'labels': [row['hour_label'] for row in rows],
+        'up': [int(row['up_n'] or 0) for row in rows],
+        'slow': [int(row['slow_n'] or 0) for row in rows],
+        'down': [int(row['down_n'] or 0) for row in rows],
+        'seen': [int(row['seen_n'] or 0) for row in rows],
+    })
+
+
+@devices_bp.route('/api/server-health/status-timeline', methods=['GET'])
+def get_server_health_status_timeline():
+    """Per-server status band over time, plus the uptime split for the window."""
+    hours = max(1, min(request.args.get('hours', 24, type=int) or 24, 30 * 24))
+    buckets = max(12, min(request.args.get('buckets', 96, type=int) or 96, 480))
+
+    db = _get_db()
+    devices = {
+        device['id']: device
+        for device in db.get_all_devices()
+        if device.get('monitor_type') in SERVER_MONITOR_TYPES
+    }
+    if not devices:
+        return jsonify({'success': True, 'hours': hours, 'buckets': buckets, 'servers': []})
+
+    timeline = db.get_status_timeline(list(devices), hours=hours, buckets=buckets)
+
+    try:
+        calibrated_at = db.get_alert_setting('slow_thresholds_calibrated_at')
+    except Exception:
+        calibrated_at = None
+
+    rank = {'down': 0, 'slow': 1, 'unknown': 2, 'up': 3}
+    servers = []
+    for device_id, device in devices.items():
+        entry = timeline.get(device_id, {})
+        band = entry.get('band') or ['none'] * buckets
+        mix = entry.get('mix') or [None] * buckets
+        counts = entry.get('counts') or {}
+        total = sum(counts.values())
+        servers.append({
+            'id': device_id,
+            'name': device.get('name'),
+            'ip_address': device.get('ip_address'),
+            'monitor_type': device.get('monitor_type'),
+            'status': device.get('status'),
+            'band': band,
+            'mix': mix,
+            'checks': total,
+            'up_pct': round(counts.get('up', 0) / total * 100, 1) if total else None,
+            'slow_pct': round(counts.get('slow', 0) / total * 100, 1) if total else None,
+            'down_pct': round(counts.get('down', 0) / total * 100, 1) if total else None,
+        })
+
+    # Worst first, matching how the table below is ordered.
+    servers.sort(key=lambda s: (
+        -(s['down_pct'] or 0), -(s['slow_pct'] or 0), rank.get(s['status'], 2), s['name'] or ''
+    ))
+
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'buckets': buckets,
+        'labels': timeline.get('__labels__', []),
+        'calibrated_at': calibrated_at,
+        'servers': servers,
     })
 
 

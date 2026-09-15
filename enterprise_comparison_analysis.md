@@ -24,7 +24,7 @@
 | **Auto-discovery** | Ping sweep / Port scan / DNS reverse lookup — ค้นหาอุปกรณ์ในเครือข่ายอัตโนมัติ |
 | **Database** | SQLite + PostgreSQL (dual-database support, auto-fallback) |
 | **Backend** | Flask + Flask-SocketIO (Python), Blueprint modular architecture (10 modules) |
-| **Alert Intelligence** | Rate limiting, failure threshold (3 consecutive), maintenance window suppression |
+| **Alert Intelligence** | Rate limiting, failure threshold (2 consecutive), maintenance window suppression |
 
 > [!NOTE]
 > แอปมีพื้นฐานที่ดีมาก มีฟีเจอร์ครบสำหรับ SME ขนาดเล็ก-กลาง รองรับทั้ง SQLite และ PostgreSQL พร้อม Blueprint architecture ที่แยกโมดูลเรียบร้อย

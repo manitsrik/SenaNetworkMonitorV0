@@ -72,6 +72,8 @@ class NetworkMonitor:
         self.alerter = None  # Will be set by app.py
         self.plugin_manager = None  # Will be set by app.py
         self.max_workers = Config.MONITOR_MAX_WORKERS
+        # Last /proc/stat reading per Linux host, for the CPU delta below.
+        self._cpu_snapshots = {}
         self._http_ssl_context = self._create_http_ssl_context()
         
         # Dedicated Asyncio thread for SNMP (Stable Architecture)
@@ -748,6 +750,21 @@ class NetworkMonitor:
                 'syscontact': None
             }
 
+    def _slow_threshold(self, monitor_type, override=None):
+        """Slow threshold for one check, in ms.
+
+        A device may set its own: agent checks on a slow host run for tens of
+        seconds by design, and judging those against the shared default marks
+        them "slow" on every single poll, which is noise rather than a signal.
+        """
+        try:
+            value = float(override)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+        return Config.MONITOR_THRESHOLDS.get(monitor_type, Config.DEFAULT_SLOW_THRESHOLD)
+
     def _parse_monitored_services(self, value):
         if not value:
             return []
@@ -755,7 +772,51 @@ class NetworkMonitor:
             return [str(v).strip() for v in value if str(v).strip()]
         return [part.strip() for part in str(value).replace('\n', ',').split(',') if part.strip()]
 
-    def check_ssh(self, ip_address, username, password, port=22, monitored_services=None):
+    def _cpu_percent_from_proc_stat(self, key, line):
+        """Share of CPU time spent working since this host's previous poll.
+
+        Utilisation is a rate, so it needs two readings. Taking them a second
+        apart inside one collection would add that second to every Linux host,
+        and two of them have under 50ms of headroom against their slow
+        thresholds -- so the reading is differenced against the previous poll
+        instead, which costs nothing and covers the whole interval.
+
+        Returns None rather than a guess when there is nothing to difference
+        against: the first poll after a restart, or counters that went
+        backwards because the host rebooted.
+        """
+        try:
+            fields = [int(value) for value in line.split()[1:]]
+        except (AttributeError, IndexError, ValueError):
+            return None
+        if len(fields) < 5:
+            return None
+
+        # user nice system idle iowait irq softirq steal ...
+        # iowait is the CPU having nothing to run, not work being done -- the
+        # exact time the load average counts and this deliberately does not.
+        total = sum(fields)
+        spare = fields[3] + fields[4]
+
+        snapshots = getattr(self, '_cpu_snapshots', None)
+        if snapshots is None:
+            snapshots = self._cpu_snapshots = {}
+
+        previous = snapshots.get(key)
+        snapshots[key] = (total, spare)
+        if previous is None:
+            return None
+
+        total_delta = total - previous[0]
+        spare_delta = spare - previous[1]
+        if total_delta <= 0 or spare_delta < 0:
+            return None
+
+        busy = 100.0 * (total_delta - spare_delta) / total_delta
+        return round(min(100.0, max(0.0, busy)), 2)
+
+    def check_ssh(self, ip_address, username, password, port=22, monitored_services=None,
+                  slow_threshold_ms=None):
         """
         Check a Linux device via SSH and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -765,29 +826,43 @@ class NetworkMonitor:
         
         start_time = time.time()
         service_names = self._parse_monitored_services(monitored_services)
-        result = {
-            'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
-            'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
-            'net_in': None, 'net_out': None, 'uptime_seconds': None,
-            'uptime_text': None, 'last_boot_time': None,
-            'disk_details': [], 'service_status': [], 'service_summary': None
-        }
+        def _blank_result():
+            return {
+                'cpu': None, 'ram': None, 'disk': None, 'swap': None, 'inode': None,
+                'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
+                'net_in': None, 'net_out': None, 'uptime_seconds': None,
+                'uptime_text': None, 'last_boot_time': None,
+                'disk_details': [], 'service_status': [], 'service_summary': None
+            }
+
+        result = _blank_result()
+        last_error = None
         
         def _ssh_task():
+            nonlocal last_error
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             try:
                 client.connect(ip_address, port=int(port), username=username, password=password, timeout=10)
                 
-                # Get CPU Usage (1 min load average vs cores)
-                _, stdout, _ = client.exec_command("grep -c ^processor /proc/cpuinfo && uptime")
+                # CPU counters and load averages in one round trip.
+                #
+                # `cpu` used to be load1/cores*100, which is not CPU usage at
+                # all: the load average counts processes blocked on disk as
+                # well as processes running, so a host waiting on I/O reported
+                # as busy while its CPUs were idle -- and the figure sat in the
+                # same column, and the same chart, as the true percentage the
+                # Windows hosts report. It is now real utilisation from
+                # /proc/stat. The load averages are still collected; they are
+                # worth knowing, they are just a different thing.
+                _, stdout, _ = client.exec_command("grep '^cpu ' /proc/stat; uptime")
                 out = stdout.read().decode().strip().split('\n')
-                cores = int(out[0]) if out[0].isdigit() else 1
-                loads = [float(v.strip()) for v in out[1].split('load average:')[1].split(',')[:3]]
+                loads = [float(v.strip()) for v in out[-1].split('load average:')[1].split(',')[:3]]
                 result['load1'] = loads[0]
                 result['load5'] = loads[1] if len(loads) > 1 else None
                 result['load15'] = loads[2] if len(loads) > 2 else None
-                result['cpu'] = min(100.0, round((result['load1'] / cores) * 100, 2))
+                result['cpu'] = self._cpu_percent_from_proc_stat(
+                    '%s:%s' % (ip_address, port), out[0] if len(out) > 1 else '')
                 
                 # Get RAM Usage
                 _, stdout, _ = client.exec_command("free -m | grep Mem")
@@ -887,19 +962,41 @@ class NetworkMonitor:
                     'source': 'selected'
                 }
                 
-                client.close()
                 return True
             except Exception as e:
+                last_error = str(e)
                 print(f"[SSH] Error connecting to {ip_address}: {e}")
-                if client: client.close()
                 return False
+            finally:
+                # Runs on the timeout path too: Eventlet's Timeout is a
+                # BaseException, so it passes through the handler above.
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
+        timer = async_runtime.Timeout(Config.SSH_DEVICE_TIMEOUT)
         try:
-            success = async_runtime.tpool_execute(_ssh_task)
+            # Paramiko is imported after Eventlet monkey-patching in production,
+            # so its sockets are cooperative already. Running those green sockets
+            # inside Eventlet's native tpool can cross thread/greenlet boundaries
+            # and fail with "No existing session" or
+            # "Cannot switch to a different thread". Keep the complete SSH
+            # session in the current greenlet instead.
+            success = _ssh_task()
+            if not success and last_error and 'No existing session' in last_error:
+                # A transport can disappear between authentication and the first
+                # command. Reconnect once before counting the device as failed.
+                # Drop everything the failed attempt collected so the retry
+                # cannot report a mix of values from two different sessions.
+                result.clear()
+                result.update(_blank_result())
+                success = _ssh_task()
             response_time = (time.time() - start_time) * 1000
             
             if success:
-                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('ssh', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                threshold = self._slow_threshold('ssh', slow_threshold_ms)
+                status = 'slow' if response_time > threshold else 'up'
                 return {
                     'status': status,
                     'response_time': round(response_time, 2),
@@ -922,10 +1019,18 @@ class NetworkMonitor:
                     'service_summary': result['service_summary']
                 }
             else:
-                return {'status': 'down', 'response_time': None}
+                return {'status': 'down', 'response_time': None, 'error': last_error or 'SSH connection failed'}
+        except async_runtime.TimeoutError:
+            # The session runs in this greenlet, so the timeout really does
+            # abandon it instead of leaving work behind like the WinRM path.
+            timeout_message = f'SSH check exceeded {Config.SSH_DEVICE_TIMEOUT}s'
+            print(f"[SSH] Timed out {ip_address}: {timeout_message}")
+            return {'status': 'down', 'response_time': None, 'error': timeout_message}
         except Exception as e:
             print(f"[SSH] Task execution failed for {ip_address}: {e}")
-            return {'status': 'down', 'response_time': None}
+            return {'status': 'down', 'response_time': None, 'error': str(e)}
+        finally:
+            timer.cancel()
 
     def get_ssh_ports(self, ip_address, username, password, port=22):
         """Fetch listening TCP/UDP ports via SSH (ss command)"""
@@ -990,7 +1095,9 @@ class NetworkMonitor:
                 print(f"[SSH Ports] Error connecting to {ip_address}: {e}")
                 return False
 
-        success = async_runtime.tpool_execute(_ssh_task)
+        # See check_ssh(): Paramiko uses Eventlet-patched sockets and must stay
+        # in the calling greenlet rather than being moved into the native tpool.
+        success = _ssh_task()
         if success:
             return {'success': True, 'ports': ports}
         return {'success': False, 'error': 'Connection failed or timeout'}
@@ -1055,7 +1162,105 @@ class NetworkMonitor:
             return {'success': True, 'ports': ports}
         return {'success': False, 'error': 'Connection failed or timeout'}
 
-    def check_winrm(self, ip_address, username, password, monitored_services=None):
+    def _check_winrm_internet(self, session):
+        """Run DNS and HTTPS checks on the remote Windows host itself."""
+        target = str(Config.INTERNET_CHECK_URL or '').strip()
+        result = {
+            'status': 'unknown', 'latency_ms': None, 'dns_ok': False,
+            'http_status': None, 'target': target, 'error': None,
+        }
+        if not target:
+            result['error'] = 'Internet check URL is not configured'
+            return result
+
+        ps_target = target.replace("'", "''")
+        timeout = max(1, int(Config.INTERNET_CHECK_TIMEOUT))
+        expected_status = int(Config.INTERNET_CHECK_EXPECTED_STATUS)
+        expected_content = str(Config.INTERNET_CHECK_EXPECTED_CONTENT or '').replace("'", "''")
+        script = f'''
+        $target = '{ps_target}'
+        $expectedContent = '{expected_content}'
+        $dnsTimeoutMs = {timeout * 1000}
+        $out = [ordered]@{{
+            status = 'unknown'
+            latency_ms = $null
+            dns_ok = $false
+            http_status = $null
+            target = $target
+            error = $null
+        }}
+        try {{
+            $uri = [Uri]$target
+            # The synchronous DNS API can block for the full Windows resolver
+            # retry cycle. Bound DNS itself because Invoke-WebRequest's
+            # TimeoutSec does not reliably cover this preceding lookup.
+            $dnsTask = [System.Net.Dns]::GetHostAddressesAsync($uri.DnsSafeHost)
+            if (-not $dnsTask.Wait($dnsTimeoutMs)) {{
+                throw "DNS lookup timed out after {timeout} seconds"
+            }}
+            $addresses = $dnsTask.Result
+            if (-not $addresses -or $addresses.Count -eq 0) {{
+                throw 'DNS lookup returned no addresses'
+            }}
+            $out.dns_ok = $true
+        }} catch {{
+            $out.status = 'dns_error'
+            $out.error = $_.Exception.Message
+        }}
+        if ($out.dns_ok) {{
+            $timer = [System.Diagnostics.Stopwatch]::StartNew()
+            try {{
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                $response = Invoke-WebRequest -Uri $target -Method Get -UseBasicParsing -TimeoutSec {timeout} -MaximumRedirection 3
+                $timer.Stop()
+                $out.latency_ms = [math]::Round($timer.Elapsed.TotalMilliseconds, 2)
+                $out.http_status = [int]$response.StatusCode
+                if ($out.http_status -ne {expected_status}) {{
+                    $out.status = 'http_error'
+                    $out.error = "Expected HTTP {expected_status}, received $($out.http_status)"
+                }} elseif ($expectedContent -and ([string]$response.Content).Trim() -ne $expectedContent) {{
+                    $out.status = 'captive_portal'
+                    $out.error = 'Connectivity endpoint returned unexpected content'
+                }} else {{
+                    $out.status = 'online'
+                }}
+            }} catch {{
+                $timer.Stop()
+                $out.latency_ms = [math]::Round($timer.Elapsed.TotalMilliseconds, 2)
+                if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {{
+                    $out.http_status = [int]$_.Exception.Response.StatusCode
+                }}
+                if ([string]$_.Exception.Status -eq 'Timeout' -or $_.Exception.Message -match 'timed out|timeout') {{
+                    $out.status = 'timeout'
+                }} else {{
+                    $out.status = 'http_error'
+                }}
+                $out.error = $_.Exception.Message
+            }}
+        }}
+        $out | ConvertTo-Json -Compress
+        '''
+        try:
+            response = session.run_ps(script)
+            if response.status_code != 0:
+                stderr = response.std_err.decode('utf-8', errors='replace').strip()
+                result['error'] = stderr or 'Remote Internet check command failed'
+                return result
+            output = response.std_out.decode('utf-8-sig', errors='replace').strip()
+            if not output:
+                result['error'] = 'Remote Internet check returned no data'
+                return result
+            parsed = json.loads(output)
+            for key in result:
+                if key in parsed:
+                    result[key] = parsed[key]
+            return result
+        except Exception as e:
+            result['error'] = str(e)
+            return result
+
+    def check_winrm(self, ip_address, username, password, monitored_services=None,
+                    slow_threshold_ms=None, monitor_type='winrm'):
         """
         Check a Windows device via WinRM and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -1070,24 +1275,40 @@ class NetworkMonitor:
             'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
             'net_in': None, 'net_out': None, 'uptime_seconds': None,
             'uptime_text': None, 'last_boot_time': None,
-            'disk_details': [], 'service_status': [], 'service_summary': None
+            'disk_details': [], 'service_status': [], 'service_summary': None,
+            'internet': None
         }
         
         def _winrm_task():
             try:
                 # Use NTLM or basic auth over HTTP/HTTPS
                 # For lab environments, we often use transport='ntlm' or 'basic'
-                session = winrm.Session(ip_address, auth=(username, password), transport='ntlm', server_cert_validation='ignore')
+                session = winrm.Session(
+                    ip_address,
+                    auth=(username, password),
+                    transport='ntlm',
+                    server_cert_validation='ignore',
+                    operation_timeout_sec=Config.WINRM_OPERATION_TIMEOUT,
+                    read_timeout_sec=Config.WINRM_READ_TIMEOUT,
+                )
+
+                def run_ps(label, script):
+                    command_started = time.monotonic()
+                    response = session.run_ps(script)
+                    elapsed = time.monotonic() - command_started
+                    if elapsed >= Config.WINRM_SLOW_COMMAND_SECONDS:
+                        print(f"[WinRM] Slow command {label} on {ip_address}: {elapsed:.1f}s")
+                    return response
                 
                 # Get CPU Usage
                 ps_cpu = "Get-WmiObject Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average"
-                r = session.run_ps(ps_cpu)
+                r = run_ps('cpu', ps_cpu)
                 if r.status_code == 0:
                     result['cpu'] = float(r.std_out.decode().strip())
                 
                 # Get RAM Usage
                 ps_ram = "$m = Get-WmiObject Win32_OperatingSystem; [math]::Round((($m.TotalVisibleMemorySize - $m.FreePhysicalMemory) / $m.TotalVisibleMemorySize) * 100, 2)"
-                r = session.run_ps(ps_ram)
+                r = run_ps('ram', ps_ram)
                 if r.status_code == 0:
                     result['ram'] = float(r.std_out.decode().strip())
                     
@@ -1106,7 +1327,7 @@ class NetworkMonitor:
                 }
                 $disks | ConvertTo-Json -Compress
                 '''
-                r = session.run_ps(ps_disks)
+                r = run_ps('disks', ps_disks)
                 if r.status_code == 0:
                     output = r.std_out.decode().strip()
                     if output:
@@ -1124,7 +1345,7 @@ class NetworkMonitor:
 
                 # Legacy C: fallback
                 ps_disk = "$d = Get-WmiObject Win32_LogicalDisk -Filter \"DeviceID='C:'\"; if ($d -and $d.Size -gt 0) { [math]::Round((($d.Size - $d.FreeSpace) / $d.Size) * 100, 2) }"
-                r = session.run_ps(ps_disk)
+                r = run_ps('disk_fallback', ps_disk)
                 if r.status_code == 0 and result['disk'] is None and r.std_out.decode().strip():
                     result['disk'] = float(r.std_out.decode().strip())
 
@@ -1139,7 +1360,7 @@ class NetworkMonitor:
                     last_boot_time = $boot.ToString("yyyy-MM-dd HH:mm:ss")
                 } | ConvertTo-Json -Compress
                 '''
-                r = session.run_ps(ps_uptime)
+                r = run_ps('uptime', ps_uptime)
                 if r.status_code == 0:
                     output = r.std_out.decode().strip()
                     if output:
@@ -1165,13 +1386,20 @@ class NetworkMonitor:
                 if ($sm.PendingFileRenameOperations) { $pending = $true }
                 if ($pending) { 'true' } else { 'false' }
                 '''
-                r = session.run_ps(ps_pending_reboot)
+                r = run_ps('pending_reboot', ps_pending_reboot)
                 if r.status_code == 0:
                     result['pending_reboot'] = r.std_out.decode().strip().lower() == 'true'
                 
                 # Get Network Traffic (Sum of all adapters) - Using more universal WMI class
-                ps_net = "$n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface; $in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; $out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; \"$in $out\""
-                r = session.run_ps(ps_net)
+                ps_net = (
+                    "$n = Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface "
+                    "-Property BytesReceivedPersec,BytesSentPersec -ErrorAction SilentlyContinue; "
+                    "if (-not $n) { $n = Get-WmiObject Win32_PerfRawData_Tcpip_NetworkInterface }; "
+                    "$in = ($n | Measure-Object -Property BytesReceivedPersec -Sum).Sum; "
+                    "$out = ($n | Measure-Object -Property BytesSentPersec -Sum).Sum; "
+                    "\"$in $out\""
+                )
+                r = run_ps('network', ps_net)
                 if r.status_code == 0:
                     parts = r.std_out.decode().strip().split()
                     if len(parts) >= 2:
@@ -1195,7 +1423,7 @@ class NetworkMonitor:
                     }}
                     $result | ConvertTo-Json -Compress
                     '''
-                    r = session.run_ps(ps_services)
+                    r = run_ps('selected_services', ps_services)
                     if r.status_code == 0:
                         output = r.std_out.decode().strip()
                         if output:
@@ -1219,7 +1447,7 @@ class NetworkMonitor:
                     source = 'windows'
                 } | ConvertTo-Json -Compress
                 '''
-                r = session.run_ps(ps_service_summary)
+                r = run_ps('service_summary', ps_service_summary)
                 if r.status_code == 0:
                     output = r.std_out.decode().strip()
                     if output:
@@ -1227,18 +1455,28 @@ class NetworkMonitor:
                             result['service_summary'] = json.loads(output)
                         except Exception as e:
                             print(f"[WinRM] Service summary parse error for {ip_address}: {e}")
+
+                # This command runs through the established WinRM session, but
+                # DNS and HTTPS originate on the monitored server.
+                internet_started = time.monotonic()
+                result['internet'] = self._check_winrm_internet(session)
+                internet_elapsed = time.monotonic() - internet_started
+                if internet_elapsed >= Config.WINRM_SLOW_COMMAND_SECONDS:
+                    print(f"[WinRM] Slow command internet on {ip_address}: {internet_elapsed:.1f}s")
                 
                 return True
             except Exception as e:
                 print(f"[WinRM] Error connecting to {ip_address}: {e}")
                 return False
 
+        timer = async_runtime.Timeout(Config.WINRM_DEVICE_TIMEOUT)
         try:
             success = async_runtime.tpool_execute(_winrm_task)
             response_time = (time.time() - start_time) * 1000
             
             if success:
-                status = 'slow' if response_time > Config.MONITOR_THRESHOLDS.get('winrm', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
+                threshold = self._slow_threshold(monitor_type, slow_threshold_ms)
+                status = 'slow' if response_time > threshold else 'up'
                 return {
                     'status': status,
                     'response_time': round(response_time, 2),
@@ -1258,13 +1496,20 @@ class NetworkMonitor:
                     'last_boot_time': result['last_boot_time'],
                     'disk_details': result['disk_details'],
                     'service_status': result['service_status'],
-                    'service_summary': result['service_summary']
+                    'service_summary': result['service_summary'],
+                    'internet': result['internet']
                 }
             else:
                 return {'status': 'down', 'response_time': None}
+        except async_runtime.TimeoutError:
+            timeout_message = f'WinRM check exceeded {Config.WINRM_DEVICE_TIMEOUT}s'
+            print(f"[WinRM] Timed out {ip_address}: {timeout_message}")
+            return {'status': 'down', 'response_time': None, 'error': timeout_message}
         except Exception as e:
             print(f"[WinRM] Task execution failed for {ip_address}: {e}")
             return {'status': 'down', 'response_time': None}
+        finally:
+            timer.cancel()
             
     def _verify_expected_ports(self, device, result, ports_res):
         """Verify that expected ports are active and listening"""
@@ -1441,7 +1686,8 @@ class NetworkMonitor:
                 device.get('ssh_username'), 
                 device.get('ssh_password'),
                 device.get('ssh_port', 22),
-                device.get('monitored_services')
+                device.get('monitored_services'),
+                device.get('slow_threshold_ms')
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1459,7 +1705,9 @@ class NetworkMonitor:
                 device['ip_address'], 
                 device.get('wmi_username'), 
                 device.get('wmi_password'),
-                device.get('monitored_services')
+                device.get('monitored_services'),
+                device.get('slow_threshold_ms'),
+                monitor_type
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1568,6 +1816,31 @@ class NetworkMonitor:
                         pending_reboot=result.get('pending_reboot'),
                         service_summary=result.get('service_summary')
                     )
+                    internet = result.get('internet')
+                    if isinstance(internet, dict):
+                        self.db.update_internet_check(
+                            device['id'],
+                            internet.get('status') or 'unknown',
+                            latency_ms=internet.get('latency_ms'),
+                            dns_ok=internet.get('dns_ok'),
+                            http_status=internet.get('http_status'),
+                            target=internet.get('target'),
+                            error=internet.get('error'),
+                        )
+                        previous_internet = str(device.get('internet_status') or 'unknown').lower()
+                        current_internet = str(internet.get('status') or 'unknown').lower()
+                        if self.alerter and previous_internet == 'online' and current_internet not in ('online', 'unknown'):
+                            self.alerter.trigger_alert(
+                                device,
+                                'internet_down',
+                                f"Remote Internet check failed ({current_internet}): {internet.get('error') or 'no details'}"
+                            )
+                        elif self.alerter and current_internet == 'online' and previous_internet not in ('online', 'unknown'):
+                            self.alerter.trigger_alert(
+                                device,
+                                'internet_recovery',
+                                f"Remote Internet connectivity recovered. Latency: {internet.get('latency_ms')} ms"
+                            )
                     self._check_resource_threshold_alerts(device, result)
                     if (
                         self.alerter
@@ -1700,6 +1973,7 @@ class NetworkMonitor:
             'disk_details': result.get('disk_details'),
             'service_status': result.get('service_status'),
             'service_summary': result.get('service_summary'),
+            'internet': result.get('internet'),
             'last_check': datetime.now().isoformat()
         }
         for extra_key in ['plugin_id', 'plugin_name', 'message', 'banner', 'error']:

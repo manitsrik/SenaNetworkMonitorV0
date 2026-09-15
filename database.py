@@ -245,6 +245,13 @@ class Database:
                 disk_details_json TEXT,
                 service_status_json TEXT,
                 service_summary_json TEXT,
+                internet_status TEXT,
+                internet_latency_ms REAL,
+                internet_dns_ok {bool_type},
+                internet_http_status INTEGER,
+                internet_target TEXT,
+                internet_error TEXT,
+                internet_checked_at TIMESTAMP,
                 UNIQUE(ip_address, monitor_type, device_type)
             )
         ''')
@@ -303,6 +310,7 @@ class Database:
             ('disk_threshold', 'REAL DEFAULT 90'),
             ('swap_threshold', 'REAL DEFAULT 80'),
             ('threshold_duration_minutes', 'INTEGER DEFAULT 5'),
+            ('slow_threshold_ms', 'INTEGER'),
             ('cpu_usage', 'REAL'),
             ('ram_usage', 'REAL'),
             ('disk_usage', 'REAL'),
@@ -323,6 +331,13 @@ class Database:
             ('disk_details_json', 'TEXT'),
             ('service_status_json', 'TEXT'),
             ('service_summary_json', 'TEXT'),
+            ('internet_status', 'TEXT'),
+            ('internet_latency_ms', 'REAL'),
+            ('internet_dns_ok', bool_type),
+            ('internet_http_status', 'INTEGER'),
+            ('internet_target', 'TEXT'),
+            ('internet_error', 'TEXT'),
+            ('internet_checked_at', 'TIMESTAMP'),
         ]
         for col_name, col_type in metrics_columns:
             self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
@@ -867,6 +882,21 @@ class Database:
         ''')
 
         cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS internet_check_history (
+                id          {pk},
+                device_id   INTEGER NOT NULL,
+                status      TEXT NOT NULL,
+                latency_ms  REAL,
+                dns_ok      {bool_type},
+                http_status INTEGER,
+                target      TEXT,
+                error       TEXT,
+                checked_at  TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
+
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS resource_alert_states (
                 device_id   INTEGER NOT NULL,
                 event_type  TEXT NOT NULL,
@@ -998,6 +1028,8 @@ class Database:
         # system_metrics_history indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_device_sampled ON system_metrics_history(device_id, timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_smh_timestamp ON system_metrics_history(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_internet_device_checked ON internet_check_history(device_id, checked_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_internet_checked_at ON internet_check_history(checked_at)')
         
         # audit_logs indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at)')
@@ -1138,7 +1170,8 @@ class Database:
                      ssh_username='__NOT_SET__', ssh_password='__NOT_SET__', 
                      ssh_port='__NOT_SET__',
                      wmi_username='__NOT_SET__', wmi_password='__NOT_SET__', expected_ports='__NOT_SET__',
-                     monitored_services='__NOT_SET__', cpu_threshold='__NOT_SET__',
+                     monitored_services='__NOT_SET__', slow_threshold_ms='__NOT_SET__',
+                     cpu_threshold='__NOT_SET__',
                      ram_threshold='__NOT_SET__', disk_threshold='__NOT_SET__',
                      swap_threshold='__NOT_SET__', threshold_duration_minutes='__NOT_SET__',
                      plugin_config_json='__NOT_SET__'):
@@ -1236,6 +1269,9 @@ class Database:
             if monitored_services != '__NOT_SET__':
                 updates.append(f'monitored_services = {ph}')
                 params.append(monitored_services)
+            if slow_threshold_ms != '__NOT_SET__':
+                updates.append(f'slow_threshold_ms = {ph}')
+                params.append(slow_threshold_ms if slow_threshold_ms else None)
             if cpu_threshold != '__NOT_SET__':
                 updates.append(f'cpu_threshold = {ph}')
                 params.append(cpu_threshold)
@@ -1403,19 +1439,25 @@ class Database:
         finally:
             self.release_connection(conn)
 
-    def get_system_metrics_history(self, device_id, metric_type, hours=24):
+    def get_system_metrics_history(self, device_id, metric_type, hours=24, minutes=None):
         """Get system metrics history for a device"""
         conn = self.get_connection()
         try:
             cursor = self._cursor(conn)
             ph = self._ph()
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 24)))
+                window_unit = 'hours'
             
             if self.db_type == 'postgresql':
                 query = f"""
                     SELECT value, timestamp 
                     FROM system_metrics_history 
                     WHERE device_id = {ph} AND metric_type = {ph} 
-                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND timestamp >= NOW() - INTERVAL '{window_value} {window_unit}'
                     ORDER BY timestamp ASC
                 """
             else:
@@ -1423,7 +1465,7 @@ class Database:
                     SELECT value, timestamp 
                     FROM system_metrics_history 
                     WHERE device_id = {ph} AND metric_type = {ph} 
-                    AND timestamp >= datetime('now', '-{hours} hours')
+                    AND timestamp >= datetime('now', '-{window_value} {window_unit}')
                     ORDER BY timestamp ASC
                 """
             
@@ -1894,6 +1936,71 @@ class Database:
         finally:
             self.release_connection(conn)
 
+    def update_internet_check(self, device_id, status, latency_ms=None, dns_ok=None,
+                              http_status=None, target=None, error=None):
+        """Persist the latest remote Internet check and its full status history."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            checked_at = datetime.now().isoformat()
+            cursor.execute(f'''
+                UPDATE devices
+                SET internet_status = {ph}, internet_latency_ms = {ph},
+                    internet_dns_ok = {ph}, internet_http_status = {ph},
+                    internet_target = {ph}, internet_error = {ph},
+                    internet_checked_at = {ph}
+                WHERE id = {ph}
+            ''', (
+                status, latency_ms, dns_ok, http_status, target,
+                (str(error)[:1000] if error else None), checked_at, device_id,
+            ))
+            cursor.execute(f'''
+                INSERT INTO internet_check_history
+                    (device_id, status, latency_ms, dns_ok, http_status, target, error, checked_at)
+                VALUES ({self._ph(8)})
+            ''', (
+                device_id, status, latency_ms, dns_ok, http_status, target,
+                (str(error)[:1000] if error else None), checked_at,
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            self._safe_rollback(conn)
+            print(f"[DB ERROR] update_internet_check: {e}")
+            return False
+        finally:
+            self.release_connection(conn)
+
+    def get_internet_check_history(self, device_id, hours=24, minutes=None):
+        """Return remote Internet checks for a server in chronological order."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 24)))
+                window_unit = 'hours'
+            if self.db_type == 'postgresql':
+                time_filter = f"NOW() - INTERVAL '{window_value} {window_unit}'"
+            else:
+                time_filter = f"datetime('now', '-{window_value} {window_unit}')"
+            cursor.execute(f'''
+                SELECT status, latency_ms, dns_ok, http_status, target, error, checked_at
+                FROM internet_check_history
+                WHERE device_id = {ph} AND checked_at >= {time_filter}
+                ORDER BY checked_at ASC
+            ''', (device_id,))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_internet_check_history: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
     def get_device_down_intervals(self, device_id, minutes=360):
         """Return contiguous down intervals for a device within the requested window."""
         conn = self.get_connection()
@@ -2083,6 +2190,427 @@ class Database:
             return {'labels': labels, 'series': series}
         finally:
             self.release_connection(conn)
+
+    def _bucket_sql(self, column, bucket_seconds):
+        """Bucket expression, label expression and cutoff for one time column.
+
+        The two backends spell epoch extraction differently; both bucket on the
+        stored value itself, so the grid is consistent within a backend without
+        depending on how the application clock is set.
+        """
+        if self.db_type == 'postgresql':
+            return (
+                f"FLOOR(EXTRACT(EPOCH FROM {column}::timestamp) / {bucket_seconds})",
+                f"to_char(MIN({column}::timestamp), 'YYYY-MM-DD HH24:MI:SS')",
+            )
+        return (
+            f"CAST(strftime('%s', {column}) / {bucket_seconds} AS INTEGER)",
+            f"datetime(MIN({column}))",
+        )
+
+    def _cutoff_sql(self, unit, amount):
+        if self.db_type == 'postgresql':
+            return f"NOW() - INTERVAL '{int(amount)} {unit}'"
+        return f"datetime('now', '-{int(amount)} {unit}')"
+
+    def get_capacity_samples(self, device_ids, metric, days=30, buckets=40):
+        """Downsampled resource history per device, oldest bucket first.
+
+        Aggregation happens in SQL: the table holds ~1.6M rows and the caller
+        only ever draws a few dozen points per server.
+        """
+        if not device_ids:
+            return {}
+
+        days = max(2, min(int(days or 30), 90))
+        buckets = max(8, min(int(buckets or 40), 200))
+        bucket_seconds = max(60, int(days * 86400 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, label_expr = self._bucket_sql('timestamp', bucket_seconds)
+            cutoff = self._cutoff_sql('days', days)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       {label_expr} AS bucket_label,
+                       AVG(value) AS value
+                FROM system_metrics_history
+                WHERE metric_type = {ph}
+                  AND value IS NOT NULL
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY device_id, bucket_id ASC
+            ''', [metric] + list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_capacity_samples: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        # Age is measured from the newest bucket in the result rather than the
+        # application clock, so a timezone mismatch cannot skew the slope.
+        newest = max(int(row['bucket_id']) for row in rows)
+
+        result = {}
+        for row in rows:
+            bucket_id = int(row['bucket_id'])
+            result.setdefault(row['device_id'], []).append({
+                'bucket': row.get('bucket_label'),
+                'age_days': (newest - bucket_id) * bucket_seconds / 86400.0,
+                'value': float(row['value']),
+            })
+        return result
+
+    def get_recent_metric_medians(self, device_ids, metric_type, minutes):
+        """Median of one metric per device over the last `minutes`.
+
+        CPU is a sample, not a state: it swings from idle to saturated between
+        one poll and the next, so anything that ranks or alerts on the single
+        latest reading flaps. The median over the same window the alerting
+        already uses answers "is it actually busy" instead.
+        """
+        if not device_ids:
+            return {}
+
+        minutes = max(1, min(int(minutes or 5), 7 * 24 * 60))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('minutes', minutes)
+
+            if self.db_type == 'postgresql':
+                median = 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value)'
+            else:
+                # SQLite has no percentile function; the mean is close enough
+                # for a window this short and this is not the primary backend.
+                median = 'AVG(value)'
+
+            cursor.execute(f'''
+                SELECT device_id, {median} AS mid, COUNT(*) AS n
+                FROM system_metrics_history
+                WHERE metric_type = {ph}
+                  AND value IS NOT NULL
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id
+            ''', [metric_type] + list(device_ids))
+            return {
+                row['device_id']: {'median': float(row['mid']), 'samples': int(row['n'])}
+                for row in self._rows_to_dicts(cursor.fetchall())
+                if row.get('mid') is not None
+            }
+        except Exception as e:
+            print(f"[DB ERROR] get_recent_metric_medians: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_partition_metric_types(self, device_ids, hours=24):
+        """Which per-partition metrics these devices actually recorded.
+
+        Mount points differ per host -- C:, D:, /, /boot -- so the set has to
+        come from the data rather than a fixed list.
+        """
+        if not device_ids:
+            return []
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', max(1, min(int(hours or 24), 7 * 24)))
+            # The pattern is bound rather than inlined: a literal % in the SQL
+            # collides with psycopg's own %s placeholders.
+            cursor.execute(f'''
+                SELECT DISTINCT metric_type
+                FROM system_metrics_history
+                WHERE metric_type LIKE {ph}
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+            ''', ['disk:%'] + list(device_ids))
+            return [row['metric_type'] for row in self._rows_to_dicts(cursor.fetchall())]
+        except Exception as e:
+            print(f"[DB ERROR] get_partition_metric_types: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def get_response_time_medians(self, minutes=360):
+        """True median collection time per server device, from raw checks.
+
+        The bucketed series is for drawing. A median taken across bucket
+        averages is not the median of the readings: averaging inside a bucket
+        lifts every bucket, and on a spiky host the two differ by a fifth.
+        """
+        minutes = max(5, min(int(minutes or 360), 7 * 24 * 60))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            cutoff = self._cutoff_sql('minutes', minutes)
+            if self.db_type == 'postgresql':
+                median = 'PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY h.response_time)'
+            else:
+                median = 'AVG(h.response_time)'
+            cursor.execute(f'''
+                SELECT h.device_id, {median} AS mid, COUNT(*) AS n
+                FROM status_history h
+                JOIN devices d ON d.id = h.device_id
+                WHERE d.monitor_type IN ('ssh', 'winrm', 'wmi')
+                  AND h.checked_at >= {cutoff}
+                  AND h.response_time IS NOT NULL
+                  AND h.status IN ('up', 'slow')
+                GROUP BY h.device_id
+            ''')
+            return {
+                row['device_id']: float(row['mid'])
+                for row in self._rows_to_dicts(cursor.fetchall())
+                if row.get('mid') is not None
+            }
+        except Exception as e:
+            print(f"[DB ERROR] get_response_time_medians: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_metric_series(self, device_ids, metric_types, hours=24, buckets=48):
+        """Bucketed history per device per metric, oldest bucket first.
+
+        Feeds the sparkline beside each figure: a number says what a server is
+        doing now, the line says whether that is a spike or where it has been
+        sitting all day.
+        """
+        if not device_ids or not metric_types:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 7 * 24))
+        buckets = max(8, min(int(buckets or 48), 200))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, _ = self._bucket_sql('timestamp', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            devices = ', '.join([ph] * len(device_ids))
+            metrics = ', '.join([ph] * len(metric_types))
+
+            cursor.execute(f'''
+                SELECT device_id, metric_type,
+                       {bucket_expr} AS bucket_id,
+                       AVG(value) AS value
+                FROM system_metrics_history
+                WHERE metric_type IN ({metrics})
+                  AND value IS NOT NULL
+                  AND device_id IN ({devices})
+                  AND timestamp >= {cutoff}
+                GROUP BY device_id, metric_type, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(metric_types) + list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_metric_series: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+        result = {}
+        for row in rows:
+            index = int(row['bucket_id']) - oldest
+            if index < 0 or index >= buckets:
+                continue
+            key = (row['device_id'], row['metric_type'])
+            if key not in result:
+                result[key] = [None] * buckets
+            result[key][index] = float(row['value'])
+        return result
+
+    def get_internet_latency_series(self, device_ids, hours=24, buckets=48):
+        """Bucketed internet round-trip per device, plus the window average."""
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 7 * 24))
+        buckets = max(8, min(int(buckets or 48), 200))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, _ = self._bucket_sql('checked_at', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            devices = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       AVG(latency_ms) AS value
+                FROM internet_check_history
+                WHERE latency_ms IS NOT NULL
+                  AND device_id IN ({devices})
+                  AND checked_at >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_internet_latency_series: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+        result = {}
+        for row in rows:
+            index = int(row['bucket_id']) - oldest
+            if index < 0 or index >= buckets:
+                continue
+            series = result.setdefault(row['device_id'], [None] * buckets)
+            series[index] = float(row['value'])
+        return result
+
+    def get_status_counts_by_hour(self, device_ids, hours=24):
+        """Distinct devices in each status, per hour, over the window.
+
+        Counts devices rather than checks so the series reads on the same scale
+        as the headline figures: "2 hosts were down", not "118 checks failed".
+        """
+        if not device_ids:
+            return []
+
+        hours = max(2, min(int(hours or 24), 7 * 24))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours)
+            if self.db_type == 'postgresql':
+                bucket = "to_char(date_trunc('hour', checked_at), 'YYYY-MM-DD HH24:MI')"
+            else:
+                bucket = "strftime('%Y-%m-%d %H:00', checked_at)"
+
+            cursor.execute(f'''
+                SELECT {bucket} AS hour_label,
+                       COUNT(DISTINCT CASE WHEN status = 'down' THEN device_id END) AS down_n,
+                       COUNT(DISTINCT CASE WHEN status = 'slow' THEN device_id END) AS slow_n,
+                       COUNT(DISTINCT CASE WHEN status = 'up'   THEN device_id END) AS up_n,
+                       COUNT(DISTINCT device_id) AS seen_n
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}
+                GROUP BY {bucket}
+                ORDER BY hour_label ASC
+            ''', list(device_ids))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_status_counts_by_hour: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def get_status_timeline(self, device_ids, hours=24, buckets=96):
+        """Status make-up per device per time bucket, plus the window total.
+
+        Returns {device_id: {'band': [...], 'mix': [...], 'counts': {...}}} with
+        a '__labels__' entry carrying the bucket labels. Bucket 0 is the oldest.
+
+        `band` is the worst status seen in each bucket, which is what the
+        tooltip and the gap detection want. `mix` is the [up, slow, down] count
+        behind it: colouring a whole bucket by its worst check made a single bad
+        check look like an outage lasting the entire bucket.
+        """
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        buckets = max(12, min(int(buckets or 96), 480))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            bucket_expr, label_expr = self._bucket_sql('checked_at', bucket_seconds)
+            cutoff = self._cutoff_sql('hours', hours)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       {bucket_expr} AS bucket_id,
+                       {label_expr} AS bucket_label,
+                       SUM(CASE WHEN status = 'down' THEN 1 ELSE 0 END) AS down_n,
+                       SUM(CASE WHEN status = 'slow' THEN 1 ELSE 0 END) AS slow_n,
+                       SUM(CASE WHEN status = 'up'   THEN 1 ELSE 0 END) AS up_n,
+                       COUNT(*) AS total_n
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}
+                GROUP BY device_id, {bucket_expr}
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_status_timeline: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+        if not rows:
+            return {}
+
+        newest = max(int(row['bucket_id']) for row in rows)
+        oldest = newest - buckets + 1
+
+        labels = [None] * buckets
+        result = {}
+        for row in rows:
+            bucket_id = int(row['bucket_id'])
+            index = bucket_id - oldest
+            if index < 0 or index >= buckets:
+                continue
+            if labels[index] is None:
+                labels[index] = row.get('bucket_label')
+
+            entry = result.setdefault(row['device_id'], {
+                'band': ['none'] * buckets,
+                'mix': [None] * buckets,
+                'counts': {'up': 0, 'slow': 0, 'down': 0},
+            })
+            down_n = int(row.get('down_n') or 0)
+            slow_n = int(row.get('slow_n') or 0)
+            up_n = int(row.get('up_n') or 0)
+            entry['band'][index] = 'down' if down_n else ('slow' if slow_n else ('up' if up_n else 'unknown'))
+            entry['mix'][index] = [up_n, slow_n, down_n]
+            entry['counts']['down'] += down_n
+            entry['counts']['slow'] += slow_n
+            entry['counts']['up'] += up_n
+
+        result['__labels__'] = labels
+        return result
     
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
         """Get historical data with optional filters"""
@@ -2733,20 +3261,25 @@ class Database:
         finally:
             self.release_connection(conn)
 
-    def get_disk_partition_history(self, device_id, hours=24):
+    def get_disk_partition_history(self, device_id, hours=24, minutes=None):
         """Return disk usage history grouped by mount/drive name."""
         conn = self.get_connection()
         try:
             cursor = self._cursor(conn)
             ph = self._ph()
-            hours = max(1, int(hours or 1))
+            if minutes is not None:
+                window_value = max(5, min(7 * 24 * 60, int(minutes or 360)))
+                window_unit = 'minutes'
+            else:
+                window_value = max(1, min(24 * 30, int(hours or 1)))
+                window_unit = 'hours'
             if self.db_type == 'postgresql':
                 query = f"""
                     SELECT metric_type, value, timestamp
                     FROM system_metrics_history
                     WHERE device_id = {ph}
                     AND metric_type LIKE 'disk:%%'
-                    AND timestamp >= NOW() - INTERVAL '{hours} hours'
+                    AND timestamp >= NOW() - INTERVAL '{window_value} {window_unit}'
                     ORDER BY timestamp ASC
                 """
             else:
@@ -2755,7 +3288,7 @@ class Database:
                     FROM system_metrics_history
                     WHERE device_id = {ph}
                     AND metric_type LIKE 'disk:%'
-                    AND timestamp >= datetime('now', '-{hours} hours')
+                    AND timestamp >= datetime('now', '-{window_value} {window_unit}')
                     ORDER BY timestamp ASC
                 """
             cursor.execute(query, (device_id,))
@@ -4007,23 +4540,6 @@ class Database:
         cursor.execute(f'UPDATE devices SET escalation_level = {self._ph()} WHERE id = {self._ph()}', (level, device_id))
         conn.commit()
         self.release_connection(conn)
-        
-        if device_id:
-            cursor.execute(f'''
-                SELECT * FROM maintenance_windows 
-                WHERE (device_id = {ph} OR device_id IS NULL)
-                  AND start_time <= {ph} 
-                  AND end_time >= {ph}
-            ''', (device_id, now, now))
-        else:
-            cursor.execute(f'''
-                SELECT * FROM maintenance_windows 
-                WHERE start_time <= {ph} AND end_time >= {ph}
-            ''', (now, now))
-        
-        windows = self._rows_to_dicts(cursor.fetchall())
-        self.release_connection(conn)
-        return windows
     
     def is_device_in_maintenance(self, device_id):
         """Check if a device is currently in maintenance window"""
@@ -4222,6 +4738,9 @@ class Database:
             # Delete old server performance samples using the global retention policy.
             cursor.execute(f'DELETE FROM system_metrics_history WHERE timestamp < {ph}', (cutoff_date,))
             deleted_metrics = cursor.rowcount
+
+            cursor.execute(f'DELETE FROM internet_check_history WHERE checked_at < {ph}', (cutoff_date,))
+            deleted_internet = cursor.rowcount
             
             conn.commit()
             
@@ -4231,12 +4750,14 @@ class Database:
                 cursor.execute('VACUUM ANALYZE status_history')
                 cursor.execute('VACUUM ANALYZE alert_history')
                 cursor.execute('VACUUM ANALYZE system_metrics_history')
+                cursor.execute('VACUUM ANALYZE internet_check_history')
                 conn.autocommit = False
             
             print(
                 f"[DB Cleanup] Deleted {deleted_history} old status records, "
                 f"{deleted_alerts} old alerts, {deleted_bw} old bandwidth samples, "
-                f"{deleted_metrics} old system metric samples "
+                f"{deleted_metrics} old system metric samples, "
+                f"{deleted_internet} old Internet check samples "
                 f"(retention: {Config.RETENTION_DAYS} days)"
             )
             

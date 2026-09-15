@@ -16,8 +16,10 @@
         <i class="fa-solid fa-code-compare"></i> Compare
     </a>
     <div class="server-range-group" aria-label="Time range">
+        <button type="button" class="server-range-btn" data-minutes="5">5m</button>
+        <button type="button" class="server-range-btn active" data-minutes="15">15m</button>
         <button type="button" class="server-range-btn" data-hours="1">1h</button>
-        <button type="button" class="server-range-btn active" data-hours="6">6h</button>
+        <button type="button" class="server-range-btn" data-hours="6">6h</button>
         <button type="button" class="server-range-btn" data-hours="12">12h</button>
         <button type="button" class="server-range-btn" data-hours="24">24h</button>
         <button type="button" class="server-range-btn" data-hours="168">7d</button>
@@ -96,7 +98,7 @@
 
     .server-hero {
         display: grid;
-        grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(118px, 0.48fr));
+        grid-template-columns: minmax(0, 1.5fr) repeat(7, minmax(112px, 0.48fr));
         gap: 0.5rem;
         align-items: stretch;
     }
@@ -156,6 +158,50 @@
         flex-wrap: wrap;
         justify-content: flex-end;
         gap: 0.3rem;
+    }
+
+    .response-header-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.45rem;
+        margin-left: auto;
+    }
+
+    .server-chart-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.15rem;
+        padding: 0.14rem;
+        border: 1px solid var(--server-line);
+        border-radius: 7px;
+        background: var(--bg-tertiary);
+    }
+
+    .server-chart-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.28rem;
+        min-height: 24px;
+        padding: 0.18rem 0.45rem;
+        border: 0;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 0.66rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .server-chart-toggle-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .server-chart-toggle-btn.active {
+        background: var(--primary);
+        color: #fff;
+        box-shadow: 0 2px 6px rgba(15, 118, 110, 0.2);
     }
 
     .server-pill.is-warning {
@@ -225,17 +271,24 @@
 
     .server-chart-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(280px, 1fr));
+        grid-template-columns: repeat(12, minmax(0, 1fr));
         gap: 0.6rem;
     }
 
     .server-chart-card {
+        grid-column: span 4;
         min-height: 265px;
+        min-width: 0;
         overflow: hidden;
     }
 
+    .server-chart-card.half,
     .server-chart-card.wide {
-        grid-column: span 2;
+        grid-column: span 6;
+    }
+
+    .server-chart-card.quarter {
+        grid-column: span 3;
     }
 
     .server-chart-card.full {
@@ -470,7 +523,7 @@
 
     .event-summary-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(72px, 1fr));
+        grid-template-columns: repeat(5, minmax(72px, 1fr));
         gap: 0.35rem;
         margin-bottom: 0.5rem;
     }
@@ -500,6 +553,11 @@
     .event-summary-card.is-alert {
         border-color: rgba(124, 58, 237, 0.28);
         background: rgba(124, 58, 237, 0.06);
+    }
+
+    .event-summary-card.is-internet {
+        border-color: rgba(14, 165, 233, 0.3);
+        background: rgba(14, 165, 233, 0.07);
     }
 
     [data-theme="dark"] .event-summary-card {
@@ -609,6 +667,21 @@
         .server-identity {
             grid-column: 1 / -1;
         }
+
+        .server-chart-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .server-chart-card,
+        .server-chart-card.quarter,
+        .server-chart-card.half,
+        .server-chart-card.wide {
+            grid-column: span 1;
+        }
+
+        .server-chart-card.full {
+            grid-column: 1 / -1;
+        }
     }
 
     @media (max-width: 840px) {
@@ -621,6 +694,17 @@
             flex: 1;
         }
 
+        .response-chart-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .response-header-controls {
+            width: 100%;
+            margin-left: 0;
+            justify-content: space-between;
+        }
+
         .server-hero,
         .server-chart-grid,
         .server-detail-grid,
@@ -629,7 +713,14 @@
         }
 
         .server-chart-card.wide {
-            grid-column: 1;
+            grid-column: 1 / -1;
+        }
+
+        .server-chart-card,
+        .server-chart-card.quarter,
+        .server-chart-card.half,
+        .server-chart-card.full {
+            grid-column: 1 / -1;
         }
     }
 </style>
@@ -681,6 +772,14 @@
                 <div id="stat-response-sub" class="server-stat-note">Current</div>
             </div>
         </div>
+        <div id="stat-internet-card" class="server-stat-card" style="--stat-color: var(--info);">
+            <div class="server-stat-icon"><i class="fa-solid fa-globe"></i></div>
+            <div>
+                <div class="server-stat-label">Internet</div>
+                <div id="stat-internet" class="server-stat-value">-</div>
+                <div id="stat-internet-sub" class="server-stat-note">Remote check</div>
+            </div>
+        </div>
         <div class="server-stat-card" style="--stat-color: var(--danger);">
             <div class="server-stat-icon"><i class="fa-solid fa-wave-square"></i></div>
             <div>
@@ -707,47 +806,77 @@
             </div>
             <div id="partition-section" class="server-detail-body partition-card-grid"></div>
         </div>
-        <div class="server-chart-card">
+        <div id="response-chart-card" class="server-chart-card quarter overview-gauge-card">
+            <div class="server-chart-header response-chart-header">
+                <h3 class="server-chart-title"><i class="fa-solid fa-gauge-high"></i> Response Time</h3>
+                <div class="response-header-controls">
+                    <div class="server-chart-toggle" role="group" aria-label="Response time chart view">
+                        <button type="button" class="server-chart-toggle-btn active" data-response-view="gauge" aria-pressed="true" title="Gauge view">
+                            <i class="fa-solid fa-gauge-high"></i> Gauge
+                        </button>
+                        <button type="button" class="server-chart-toggle-btn" data-response-view="trend" aria-pressed="false" title="Trend view">
+                            <i class="fa-solid fa-chart-line"></i> Trend
+                        </button>
+                    </div>
+                    <span id="response-count" class="server-pill">0 samples</span>
+                </div>
+            </div>
+            <div class="server-chart-body"><canvas id="response-chart"></canvas></div>
+        </div>
+        <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-microchip"></i> CPU Usage</h3>
-                <span id="cpu-count" class="server-pill">0 samples</span>
+                <div class="response-header-controls">
+                    <div class="server-chart-toggle" role="group" aria-label="CPU usage chart view">
+                        <button type="button" class="server-chart-toggle-btn active" data-utilization-view="gauge" data-chart-key="cpu" aria-pressed="true"><i class="fa-solid fa-gauge-high"></i> Gauge</button>
+                        <button type="button" class="server-chart-toggle-btn" data-utilization-view="trend" data-chart-key="cpu" aria-pressed="false"><i class="fa-solid fa-chart-line"></i> Trend</button>
+                    </div>
+                    <span id="cpu-count" class="server-pill">0 samples</span>
+                </div>
             </div>
             <div class="server-chart-body"><canvas id="cpu-chart"></canvas></div>
         </div>
-        <div class="server-chart-card">
+        <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-memory"></i> RAM Usage</h3>
-                <span id="ram-count" class="server-pill">0 samples</span>
+                <div class="response-header-controls">
+                    <div class="server-chart-toggle" role="group" aria-label="RAM usage chart view">
+                        <button type="button" class="server-chart-toggle-btn active" data-utilization-view="gauge" data-chart-key="ram" aria-pressed="true"><i class="fa-solid fa-gauge-high"></i> Gauge</button>
+                        <button type="button" class="server-chart-toggle-btn" data-utilization-view="trend" data-chart-key="ram" aria-pressed="false"><i class="fa-solid fa-chart-line"></i> Trend</button>
+                    </div>
+                    <span id="ram-count" class="server-pill">0 samples</span>
+                </div>
             </div>
             <div class="server-chart-body"><canvas id="ram-chart"></canvas></div>
         </div>
-        <div class="server-chart-card">
+        <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-hard-drive"></i> Disk Usage</h3>
-                <span id="disk-count" class="server-pill">0 samples</span>
+                <div class="response-header-controls">
+                    <div class="server-chart-toggle" role="group" aria-label="Disk usage chart view">
+                        <button type="button" class="server-chart-toggle-btn active" data-utilization-view="gauge" data-chart-key="disk" aria-pressed="true"><i class="fa-solid fa-gauge-high"></i> Gauge</button>
+                        <button type="button" class="server-chart-toggle-btn" data-utilization-view="trend" data-chart-key="disk" aria-pressed="false"><i class="fa-solid fa-chart-line"></i> Trend</button>
+                    </div>
+                    <span id="disk-count" class="server-pill">0 samples</span>
+                </div>
             </div>
             <div class="server-chart-body"><canvas id="disk-chart"></canvas></div>
         </div>
-        <div class="server-chart-card">
+        <div class="server-chart-card half">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-network-wired"></i> Network Traffic</h3>
                 <span id="network-count" class="server-pill">0 samples</span>
             </div>
             <div class="server-chart-body"><canvas id="network-chart"></canvas></div>
         </div>
-        <div class="server-chart-card wide">
+        <div class="server-chart-card half">
             <div class="server-chart-header">
-                <h3 class="server-chart-title"><i class="fa-solid fa-wave-square"></i> Response Time</h3>
-                <div class="server-chart-pills">
-                    <span id="response-current" class="server-pill">Current -</span>
-                    <span id="response-avg" class="server-pill">Avg -</span>
-                    <span id="response-max" class="server-pill">Max -</span>
-                    <span id="response-count" class="server-pill">0 samples</span>
-                </div>
+                <h3 class="server-chart-title"><i class="fa-solid fa-globe"></i> Internet Connectivity</h3>
+                <span id="internet-count" class="server-pill">0 samples</span>
             </div>
-            <div class="server-chart-body"><canvas id="response-chart"></canvas></div>
+            <div class="server-chart-body"><canvas id="internet-chart"></canvas></div>
         </div>
-        <div id="load-chart-card" class="server-chart-card wide" style="display: none;">
+        <div id="load-chart-card" class="server-chart-card full" style="display: none;">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-gauge"></i> Load Average</h3>
                 <span id="load-count" class="server-pill">0 samples</span>
@@ -779,8 +908,13 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <script>
 const deviceId = Number('{{ device_id }}');
-let currentHours = 6;
+let currentMinutes = 15;
 const charts = {};
+let responseChartMode = 'gauge';
+let latestResponsePayload = null;
+let latestResponseServer = null;
+let latestPerformancePayload = null;
+const utilizationChartModes = { cpu: 'gauge', ram: 'gauge', disk: 'gauge' };
 const partitionCharts = [];
 let downIntervals = [];
 let downPoints = [];
@@ -913,20 +1047,6 @@ function timestampPoint(row) {
     return { x: date, y };
 }
 
-function timestampPointWithNull(row) {
-    const raw = row?.timestamp || row?.sampled_at || row?.checked_at;
-    const date = parseChartDate(raw);
-    if (!date) return null;
-
-    const rawValue = row?.value ?? row?.avg_response_time;
-    if (rawValue === null || rawValue === undefined || rawValue === '') {
-        return { x: date, y: null };
-    }
-
-    const y = Number(rawValue);
-    return Number.isFinite(y) ? { x: date, y } : { x: date, y: null };
-}
-
 function insertTimeGaps(points) {
     const validPoints = (points || [])
         .filter(point => point && point.x instanceof Date && !Number.isNaN(point.x.getTime()))
@@ -973,6 +1093,9 @@ function chartColors() {
     const theme = document.documentElement.getAttribute('data-theme') || 'light';
     return {
         text: theme === 'light' ? '#64748b' : 'rgba(255,255,255,0.65)',
+        strong: theme === 'light' ? '#1e293b' : '#f8fafc',
+        muted: theme === 'light' ? '#94a3b8' : 'rgba(255,255,255,0.45)',
+        card: theme === 'light' ? '#ffffff' : '#111827',
         grid: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
     };
 }
@@ -1001,6 +1124,10 @@ function setPillValue(id, label, value) {
 function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tickCallback = value => `${value}%`) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+    if (charts[key]?.config?.type !== 'line') {
+        charts[key]?.destroy();
+        delete charts[key];
+    }
     const colors = chartColors();
     const points = insertTimeGaps((rows || []).map(timestampPoint).filter(Boolean));
     const options = {
@@ -1011,7 +1138,7 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1071,7 +1198,7 @@ function renderNetworkChart(data) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1108,6 +1235,87 @@ function renderNetworkChart(data) {
     }
 }
 
+function renderInternetChart(rows) {
+    const canvas = document.getElementById('internet-chart');
+    if (!canvas) return;
+    const colors = chartColors();
+    const checks = (rows || []).map(row => {
+        const x = parseChartDate(row.checked_at);
+        if (!x) return null;
+        const status = String(row.status || 'unknown').toLowerCase();
+        const rawLatency = row.latency_ms;
+        const latency = rawLatency === null || rawLatency === undefined || rawLatency === ''
+            ? null
+            : Number(rawLatency);
+        return { x, status, latency: Number.isFinite(latency) ? latency : null, error: row.error || '' };
+    }).filter(Boolean);
+    const online = checks.map(point => ({
+        x: point.x,
+        y: point.status === 'online' ? point.latency : null,
+        status: point.status,
+        error: point.error
+    }));
+    const failures = checks.filter(point => point.status !== 'online').map(point => ({
+        // Use a separate, hidden status axis. A failed request has no latency
+        // value and must never be plotted as 0 ms.
+        x: point.x, y: 0.92, status: point.status, error: point.error
+    }));
+    const onlineLatencies = checks
+        .filter(point => point.status === 'online' && Number.isFinite(point.latency))
+        .map(point => point.latency);
+    const maxLatency = Math.max(100, ...onlineLatencies);
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 } }
+            },
+            y: {
+                min: 0,
+                suggestedMax: Math.ceil(maxLatency * 1.2),
+                grid: { color: colors.grid },
+                ticks: { color: colors.text, font: { size: 10 }, callback: value => `${value} ms` }
+            },
+            status: {
+                display: false,
+                min: 0,
+                max: 1
+            }
+        },
+        plugins: {
+            legend: {
+                display: true,
+                position: 'bottom',
+                labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 10 } }
+            },
+            tooltip: {
+                callbacks: {
+                    label: context => context.raw.status === 'online'
+                        ? `Online: ${formatMs(context.parsed.y)}`
+                        : `${context.raw.status}: ${context.raw.error || 'check failed'}`
+                }
+            }
+        }
+    };
+    const data = { datasets: [
+        { label: 'HTTPS latency', data: online, borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.12)', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, fill: true, tension: 0.18, spanGaps: false },
+        { label: 'Offline / failed check', data: failures, yAxisID: 'status', showLine: false, pointStyle: 'triangle', pointRotation: 180, pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: '#ef4444', pointBorderColor: '#b91c1c', pointBorderWidth: 1.5, clip: false }
+    ] };
+    if (charts.internet) {
+        charts.internet.data = data;
+        charts.internet.options = options;
+        charts.internet.update('none');
+    } else {
+        charts.internet = new Chart(canvas.getContext('2d'), { type: 'line', data, options });
+    }
+}
+
 function renderLoadChart(data) {
     const card = document.getElementById('load-chart-card');
     const canvas = document.getElementById('load-chart');
@@ -1138,7 +1346,7 @@ function renderLoadChart(data) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1226,9 +1434,240 @@ const responseThresholdPlugin = {
     }
 };
 
+const responseGaugePlugin = {
+    id: 'singleServerResponseGauge',
+    afterDatasetsDraw(chart) {
+        const gauge = chart.options?.plugins?.responseGauge;
+        const arc = chart.getDatasetMeta(0)?.data?.[0];
+        if (!gauge || !arc) return;
+
+        const { ctx } = chart;
+        const value = Math.max(0, Math.min(Number(gauge.value) || 0, Number(gauge.max) || 1));
+        const ratio = value / gauge.max;
+        const angle = Math.PI + (Math.PI * ratio);
+        const needleLength = arc.outerRadius - 5;
+        const centerX = arc.x;
+        const centerY = arc.y;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = gauge.mutedColor;
+        ctx.font = '700 9px Inter, sans-serif';
+        (gauge.ticks || []).forEach(tick => {
+            const tickAngle = Math.PI + ((tick.value / gauge.max) * Math.PI);
+            const labelRadius = Math.max(12, arc.innerRadius - 14);
+            const tickX = centerX + (Math.cos(tickAngle) * labelRadius);
+            const tickY = centerY + (Math.sin(tickAngle) * labelRadius);
+            ctx.fillText(tick.label, tickX, tickY);
+
+            ctx.beginPath();
+            ctx.moveTo(
+                centerX + (Math.cos(tickAngle) * arc.innerRadius),
+                centerY + (Math.sin(tickAngle) * arc.innerRadius)
+            );
+            ctx.lineTo(
+                centerX + (Math.cos(tickAngle) * (arc.innerRadius - 5)),
+                centerY + (Math.sin(tickAngle) * (arc.innerRadius - 5))
+            );
+            ctx.strokeStyle = gauge.tickColor;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        });
+        ctx.restore();
+
+        if (gauge.hasData === false) {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = gauge.mutedColor;
+            ctx.font = '800 18px Inter, sans-serif';
+            ctx.fillText(gauge.formattedValue, centerX, centerY + 25);
+            ctx.fillStyle = gauge.statusColor;
+            ctx.font = '800 9px Inter, sans-serif';
+            ctx.fillText(gauge.status, centerX, centerY + 43);
+            ctx.restore();
+            return;
+        }
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, -3);
+        ctx.lineTo(needleLength, 0);
+        ctx.lineTo(0, 3);
+        ctx.closePath();
+        ctx.fillStyle = gauge.needleColor;
+        ctx.shadowBlur = 7;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.32)';
+        ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 7, 0, Math.PI * 2);
+        ctx.fillStyle = gauge.needleColor;
+        ctx.fill();
+        ctx.strokeStyle = gauge.capBorderColor;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = gauge.textColor;
+        ctx.font = '850 23px Inter, sans-serif';
+        ctx.fillText(gauge.formattedValue, centerX, centerY + 25);
+        ctx.fillStyle = gauge.statusColor;
+        ctx.font = '800 9px Inter, sans-serif';
+        ctx.fillText(gauge.status, centerX, centerY + 43);
+        ctx.restore();
+    }
+};
+
+function renderUtilizationGauge(key, canvasId, label, rows, currentValue, currentStatus) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const colors = chartColors();
+    const historyValues = (rows || [])
+        .filter(row => row?.value !== null && row?.value !== undefined && row?.value !== '')
+        .map(row => Number(row.value))
+        .filter(value => Number.isFinite(value));
+    const normalizedStatus = String(currentStatus || '').toLowerCase();
+    const hasData = historyValues.length > 0 && !['down', 'disabled'].includes(normalizedStatus);
+    const numericCurrent = currentValue === null || currentValue === undefined || currentValue === ''
+        ? NaN
+        : Number(currentValue);
+    const rawValue = hasData
+        ? (Number.isFinite(numericCurrent) ? numericCurrent : historyValues[historyValues.length - 1])
+        : 0;
+    const value = Math.max(0, Math.min(100, rawValue));
+    const status = hasData
+        ? (value >= 85 ? 'CRITICAL' : (value >= 70 ? 'WARNING' : 'NORMAL'))
+        : (normalizedStatus === 'down' ? 'SERVER DOWN' : '0 SAMPLES');
+    const statusColor = hasData
+        ? (value >= 85 ? '#dc2626' : (value >= 70 ? '#d97706' : '#059669'))
+        : (normalizedStatus === 'down' ? '#dc2626' : colors.muted);
+    const gaugeData = {
+        labels: ['Low (0-25%)', 'Normal (25-50%)', 'High (50-75%)', 'Critical (75-100%)'],
+        datasets: [{
+            data: [25, 25, 25, 25],
+            backgroundColor: hasData
+                ? ['#10b981', '#f59e0b', '#fb923c', '#ef4444']
+                : [colors.grid, colors.grid, colors.grid, colors.grid],
+            borderWidth: 0,
+            hoverOffset: 0
+        }]
+    };
+    const gaugeOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        rotation: -90,
+        circumference: 180,
+        cutout: '80%',
+        layout: { padding: { top: 14, right: 10, bottom: 36, left: 10 } },
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false },
+            responseGauge: {
+                hasData,
+                value,
+                max: 100,
+                formattedValue: hasData ? `${value.toFixed(1)}%` : 'No data',
+                status,
+                statusColor,
+                needleColor: colors.strong,
+                capBorderColor: colors.card,
+                textColor: colors.strong,
+                mutedColor: colors.muted,
+                tickColor: colors.grid,
+                ticks: [
+                    { value: 0, label: '0' },
+                    { value: 25, label: '25' },
+                    { value: 50, label: '50' },
+                    { value: 75, label: '75' },
+                    { value: 100, label: '100' }
+                ]
+            }
+        }
+    };
+
+    canvas.setAttribute(
+        'aria-label',
+        hasData
+            ? `${label} gauge: ${value.toFixed(1)}% (${status.toLowerCase()})`
+            : `${label} gauge: no data (${status.toLowerCase()})`
+    );
+    if (charts[key]?.config?.type !== 'doughnut') {
+        charts[key]?.destroy();
+        delete charts[key];
+    }
+    if (charts[key]) {
+        charts[key].data = gaugeData;
+        charts[key].options = gaugeOptions;
+        charts[key].update('none');
+    } else {
+        charts[key] = new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: gaugeData,
+            options: gaugeOptions,
+            plugins: [responseGaugePlugin]
+        });
+    }
+}
+
+function syncUtilizationViewButtons(key) {
+    document.querySelectorAll(`[data-utilization-view][data-chart-key="${key}"]`).forEach(button => {
+        const isActive = button.dataset.utilizationView === utilizationChartModes[key];
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
+function renderUtilizationMetric(key) {
+    const performance = latestPerformancePayload;
+    if (!performance) return;
+    const configs = {
+        cpu: { canvasId: 'cpu-chart', label: 'CPU Usage', color: '#0f766e' },
+        ram: { canvasId: 'ram-chart', label: 'RAM Usage', color: '#2563eb' },
+        disk: { canvasId: 'disk-chart', label: 'Disk Usage', color: '#d97706' }
+    };
+    const config = configs[key];
+    if (!config) return;
+    const rows = performance[key] || [];
+    syncUtilizationViewButtons(key);
+
+    if (utilizationChartModes[key] === 'trend') {
+        renderLineChart(key, config.canvasId, config.label, rows, config.color);
+        document.getElementById(config.canvasId)?.setAttribute('aria-label', `${config.label} trend chart`);
+        return;
+    }
+    renderUtilizationGauge(
+        key,
+        config.canvasId,
+        config.label,
+        rows,
+        performance.current?.[key],
+        performance.current?.status
+    );
+}
+
+function syncResponseViewButtons() {
+    document.querySelectorAll('[data-response-view]').forEach(button => {
+        const isActive = button.dataset.responseView === responseChartMode;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
+    });
+}
+
 function renderResponseChart(serverHealthResponse, server) {
     const canvas = document.getElementById('response-chart');
     if (!canvas) return;
+    latestResponsePayload = serverHealthResponse;
+    latestResponseServer = server;
+    syncResponseViewButtons();
     const colors = chartColors();
     const series = (serverHealthResponse.series || []).find(item => Number(item.device_id) === deviceId);
     const labels = serverHealthResponse.labels || [];
@@ -1236,7 +1675,12 @@ function renderResponseChart(serverHealthResponse, server) {
         checked_at: label,
         value: series ? series.values[index] : null
     }));
-    const points = rows.map(timestampPointWithNull).filter(Boolean);
+    // Bucketed response-time data is intentionally sparse when the monitor
+    // interval is longer than the chart bucket size.  Keeping every empty
+    // bucket together with spanGaps=false makes each sample an isolated,
+    // invisible point because pointRadius is zero.  Build the line from real
+    // samples and let insertTimeGaps add nulls only for genuine long outages.
+    const points = insertTimeGaps(rows.map(timestampPoint).filter(Boolean));
     const values = points.map(point => point.y).filter(value => Number.isFinite(value));
     const currentValue = Number(server?.response_time);
     const lastValue = Number.isFinite(currentValue) ? currentValue : values[values.length - 1];
@@ -1261,7 +1705,7 @@ function renderResponseChart(serverHealthResponse, server) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentHours <= 1 ? 'minute' : (currentHours <= 24 ? 'hour' : 'day') },
+                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1294,6 +1738,90 @@ function renderResponseChart(serverHealthResponse, server) {
         }]
     };
 
+    if (responseChartMode === 'gauge') {
+        const gaugeValue = Number.isFinite(lastValue) ? Math.max(0, lastValue) : 0;
+        const gaugeMax = Math.max(
+            40000,
+            Math.ceil(gaugeValue / 10000) * 10000
+        );
+        const gaugeStatus = gaugeValue > RESPONSE_CRITICAL_MS
+            ? 'CRITICAL'
+            : (gaugeValue > RESPONSE_WARNING_MS ? 'WARNING' : 'NORMAL');
+        const gaugeStatusColor = gaugeValue > RESPONSE_CRITICAL_MS
+            ? '#dc2626'
+            : (gaugeValue > RESPONSE_WARNING_MS ? '#d97706' : '#059669');
+        const gaugeData = {
+            labels: ['Normal (0-10s)', 'Warning (10-20s)', 'High (20-30s)', 'Critical (30s+)'],
+            datasets: [{
+                data: [
+                    RESPONSE_WARNING_MS,
+                    10000,
+                    10000,
+                    gaugeMax - RESPONSE_CRITICAL_MS
+                ],
+                backgroundColor: ['#10b981', '#f59e0b', '#fb923c', '#ef4444'],
+                borderWidth: 0,
+                hoverOffset: 0
+            }]
+        };
+        const gaugeOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            rotation: -90,
+            circumference: 180,
+            cutout: '80%',
+            layout: { padding: { top: 14, right: 10, bottom: 36, left: 10 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false },
+                responseGauge: {
+                    value: gaugeValue,
+                    max: gaugeMax,
+                    formattedValue: formatMs(Number.isFinite(lastValue) ? lastValue : null),
+                    status: gaugeStatus,
+                    statusColor: gaugeStatusColor,
+                    needleColor: colors.strong,
+                    capBorderColor: colors.card,
+                    textColor: colors.strong,
+                    mutedColor: colors.muted,
+                    tickColor: colors.grid,
+                    ticks: [
+                        { value: 0, label: '0' },
+                        { value: 10000, label: '10s' },
+                        { value: 20000, label: '20s' },
+                        { value: 30000, label: '30s' },
+                        { value: gaugeMax, label: `${gaugeMax / 1000}s` }
+                    ]
+                }
+            }
+        };
+
+        canvas.setAttribute('aria-label', `Response time gauge: ${formatMs(lastValue)} (${gaugeStatus.toLowerCase()})`);
+        if (charts.response?.config?.type !== 'doughnut') {
+            charts.response?.destroy();
+            delete charts.response;
+        }
+        if (charts.response) {
+            charts.response.data = gaugeData;
+            charts.response.options = gaugeOptions;
+            charts.response.update('none');
+        } else {
+            charts.response = new Chart(canvas.getContext('2d'), {
+                type: 'doughnut',
+                data: gaugeData,
+                options: gaugeOptions,
+                plugins: [responseGaugePlugin]
+            });
+        }
+        return;
+    }
+
+    canvas.setAttribute('aria-label', 'Response time trend chart');
+    if (charts.response?.config?.type !== 'line') {
+        charts.response?.destroy();
+        delete charts.response;
+    }
     if (charts.response) {
         charts.response.data = chartData;
         charts.response.options = options;
@@ -1458,6 +1986,7 @@ function renderDetails(data, server) {
 
 function eventIcon(event) {
     if (event.kind === 'alert') return 'fa-triangle-exclamation';
+    if (event.kind === 'internet') return 'fa-globe';
     if (event.status === 'down') return 'fa-circle-xmark';
     if (event.status === 'slow') return 'fa-gauge-high';
     if (event.status === 'up') return 'fa-circle-check';
@@ -1466,6 +1995,7 @@ function eventIcon(event) {
 
 function eventIconClass(event) {
     if (event.kind === 'alert') return 'is-alert';
+    if (event.kind === 'internet') return event.status === 'online' ? 'is-up' : 'is-failed';
     if (event.status === 'up') return 'is-up';
     if (event.status === 'slow') return 'is-slow';
     if (event.status === 'down') return 'is-down';
@@ -1481,6 +2011,8 @@ function renderEvents(data) {
     const visibleEvents = events.slice(0, 8);
     const statusEvents = events.filter(event => event.kind === 'status');
     const alertEvents = events.filter(event => event.kind === 'alert');
+    const internetEvents = events.filter(event => event.kind === 'internet');
+    const internetFailures = internetEvents.filter(event => event.status !== 'online');
     const slowEvents = statusEvents.filter(event => event.status === 'slow');
     const downEvents = statusEvents.filter(event => event.status === 'down');
     if (count) count.textContent = `${visibleEvents.length}/${events.length} shown`;
@@ -1511,10 +2043,14 @@ function renderEvents(data) {
                 <div class="event-summary-label">Alerts</div>
                 <div class="event-summary-value">${esc(alertEvents.length)}</div>
             </div>
+            <div class="event-summary-card is-internet">
+                <div class="event-summary-label">Internet Fail</div>
+                <div class="event-summary-value">${esc(internetFailures.length)}</div>
+            </div>
         </div>
         <div class="event-list">
             ${visibleEvents.map(event => {
-                const kind = event.kind === 'alert' ? 'Alert' : 'Status';
+                const kind = event.kind === 'alert' ? 'Alert' : (event.kind === 'internet' ? 'Internet' : 'Status');
                 const title = event.kind === 'alert'
                     ? `${kind}: ${event.title || 'alert'}`
                     : `${kind}: ${event.status || 'unknown'}`;
@@ -1568,6 +2104,8 @@ function updateSummary(data, server) {
     const responseValue = Number(current.response_time ?? server?.response_time);
     const serviceDown = serviceDownCount(current);
     const pendingReboot = !!current.pending_reboot;
+    const internetStatus = String(current.internet_status || 'unknown').toLowerCase();
+    const internetLatency = Number(current.internet_latency_ms);
     status.textContent = statusText;
     status.className = `status-badge status-${esc(statusText)}`;
     document.getElementById('stat-cpu').textContent = pct(current.cpu);
@@ -1582,6 +2120,15 @@ function updateSummary(data, server) {
     document.getElementById('stat-response-sub').textContent = responseSeverityClass(responseValue) === 'is-critical'
         ? 'Critical'
         : (responseSeverityClass(responseValue) === 'is-warning' ? 'Warning' : 'Current');
+    document.getElementById('stat-internet').textContent = internetStatus === 'online'
+        ? 'Online'
+        : (internetStatus === 'unknown' ? 'Unknown' : 'Offline');
+    document.getElementById('stat-internet-sub').textContent = internetStatus === 'online'
+        ? formatMs(internetLatency)
+        : internetStatus.replaceAll('_', ' ');
+    const internetCard = document.getElementById('stat-internet-card');
+    internetCard.style.setProperty('--stat-color', internetStatus === 'online' ? 'var(--success)' : (internetStatus === 'unknown' ? 'var(--text-muted)' : 'var(--danger)'));
+    internetCard.title = current.internet_error || current.internet_target || 'Remote Internet check';
     document.getElementById('stat-service-down').textContent = serviceDown;
     document.getElementById('stat-service-sub').textContent = current.service_status?.length
         ? `${current.service_status.length} monitored`
@@ -1608,10 +2155,10 @@ async function loadDashboard() {
     try {
         const [server, performanceRes, responseRes, eventsRes, downRes] = await Promise.all([
             loadServerList(),
-            fetch(`/api/devices/${deviceId}/performance?hours=${currentHours}&_t=${Date.now()}`),
-            fetch(`/api/server-health/response-time?minutes=${currentHours * 60}&sample=72&_t=${Date.now()}`),
-            fetch(`/api/devices/${deviceId}/events?minutes=${currentHours * 60}&limit=30&_t=${Date.now()}`),
-            fetch(`/api/devices/${deviceId}/down-intervals?minutes=${currentHours * 60}&_t=${Date.now()}`)
+            fetch(`/api/devices/${deviceId}/performance?minutes=${currentMinutes}&_t=${Date.now()}`),
+            fetch(`/api/server-health/response-time?minutes=${currentMinutes}&sample=72&_t=${Date.now()}`),
+            fetch(`/api/devices/${deviceId}/events?minutes=${currentMinutes}&limit=30&_t=${Date.now()}`),
+            fetch(`/api/devices/${deviceId}/down-intervals?minutes=${currentMinutes}&_t=${Date.now()}`)
         ]);
         if (!performanceRes.ok) throw new Error(`Performance HTTP ${performanceRes.status}`);
         if (!responseRes.ok) throw new Error(`Response HTTP ${responseRes.status}`);
@@ -1622,6 +2169,7 @@ async function loadDashboard() {
         const events = await eventsRes.json();
         const downData = await downRes.json();
         if (performance.error) throw new Error(performance.error);
+        latestPerformancePayload = performance;
         if (events.success === false) throw new Error(events.error || 'Unable to load events');
         if (downData.success === false) throw new Error(downData.error || 'Unable to load down intervals');
         downIntervals = Array.isArray(downData.intervals) ? downData.intervals : [];
@@ -1634,12 +2182,14 @@ async function loadDashboard() {
         setCount('ram-count', (performance.ram || []).length);
         setCount('disk-count', (performance.disk || []).length);
         setCount('network-count', Math.max((performance.network_in || []).length, (performance.network_out || []).length));
-        renderLineChart('cpu', 'cpu-chart', 'CPU Usage', performance.cpu || [], '#0f766e');
-        renderLineChart('ram', 'ram-chart', 'RAM Usage', performance.ram || [], '#2563eb');
-        renderLineChart('disk', 'disk-chart', 'Disk Usage', performance.disk || [], '#d97706');
+        setCount('internet-count', (performance.internet || []).length);
+        renderUtilizationMetric('cpu');
+        renderUtilizationMetric('ram');
+        renderUtilizationMetric('disk');
         renderNetworkChart(performance);
-        renderResponseChart(response, server);
+        renderInternetChart(performance.internet || []);
         renderLoadChart(performance);
+        renderResponseChart(response, server);
         renderPartitionCharts(performance.disk_partitions || [], performance.current?.disk_details || []);
     } catch (error) {
         document.getElementById('server-name').textContent = 'Unable to load server';
@@ -1648,11 +2198,34 @@ async function loadDashboard() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-utilization-view]').forEach(button => {
+        button.addEventListener('click', () => {
+            const key = button.dataset.chartKey;
+            const nextMode = button.dataset.utilizationView;
+            if (!Object.hasOwn(utilizationChartModes, key) || !['gauge', 'trend'].includes(nextMode)) return;
+            if (utilizationChartModes[key] === nextMode) return;
+            utilizationChartModes[key] = nextMode;
+            renderUtilizationMetric(key);
+        });
+    });
+    document.querySelectorAll('[data-response-view]').forEach(button => {
+        button.addEventListener('click', () => {
+            const nextMode = button.dataset.responseView;
+            if (!['gauge', 'trend'].includes(nextMode) || nextMode === responseChartMode) return;
+            responseChartMode = nextMode;
+            syncResponseViewButtons();
+            if (latestResponsePayload) {
+                renderResponseChart(latestResponsePayload, latestResponseServer);
+            }
+        });
+    });
     document.querySelectorAll('.server-range-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.server-range-btn').forEach(item => item.classList.remove('active'));
             btn.classList.add('active');
-            currentHours = Number(btn.dataset.hours || 6);
+            currentMinutes = btn.dataset.minutes
+                ? Number(btn.dataset.minutes)
+                : (Number(btn.dataset.hours || 6) * 60);
             loadDashboard();
         });
     });

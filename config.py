@@ -54,6 +54,9 @@ class Config:
     SERVER_HOST = os.environ.get('SERVER_HOST') or '0.0.0.0'
     SERVER_PORT = int(os.environ.get('SERVER_PORT') or 5000)
     DEBUG = _env_bool('DEBUG', False)
+    # Reload Jinja templates when their files change, without a server restart.
+    # Only useful while developing, and it stats every template on each render.
+    TEMPLATES_AUTO_RELOAD = _env_bool('TEMPLATES_AUTO_RELOAD', DEBUG)
     STRICT_STARTUP_VALIDATION = _env_bool('STRICT_STARTUP_VALIDATION', False)
     ENABLE_SWAGGER_UI = _env_bool('ENABLE_SWAGGER_UI', True)
     EXPOSE_INTERNAL_DOCS = _env_bool('EXPOSE_INTERNAL_DOCS', False)
@@ -79,6 +82,33 @@ class Config:
     PING_TIMEOUT = 2    # seconds to wait for ping response
     PING_COUNT = 3      # number of pings per check
     MONITOR_MAX_WORKERS = int(os.environ.get('MONITOR_MAX_WORKERS') or 12)  # parallel workers
+    # The check is executed on the remote server through WinRM, so it verifies
+    # that the monitored host itself can resolve DNS and reach the Internet.
+    INTERNET_CHECK_URL = os.environ.get('INTERNET_CHECK_URL') or 'http://www.msftconnecttest.com/connecttest.txt'
+    INTERNET_CHECK_TIMEOUT = max(1, int(os.environ.get('INTERNET_CHECK_TIMEOUT') or 8))
+    INTERNET_CHECK_EXPECTED_STATUS = int(os.environ.get('INTERNET_CHECK_EXPECTED_STATUS') or 200)
+    INTERNET_CHECK_EXPECTED_CONTENT = os.environ.get('INTERNET_CHECK_EXPECTED_CONTENT', 'Microsoft Connect Test')
+    # A single unhealthy Windows host must not hold the shared monitoring job
+    # open for several minutes. The transport values cap individual WSMan
+    # operations; WINRM_DEVICE_TIMEOUT caps the complete multi-command check.
+    WINRM_OPERATION_TIMEOUT = max(5, int(os.environ.get('WINRM_OPERATION_TIMEOUT') or 20))
+    WINRM_READ_TIMEOUT = max(
+        WINRM_OPERATION_TIMEOUT + 1,
+        int(os.environ.get('WINRM_READ_TIMEOUT') or 30),
+    )
+    WINRM_DEVICE_TIMEOUT = max(
+        WINRM_READ_TIMEOUT + 1,
+        int(os.environ.get('WINRM_DEVICE_TIMEOUT') or 50),
+    )
+    WINRM_SLOW_COMMAND_SECONDS = max(
+        1,
+        int(os.environ.get('WINRM_SLOW_COMMAND_SECONDS') or 5),
+    )
+    # Paramiko's connect timeout only covers the TCP handshake and banner, so a
+    # host that accepts the session but never answers a command can hold a
+    # monitoring worker open indefinitely. This caps the whole check, retry
+    # included.
+    SSH_DEVICE_TIMEOUT = max(15, int(os.environ.get('SSH_DEVICE_TIMEOUT') or 45))
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'
@@ -120,6 +150,11 @@ class Config:
         'wmi': 5000,      # WMI uses the same heavy Windows agent path as WinRM
     }
     
+    # An internet probe fetches a few bytes, so a second is already slow. Kept
+    # separate from the device thresholds because it measures the path out to
+    # the internet rather than the host.
+    INTERNET_SLOW_LATENCY_MS = int(os.environ.get('INTERNET_SLOW_LATENCY_MS') or 800)
+
     # Default fallback threshold
     DEFAULT_SLOW_THRESHOLD = 500
     
@@ -142,7 +177,7 @@ class Config:
     DNS_LIFETIME = 15  # seconds total time for all retries (increased for stability)
     
     # Failure Threshold - require consecutive failures before marking as down
-    FAILURE_THRESHOLD = 3  # device must fail 3 consecutive checks to be marked as down
+    FAILURE_THRESHOLD = max(1, int(os.environ.get('FAILURE_THRESHOLD') or 2))
     
     # Device defaults
     DEFAULT_DEVICE_TYPE = 'server'

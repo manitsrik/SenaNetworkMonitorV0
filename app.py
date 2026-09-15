@@ -34,6 +34,7 @@ import os
 # Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
+app.config['TEMPLATES_AUTO_RELOAD'] = Config.TEMPLATES_AUTO_RELOAD
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
 app.config['SESSION_COOKIE_HTTPONLY'] = Config.SESSION_COOKIE_HTTPONLY
@@ -98,6 +99,20 @@ from routes import ALL_BLUEPRINTS
 
 for bp in ALL_BLUEPRINTS:
     app.register_blueprint(bp)
+
+@app.after_request
+def set_security_headers(response):
+    """Baseline hardening headers.
+
+    No Content-Security-Policy here on purpose: the templates rely on inline
+    scripts and styles, so a policy has to be introduced together with that
+    cleanup rather than as a silent page-breaking default.
+    """
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    return response
+
 
 @app.context_processor
 def inject_monitor_thresholds():

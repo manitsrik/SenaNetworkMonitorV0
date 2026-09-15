@@ -737,44 +737,7 @@
         border: 1px solid rgba(107, 114, 128, 0.35);
     }
 
-    /* --- Clickable KPI cards (focus the table on one signal) --- */
-    /* The Servers card is a plain figure; only the filter cards are buttons. */
-    .health-summary-card {
-        text-align: left;
-        width: 100%;
-    }
-
-    button.health-summary-card {
-        font: inherit;
-        cursor: pointer;
-        transition: border-color 0.12s ease, background 0.12s ease;
-    }
-
-    button.health-summary-card:hover {
-        border-color: var(--summary-color, var(--primary));
-    }
-
-    button.health-summary-card:focus-visible {
-        outline: 2px solid rgba(59, 130, 246, 0.45);
-        outline-offset: 2px;
-    }
-
-    button.health-summary-card.is-active {
-        border-color: var(--summary-color, var(--primary));
-        background: var(--summary-bg, var(--health-soft));
-    }
-
-    button.health-summary-card.is-active::after {
-        height: 5px;
-    }
-
-    button.health-summary-card:disabled {
-        cursor: default;
-    }
-
-    button.health-summary-card:disabled:hover {
-        border-color: var(--border-color);
-    }
+    /* The KPI cards are read, not pressed: filtering lives in the tabs. */
 
     .health-summary-value.is-empty {
         color: var(--text-muted);
@@ -785,14 +748,6 @@
 
     /* A card at zero is not the one to look at: mute it so the eye lands on
        the counts that still need someone. */
-    button.health-summary-card:disabled .health-summary-value {
-        color: var(--text-muted);
-    }
-
-    button.health-summary-card:disabled::after {
-        opacity: 0.2;
-    }
-
     .health-meta-chip.is-clickable {
         font-family: inherit;
         font-size: 0.68rem;
@@ -1725,7 +1680,7 @@
             <div class="health-summary-note" title="SSH, WinRM, and WMI targets currently included.">SSH &middot; WinRM &middot; WMI</div>
         </div>
 
-        <button type="button" class="health-summary-card is-down" data-health-focus="down" title="Filter the table to servers that are down">
+        <div class="health-summary-card is-down">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Down</div>
@@ -1735,9 +1690,9 @@
                 <svg class="health-summary-spark" id="spark-down" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-down-note">Need connectivity review</div>
-        </button>
+        </div>
 
-        <button type="button" class="health-summary-card is-service" data-health-focus="service" title="Filter the table to servers with a stopped service">
+        <div class="health-summary-card is-service">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Service Down</div>
@@ -1747,9 +1702,9 @@
                 <svg class="health-summary-spark" id="spark-service" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-service-note">Stopped services on checked hosts</div>
-        </button>
+        </div>
 
-        <button type="button" class="health-summary-card is-internet" data-health-focus="internet" title="Filter the table to servers whose internet check is failing">
+        <div class="health-summary-card is-internet">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Internet</div>
@@ -1758,9 +1713,9 @@
                 </div>
             </div>
             <div class="health-summary-note" id="sum-internet-note">Outbound connectivity from each host.</div>
-        </button>
+        </div>
 
-        <button type="button" class="health-summary-card is-reboot" data-health-focus="reboot" title="Filter the table to servers waiting for a restart">
+        <div class="health-summary-card is-reboot">
             <div class="health-summary-header">
                 <div>
                     <div class="health-summary-label">Pending Reboot</div>
@@ -1768,7 +1723,7 @@
                 </div>
             </div>
             <div class="health-summary-note" id="sum-reboot-note">Waiting for a restart</div>
-        </button>
+        </div>
     </section>
 
     <section class="topcards" id="topcards">
@@ -2663,13 +2618,11 @@ function renderServers(servers, totalServers = servers.length) {
     }).join('');
 }
 
-function setCardState(focusKey, count) {
-    const card = document.querySelector(`.health-summary-card[data-health-focus="${focusKey}"]`);
-    if (!card) return;
-    // A card with nothing behind it would filter the table down to an empty
-    // list, so it stops being a button instead of leading to a dead end.
-    card.disabled = !count;
-    if (card.disabled && healthFocus === focusKey) healthFocus = 'all';
+// Filtering lives in the tabs now; the cards are read, not pressed. What the
+// cards used to carry is this: if the thing being filtered on has gone away,
+// fall back to all servers rather than showing an empty table.
+function dropEmptyFocus(focusKey, count) {
+    if (!count && healthFocus === focusKey) healthFocus = 'all';
 }
 
 // Card notes stay to one line, so the longer explanation rides along as the
@@ -2749,7 +2702,7 @@ function setSummary(summary) {
     setText('delta-internet', summary.internet_unchecked
         ? `${summary.internet_unchecked} not checked`
         : '');
-    setCardState('internet', internetProblem);
+    dropEmptyFocus('internet', internetProblem);
 
     const stale = Number(summary.stale || 0);
     const staleChip = document.getElementById('sum-stale-chip');
@@ -2757,10 +2710,10 @@ function setSummary(summary) {
     if (staleValue) staleValue.textContent = stale;
     if (staleChip) staleChip.hidden = stale === 0;
 
-    setCardState('down', summary.down || 0);
-    setCardState('service', monitored ? (summary.service_down || 0) : 0);
-    setCardState('reboot', summary.pending_reboot || 0);
-    setCardState('stale', stale);
+    dropEmptyFocus('down', summary.down || 0);
+    dropEmptyFocus('service', monitored ? (summary.service_down || 0) : 0);
+    dropEmptyFocus('reboot', summary.pending_reboot || 0);
+    dropEmptyFocus('stale', stale);
 }
 
 function setLastUpdated() {

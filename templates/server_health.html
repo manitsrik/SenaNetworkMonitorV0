@@ -3258,7 +3258,8 @@ function renderTopCards(data) {
 async function loadTopCards() {
     const host = document.getElementById('topcards');
     try {
-        const res = await fetch(`/api/server-health/top-metrics?hours=24&_t=${Date.now()}`);
+        // Five is what fits at a glance; "View all" opens the table for the rest.
+        const res = await fetch(`/api/server-health/top-metrics?hours=24&limit=5&_t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (data.success === false) throw new Error(data.error || 'top metrics unavailable');

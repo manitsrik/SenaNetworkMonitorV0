@@ -892,14 +892,20 @@ class NetworkMonitor:
                     'source': 'selected'
                 }
                 
-                client.close()
                 return True
             except Exception as e:
                 last_error = str(e)
                 print(f"[SSH] Error connecting to {ip_address}: {e}")
-                if client: client.close()
                 return False
+            finally:
+                # Runs on the timeout path too: Eventlet's Timeout is a
+                # BaseException, so it passes through the handler above.
+                try:
+                    client.close()
+                except Exception:
+                    pass
 
+        timer = async_runtime.Timeout(Config.SSH_DEVICE_TIMEOUT)
         try:
             # Paramiko is imported after Eventlet monkey-patching in production,
             # so its sockets are cooperative already. Running those green sockets
@@ -943,9 +949,17 @@ class NetworkMonitor:
                 }
             else:
                 return {'status': 'down', 'response_time': None, 'error': last_error or 'SSH connection failed'}
+        except async_runtime.TimeoutError:
+            # The session runs in this greenlet, so the timeout really does
+            # abandon it instead of leaving work behind like the WinRM path.
+            timeout_message = f'SSH check exceeded {Config.SSH_DEVICE_TIMEOUT}s'
+            print(f"[SSH] Timed out {ip_address}: {timeout_message}")
+            return {'status': 'down', 'response_time': None, 'error': timeout_message}
         except Exception as e:
             print(f"[SSH] Task execution failed for {ip_address}: {e}")
             return {'status': 'down', 'response_time': None, 'error': str(e)}
+        finally:
+            timer.cancel()
 
     def get_ssh_ports(self, ip_address, username, password, port=22):
         """Fetch listening TCP/UDP ports via SSH (ss command)"""

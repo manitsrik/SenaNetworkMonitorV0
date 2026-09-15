@@ -104,6 +104,11 @@ class Config:
         1,
         int(os.environ.get('WINRM_SLOW_COMMAND_SECONDS') or 5),
     )
+    # Paramiko's connect timeout only covers the TCP handshake and banner, so a
+    # host that accepts the session but never answers a command can hold a
+    # monitoring worker open indefinitely. This caps the whole check, retry
+    # included.
+    SSH_DEVICE_TIMEOUT = max(15, int(os.environ.get('SSH_DEVICE_TIMEOUT') or 45))
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'

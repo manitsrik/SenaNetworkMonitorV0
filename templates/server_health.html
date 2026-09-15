@@ -267,13 +267,16 @@
         padding: 0.24rem 0.5rem;
     }
 
+    /* Every card lays out the same way whether or not it has a trend line or
+       a line of context: label and figure at the top, note pinned to the
+       bottom, so the five read across as a row rather than five boxes. */
     .health-summary-card {
         padding: 0.45rem 0.6rem;
         display: flex;
         flex-direction: column;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 0.1rem;
-        min-height: 74px;
+        min-height: 80px;
         overflow: hidden;
         position: relative;
     }
@@ -291,7 +294,7 @@
         display: flex;
         justify-content: space-between;
         gap: 0.75rem;
-        align-items: center;
+        align-items: flex-start;
     }
 
     .health-summary-label {
@@ -312,7 +315,8 @@
     }
 
     .health-summary-note {
-        margin-top: 0.16rem;
+        margin-top: auto;
+        padding-top: 0.16rem;
         color: var(--text-secondary);
         font-size: 0.64rem;
         line-height: 1.25;
@@ -743,7 +747,8 @@
         color: var(--text-muted);
         font-size: 1.05rem;
         font-weight: 700;
-        line-height: 1.75;
+        /* Matches the 1.85rem figure's box so the row of numbers stays level. */
+        line-height: 1.85rem;
     }
 
     /* A card at zero is not the one to look at: mute it so the eye lands on
@@ -920,10 +925,6 @@
     }
 
     /* ===================== KPI sparklines ============================== */
-    .health-summary-header {
-        align-items: flex-start;
-    }
-
     .health-summary-spark {
         display: block;
         width: 68px;
@@ -933,9 +934,11 @@
 
     .health-summary-delta {
         margin-top: 0.1rem;
+        min-height: 0.95rem;
         color: var(--text-muted);
         font-size: 0.62rem;
         font-weight: 600;
+        line-height: 0.95rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1539,7 +1542,6 @@
                     <div id="sum-service" class="health-summary-value">-</div>
                     <div class="health-summary-delta" id="delta-service"></div>
                 </div>
-                <svg class="health-summary-spark" id="spark-service" aria-hidden="true"></svg>
             </div>
             <div class="health-summary-note" id="sum-service-note">Stopped services on checked hosts</div>
         </div>
@@ -1560,6 +1562,7 @@
                 <div>
                     <div class="health-summary-label">Pending Reboot</div>
                     <div id="sum-reboot" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-reboot"></div>
                 </div>
             </div>
             <div class="health-summary-note" id="sum-reboot-note">Waiting for a restart</div>

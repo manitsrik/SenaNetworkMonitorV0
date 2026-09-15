@@ -1106,7 +1106,8 @@ def get_server_health_top_metrics():
         return jsonify({'success': True, 'hours': hours, 'cards': []})
 
     ids = list(devices)
-    series = db.get_metric_series(ids, ['cpu', 'ram', 'network_in', 'network_out'],
+    partition_types = db.get_partition_metric_types(ids, hours=hours)
+    series = db.get_metric_series(ids, ['cpu', 'ram', 'network_in', 'network_out'] + partition_types,
                                   hours=hours, buckets=buckets)
     latency = db.get_internet_latency_series(ids, hours=hours, buckets=buckets)
 
@@ -1157,6 +1158,32 @@ def get_server_health_top_metrics():
             net_rows.append(dict(base(device_id), rank_value=round(total), current=round(total),
                                  unit='bps', series=combined))
 
+    # Per partition rather than per host: a full D: behind a mostly empty C:
+    # is invisible in the single per-server figure the table carries.
+    disk_rows = []
+    for device_id in ids:
+        device = devices[device_id]
+        if not _is_live({'status': device.get('status')}):
+            continue
+        try:
+            details = json.loads(device.get('disk_details_json') or '[]')
+        except Exception:
+            details = []
+        for entry in details:
+            mount = entry.get('mount') or entry.get('name')
+            usage = numeric(entry.get('use_percent'))
+            if not mount or usage is None:
+                continue
+            points = series.get((device_id, 'disk:%s' % str(mount).strip()[:120]))
+            disk_rows.append(dict(
+                base(device_id),
+                rank_value=round(usage, 1),
+                current=round(usage, 1),
+                unit='%',
+                label=str(mount),
+                series=points or [],
+            ))
+
     latency_rows = []
     for device_id, points in latency.items():
         _, mean = _series_stats(points)
@@ -1179,6 +1206,9 @@ def get_server_health_top_metrics():
              'sort_key': 'cpu', 'rows': top(cpu_rows)},
             {'key': 'ram', 'title': 'Top Memory Usage', 'unit': '%',
              'ranked_by': 'current usage', 'sort_key': 'ram', 'rows': top(ram_rows)},
+            {'key': 'disk', 'title': 'Top Disk / Partition', 'unit': '%',
+             'ranked_by': 'current usage of each mounted partition',
+             'sort_key': 'disk', 'rows': top(disk_rows)},
             {'key': 'network', 'title': 'Top Network I/O', 'unit': 'bps',
              'ranked_by': 'current throughput, in and out combined',
              'sort_key': 'traffic', 'rows': top(net_rows)},

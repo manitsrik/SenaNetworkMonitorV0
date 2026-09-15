@@ -338,30 +338,6 @@
         --summary-bg: rgba(245, 158, 11, 0.12);
     }
 
-    .health-panels {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 0.45rem;
-    }
-
-    .health-panel.is-wide {
-        max-height: none;
-    }
-
-    .health-list.is-columns {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 0 0.9rem;
-        overflow: visible;
-    }
-
-    /* In the rail the list is one column, so ten mounts would run the whole
-       panel past the table beside it. */
-    .health-rail .health-list.is-columns {
-        max-height: 218px;
-        overflow-y: auto;
-    }
-
     .health-chart-card {
         background: var(--health-surface);
         border: 1px solid var(--border-color);
@@ -454,31 +430,6 @@
         font-weight: 700;
     }
 
-    .health-panel-meta {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-    }
-
-    .health-list {
-        padding: 0.2rem 0.55rem 0.45rem;
-        overflow-y: auto;
-        min-height: 0;
-    }
-
-    .health-list-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 0.55rem;
-        align-items: center;
-        padding: 0.38rem 0;
-        border-bottom: 1px solid var(--health-line);
-    }
-
-    .health-list-row:last-child {
-        border-bottom: 0;
-    }
-
     .health-item-name {
         min-width: 0;
     }
@@ -495,15 +446,6 @@
     .server-name-link:hover {
         color: var(--primary);
         text-decoration: underline;
-    }
-
-    .health-item-meta {
-        margin-top: 0.1rem;
-        color: var(--text-muted);
-        font-size: 0.64rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
     }
 
     .health-value {
@@ -1663,7 +1605,6 @@
 
     @media (max-width: 760px) {
         .health-overview,
-        .health-panels,
         .capacity-grid,
         .health-rail {
             grid-template-columns: 1fr;
@@ -1711,7 +1652,7 @@
         .sidebar, .top-header, .header-actions, .assistant-fab, .assistant-panel { display: none !important; }
         .main-content, .content-area { margin: 0 !important; padding: 0 !important; }
         body { background: #fff !important; color: #111 !important; }
-        .health-overview, .health-panels { grid-template-columns: 1fr 1fr !important; }
+        .health-overview { grid-template-columns: 1fr 1fr !important; }
         .health-cols { grid-template-columns: 1fr !important; }
         .health-tabs { display: none !important; }
         .health-hero, .health-summary-card, .health-panel, .health-table-card {
@@ -1915,23 +1856,6 @@
                 <div class="health-loading">Loading...</div>
             </div>
             <div class="health-chart-hint" id="capacity-hint"></div>
-        </section>
-
-        <section class="health-panels">
-            <div class="health-panel is-wide">
-                <div class="health-panel-header">
-                    <h3 class="health-panel-title">
-                        <i class="fa-solid fa-hard-drive"></i> Top Disk / Partition
-                        <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                           title="Usage per mounted partition. The table's Disk column carries one figure per server, so a full D: behind a mostly empty C: only shows up here."></i>
-                    </h3>
-                    <span class="health-panel-meta">
-                        <span id="top-disk-hidden" class="stale-chip" hidden></span>
-                        <span id="top-disk-count" class="health-panel-count">0 items</span>
-                    </span>
-                </div>
-                <div id="top-disk" class="health-list is-columns"><div class="health-loading">Loading...</div></div>
-            </div>
         </section>
 
         </aside>
@@ -2261,101 +2185,7 @@ function normalizeServerId(id) {
     return id === null || id === undefined || id === '' ? 'all' : String(id);
 }
 
-function serverFilterLink(id, name) {
-    const normalized = normalizeServerId(id);
-    return `<a href="#" data-server-filter="${esc(normalized)}" title="Filter this server">${esc(name || 'Unknown')}</a>`;
-}
 
-// Readings from a host that stopped reporting are not "top consumers", so
-// they are left out of the ranking rather than ranked against live numbers.
-const ATTENTION_LABELS = { cpu: 'CPU', ram: 'Memory', disk: 'Disk', internet: 'Internet' };
-
-// The API returns one entry per metric, so a host with three problems appears
-// three times. People fix hosts, not metrics: fold them into one row each,
-// leading with that host's worst problem and summarising the rest.
-function groupAttention(items) {
-    const byHost = new Map();
-    (items || []).forEach(item => {
-        const key = normalizeServerId(item.device_id);
-        if (!byHost.has(key)) byHost.set(key, []);
-        byHost.get(key).push(item);
-    });
-
-    const rank = item => (item.severity === 'critical' ? 1000 : 0) + item.percent;
-
-    return [...byHost.entries()]
-        .map(([id, hostItems]) => {
-            const sorted = [...hostItems].sort((a, b) => rank(b) - rank(a));
-            return {
-                id,
-                name: sorted[0].name,
-                severity: sorted.some(item => item.severity === 'critical') ? 'critical' : 'warning',
-                worst: sorted[0],
-                others: sorted.slice(1),
-            };
-        })
-        .sort((a, b) => rank(b.worst) - rank(a.worst));
-}
-
-function renderAttention(items) {
-    const list = document.getElementById('attention-list');
-    const count = document.getElementById('attention-count');
-    if (!list) return;
-
-    const hosts = groupAttention(items).filter(host => serverMatchesSelection({ id: host.id }));
-    const issues = hosts.reduce((total, host) => total + 1 + host.others.length, 0);
-
-    if (count) {
-        count.textContent = hosts.length
-            ? `${hosts.length} host${hosts.length === 1 ? '' : 's'}, ${issues} issue${issues === 1 ? '' : 's'}`
-            : 'all clear';
-    }
-
-    if (!hosts.length) {
-        list.innerHTML = `
-            <div class="attention-clear">
-                <i class="fa-solid fa-circle-check"></i>
-                Nothing is near its limit, and every internet check is passing.
-            </div>
-        `;
-        return;
-    }
-
-    list.innerHTML = hosts.map(host => {
-        const worst = host.worst;
-        const more = host.others
-            .map(item => `${(ATTENTION_LABELS[item.kind] || item.kind).toLowerCase()} ${Math.round(item.percent)}%`)
-            .join(' \u00b7 ');
-        // A lost connection has no percentage to show, only the fact of it.
-        const figure = worst.kind === 'internet' && worst.severity === 'critical'
-            ? ''
-            : `${Math.round(worst.percent)}%`;
-
-        return `
-            <div class="attention-row${host.severity === 'critical' ? ' is-critical' : ''}">
-                <a class="attention-name" href="#" data-server-filter="${esc(host.id)}" title="Filter the table to ${esc(host.name || '')}">${esc(host.name || 'Unknown')}</a>
-                <span class="attention-kind">${esc(ATTENTION_LABELS[worst.kind] || worst.kind)}</span>
-                <span class="attention-detail">${esc(worst.detail || '')}${more ? `<span class="attention-more"> &nbsp;+ ${esc(more)}</span>` : ''}</span>
-                <span class="attention-pct">${figure}</span>
-            </div>
-        `;
-    }).join('');
-}
-
-function setHiddenStaleNote(hidden) {
-    const note = document.getElementById('top-disk-hidden');
-    if (!note) return;
-    const count = Number(hidden.disk || 0);
-    note.hidden = count === 0;
-    note.textContent = count
-        ? `${count} partition${count === 1 ? '' : 's'} hidden: their server is down or stale`
-        : '';
-}
-
-function setCount(id, count, noun = 'items') {
-    const el = document.getElementById(id);
-    if (el) el.textContent = `${count || 0} ${noun}`;
-}
 
 function selectedServer() {
     if (!latestServerHealthData || selectedServerId === 'all') return null;
@@ -2620,72 +2450,75 @@ function applyServerFilter(id) {
     if (latestTopCards) renderTopCards(latestTopCards);
 }
 
-function renderList(targetId, rows, kind, emptyText = 'No data') {
-    const target = document.getElementById(targetId);
-    setCount(`${targetId}-count`, rows?.length || 0);
-    if (!rows || !rows.length) {
-        target.innerHTML = `<div class="health-empty">${esc(emptyText)}</div>`;
+const ATTENTION_LABELS = { cpu: 'CPU', ram: 'Memory', disk: 'Disk', internet: 'Internet' };
+
+// The API returns one entry per metric, so a host with three problems appears
+// three times. People fix hosts, not metrics: fold them into one row each,
+// leading with that host's worst problem and summarising the rest.
+function groupAttention(items) {
+    const byHost = new Map();
+    (items || []).forEach(item => {
+        const key = normalizeServerId(item.device_id);
+        if (!byHost.has(key)) byHost.set(key, []);
+        byHost.get(key).push(item);
+    });
+
+    const rank = item => (item.severity === 'critical' ? 1000 : 0) + item.percent;
+
+    return [...byHost.entries()]
+        .map(([id, hostItems]) => {
+            const sorted = [...hostItems].sort((a, b) => rank(b) - rank(a));
+            return {
+                id,
+                name: sorted[0].name,
+                severity: sorted.some(item => item.severity === 'critical') ? 'critical' : 'warning',
+                worst: sorted[0],
+                others: sorted.slice(1),
+            };
+        })
+        .sort((a, b) => rank(b.worst) - rank(a.worst));
+}
+
+function renderAttention(items) {
+    const list = document.getElementById('attention-list');
+    const count = document.getElementById('attention-count');
+    if (!list) return;
+
+    const hosts = groupAttention(items).filter(host => serverMatchesSelection({ id: host.id }));
+    const issues = hosts.reduce((total, host) => total + 1 + host.others.length, 0);
+
+    if (count) {
+        count.textContent = hosts.length
+            ? `${hosts.length} host${hosts.length === 1 ? '' : 's'}, ${issues} issue${issues === 1 ? '' : 's'}`
+            : 'all clear';
+    }
+
+    if (!hosts.length) {
+        list.innerHTML = `
+            <div class="attention-clear">
+                <i class="fa-solid fa-circle-check"></i>
+                Nothing is near its limit, and every internet check is passing.
+            </div>
+        `;
         return;
     }
 
-    target.innerHTML = rows.map(row => {
-        const id = row.id || row.device_id;
-        const name = row.name || row.device_name;
-        const chip = kind === 'down' ? '' : freshnessChip(row);
-        const dimmed = chip ? ' is-stale' : '';
-        const age = ageSeconds(row);
-        let value = row[kind];
-        let right = '';
-        let meta = row.ip_address || row.monitor_type || '';
-
-        if (kind === 'disk') {
-            value = row.use_percent;
-            right = `<strong>${pct(row.use_percent)}</strong>${metricBar(row.use_percent)}`;
-            meta = row.mount ? `Partition ${row.mount}` : 'Partition';
-        } else if (kind === 'network') {
-            right = `
-                <div class="traffic-pair">
-                    <span class="traffic-in"><i class="fa-solid fa-arrow-down"></i>${formatBps(row.network_in_bps)}</span>
-                    <span class="traffic-out"><i class="fa-solid fa-arrow-up"></i>${formatBps(row.network_out_bps)}</span>
-                </div>
-            `;
-            meta = `${formatBps(row.network_total_bps)} total`;
-        } else if (kind === 'response') {
-            const cssClass = responseClass(row.response_time, row);
-            const state = cssClass === 'response-critical' ? 'Critical' : (cssClass === 'response-warning' ? 'Warning' : 'Normal');
-            right = `
-                <div class="response-pair">
-                    <span class="${cssClass}"><i class="fa-solid fa-wave-square"></i>${formatMs(row.response_time)}</span>
-                    <span class="text-muted">${state}</span>
-                </div>
-            `;
-            meta = row.ip_address || row.monitor_type || '';
-        } else if (kind === 'down') {
-            const detail = row.pending_reboot
-                ? 'Pending reboot'
-                : (row.last_boot_time ? `Last boot ${row.last_boot_time}` : 'No response');
-            right = `
-                <div class="response-pair">
-                    <span class="status-badge status-down">${esc(row.status || 'down')}</span>
-                    <span class="text-muted">${esc(detail)}</span>
-                </div>
-            `;
-            meta = [row.ip_address, row.monitor_type ? String(row.monitor_type).toUpperCase() : '']
-                .filter(Boolean).join(' • ');
-        } else {
-            right = `<strong>${pct(value)}</strong>${metricBar(value)}`;
-        }
-
-        const metaParts = [esc(meta)];
-        if (kind !== 'down' && age !== null) metaParts.push(esc(formatAge(age)));
+    list.innerHTML = hosts.map(host => {
+        const worst = host.worst;
+        const more = host.others
+            .map(item => `${(ATTENTION_LABELS[item.kind] || item.kind).toLowerCase()} ${Math.round(item.percent)}%`)
+            .join(' \u00b7 ');
+        // A lost connection has no percentage to show, only the fact of it.
+        const figure = worst.kind === 'internet' && worst.severity === 'critical'
+            ? ''
+            : `${Math.round(worst.percent)}%`;
 
         return `
-            <div class="health-list-row">
-                <div class="health-item-name">
-                    ${serverFilterLink(id, name)}${chip}
-                    <div class="health-item-meta">${metaParts.filter(Boolean).join(' &bull; ')}</div>
-                </div>
-                <div class="health-value${dimmed}">${right}</div>
+            <div class="attention-row${host.severity === 'critical' ? ' is-critical' : ''}">
+                <a class="attention-name" href="#" data-server-filter="${esc(host.id)}" title="Filter the table to ${esc(host.name || '')}">${esc(host.name || 'Unknown')}</a>
+                <span class="attention-kind">${esc(ATTENTION_LABELS[worst.kind] || worst.kind)}</span>
+                <span class="attention-detail">${esc(worst.detail || '')}${more ? `<span class="attention-more"> &nbsp;+ ${esc(more)}</span>` : ''}</span>
+                <span class="attention-pct">${figure}</span>
             </div>
         `;
     }).join('');
@@ -2964,8 +2797,6 @@ function setLastUpdated() {
 }
 
 function renderError(message) {
-    const target = document.getElementById('top-disk');
-    if (target) target.innerHTML = `<div class="health-error">${esc(message)}</div>`;
     document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
 }
 
@@ -2973,9 +2804,7 @@ function renderServerHealthData(data) {
     const filtered = buildFilteredData(data);
     const summary = filtered.summary || {};
     setSummary(summary);
-    setHiddenStaleNote(data.hidden_stale || {});
     renderAttention(data.attention || []);
-    renderList('top-disk', filtered.top_disk || [], 'disk', 'No partition data from any live server.');
 
     const allServers = filtered.servers || [];
     const focused = allServers.filter(focusMatcher(healthFocus));
@@ -3427,7 +3256,7 @@ function renderTopCards(data) {
                     <span class="topcard-rank">${index + 1}</span>
                     <div>
                         <a class="topcard-name" href="#" data-server-filter="${esc(normalizeServerId(row.id))}">${esc(row.name || 'Unknown')}</a>
-                        <span class="topcard-ip">${esc(row.ip_address || '')}</span>
+                        <span class="topcard-ip">${esc(row.label ? `Partition ${row.label}` : (row.ip_address || ''))}</span>
                     </div>
                     <span class="topcard-value" style="color:${colour}">${esc(topValueText(row, card.unit))}</span>
                     ${topSpark(row.series, colour)}

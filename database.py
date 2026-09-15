@@ -2317,6 +2317,37 @@ class Database:
         finally:
             self.release_connection(conn)
 
+    def get_partition_metric_types(self, device_ids, hours=24):
+        """Which per-partition metrics these devices actually recorded.
+
+        Mount points differ per host -- C:, D:, /, /boot -- so the set has to
+        come from the data rather than a fixed list.
+        """
+        if not device_ids:
+            return []
+
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', max(1, min(int(hours or 24), 7 * 24)))
+            # The pattern is bound rather than inlined: a literal % in the SQL
+            # collides with psycopg's own %s placeholders.
+            cursor.execute(f'''
+                SELECT DISTINCT metric_type
+                FROM system_metrics_history
+                WHERE metric_type LIKE {ph}
+                  AND device_id IN ({placeholders})
+                  AND timestamp >= {cutoff}
+            ''', ['disk:%'] + list(device_ids))
+            return [row['metric_type'] for row in self._rows_to_dicts(cursor.fetchall())]
+        except Exception as e:
+            print(f"[DB ERROR] get_partition_metric_types: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
     def get_metric_series(self, device_ids, metric_types, hours=24, buckets=48):
         """Bucketed history per device per metric, oldest bucket first.
 

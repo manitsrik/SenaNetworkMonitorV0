@@ -19,8 +19,6 @@ class FakeDB:
         return self.devices
 
     def get_recent_metric_medians(self, device_ids, metric_type, minutes):
-        # CPU only joins the attention list when it has been sustained, so the
-        # fake returns whatever the test set up for that window.
         return getattr(self, 'cpu_medians', {})
 
 
@@ -199,71 +197,13 @@ def test_non_server_monitor_types_are_still_excluded():
     assert [server['name'] for server in payload['servers']] == ['APP-1']
 
 
-# ------------------------------------------------------- attention ------
-
-def test_attention_ranks_by_share_of_each_hosts_own_limit():
-    """94% against a 95% limit is nearer the edge than 83% against 90%."""
-    tight = ssh_device(id=1, name='tight', ram_usage=94.0, ram_threshold=95.0)
-    loose = ssh_device(id=2, name='loose', ram_usage=83.0, ram_threshold=90.0)
-
-    payload = make_client([tight, loose]).get('/api/server-health').get_json()
-    ram = [item for item in payload['attention'] if item['kind'] == 'ram']
-
-    # Raw usage would order these the same way; the limits are what differ.
-    assert [item['name'] for item in ram] == ['tight', 'loose']
-    assert ram[0]['percent'] == pytest.approx(98.9, abs=0.1)
-    assert ram[1]['percent'] == pytest.approx(92.2, abs=0.1)
 
 
-def test_attention_ignores_metrics_that_are_not_close_to_their_limit():
-    payload = make_client([ssh_device(cpu_usage=5, ram_usage=5, disk_usage=5)]).get('/api/server-health').get_json()
-    assert payload['attention'] == []
-    assert payload['summary']['attention'] == 0
-
-
-def test_attention_marks_a_breach_as_critical():
-    over = ssh_device(ram_usage=96.0, ram_threshold=95.0)
-    item = [i for i in make_client([over]).get('/api/server-health').get_json()['attention']
-            if i['kind'] == 'ram'][0]
-    assert item['severity'] == 'critical'
-
-
-def test_attention_leaves_out_hosts_that_stopped_reporting():
-    stale_at = datetime.now() - timedelta(seconds=SERVER_HEALTH_STALE_AFTER_SECONDS + 60)
-    dead = ssh_device(
-        id=1, name='dead', status='down', ram_usage=99.0,
-        last_metrics_time=stale_at.strftime('%Y-%m-%d %H:%M:%S'),
-    )
-    live = ssh_device(id=2, name='live', ram_usage=93.0, ram_threshold=95.0)
-
-    payload = make_client([dead, live]).get('/api/server-health').get_json()
-    assert [item['name'] for item in payload['attention']] == ['live']
 
 
 # -------------------------------------------------------- internet ------
 
-def test_internet_failure_outranks_any_metric_climbing():
-    """A lost connection is not a trend; it sorts above one."""
-    failing = ssh_device(id=1, name='offline', internet_status='dns_error')
-    climbing = ssh_device(id=2, name='climbing', ram_usage=94.9, ram_threshold=95.0)
 
-    payload = make_client([failing, climbing]).get('/api/server-health').get_json()
-    assert payload['attention'][0]['kind'] == 'internet'
-    assert payload['attention'][0]['severity'] == 'critical'
-
-
-def test_slow_internet_is_a_warning_not_a_failure():
-    from config import Config
-    slow = ssh_device(internet_status='online',
-                      internet_latency_ms=Config.INTERNET_SLOW_LATENCY_MS + 200)
-    item = [i for i in make_client([slow]).get('/api/server-health').get_json()['attention']
-            if i['kind'] == 'internet'][0]
-    assert item['severity'] == 'warning'
-
-
-def test_fast_internet_raises_nothing():
-    fast = ssh_device(internet_status='online', internet_latency_ms=60)
-    assert make_client([fast]).get('/api/server-health').get_json()['attention'] == []
 
 
 def test_summary_separates_unchecked_internet_from_working_internet():
@@ -278,49 +218,5 @@ def test_summary_separates_unchecked_internet_from_working_internet():
     assert summary['internet_unchecked'] == 1
 
 
-# --------------------------------------------------- sustained CPU ------
-
-class MedianDB(FakeDB):
-    def __init__(self, devices, cpu_medians):
-        super().__init__(devices)
-        self.cpu_medians = cpu_medians
 
 
-def client_for(db):
-    """make_client() builds its own FakeDB; these tests supply one."""
-    app = Flask(__name__)
-    app.config['DB'] = db
-    app.register_blueprint(devices_bp)
-    return app.test_client()
-
-
-def test_cpu_needs_a_sustained_reading_to_reach_the_attention_list():
-    """One CPU sample swings from idle to saturated between polls."""
-    busy_now = ssh_device(cpu_usage=99.0, cpu_threshold=85.0)
-
-    # Instantaneous CPU is pinned, but the window says it was a spike.
-    quiet = MedianDB([busy_now], {1: {'median': 4.0, 'samples': 20}})
-    assert [i['kind'] for i in client_for(quiet).get('/api/server-health').get_json()['attention']] == []
-
-    # Held high across the window, it is a real state and gets listed.
-    held = MedianDB([busy_now], {1: {'median': 90.0, 'samples': 20}})
-    items = client_for(held).get('/api/server-health').get_json()['attention']
-    cpu = [i for i in items if i['kind'] == 'cpu']
-    assert len(cpu) == 1
-    assert cpu[0]['severity'] == 'critical'
-    assert 'sustained' in cpu[0]['detail']
-
-
-def test_cpu_is_skipped_when_the_window_holds_too_few_samples():
-    """A single sample is not a window; better to say nothing than to guess."""
-    device = ssh_device(cpu_usage=99.0, cpu_threshold=85.0)
-    thin = MedianDB([device], {1: {'median': 99.0, 'samples': 1}})
-    assert [i for i in client_for(thin).get('/api/server-health').get_json()['attention']
-            if i['kind'] == 'cpu'] == []
-
-
-def test_memory_still_uses_the_current_reading():
-    """Memory does not swing the way CPU does, so it is judged on the spot."""
-    device = ssh_device(ram_usage=93.0, ram_threshold=95.0)
-    payload = client_for(MedianDB([device], {})).get('/api/server-health').get_json()
-    assert [i['kind'] for i in payload['attention']] == ['ram']

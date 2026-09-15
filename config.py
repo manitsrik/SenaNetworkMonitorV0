@@ -155,10 +155,6 @@ class Config:
     # the internet rather than the host.
     INTERNET_SLOW_LATENCY_MS = int(os.environ.get('INTERNET_SLOW_LATENCY_MS') or 800)
 
-    # How close to its own limit a metric has to be before the overview calls
-    # it out, as a percentage of that limit.
-    ATTENTION_MIN_PERCENT = int(os.environ.get('ATTENTION_MIN_PERCENT') or 75)
-
     # Default fallback threshold
     DEFAULT_SLOW_THRESHOLD = 500
     

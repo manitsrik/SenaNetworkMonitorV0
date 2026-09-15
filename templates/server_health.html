@@ -867,35 +867,6 @@
     /* The timeline and the table are what an operator works in; the trend,
        the partition list and the actions support them from the side instead
        of pushing them below the fold. */
-    /* The timeline and Needs Attention are close in height, so they share a
-       band. The table follows at full width: it carries ten columns and was
-       being squeezed by a rail holding three rows. */
-    .health-cols {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 340px;
-        gap: 0.45rem;
-        align-items: stretch;
-        margin-bottom: 0.45rem;
-    }
-
-    .health-main,
-    .health-rail {
-        display: grid;
-        gap: 0.45rem;
-        align-content: start;
-        min-width: 0;
-    }
-
-    .health-rail > .health-panel {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .health-rail .health-chart-header,
-    .health-rail .health-panel-header {
-        padding: 0.42rem 0.6rem;
-    }
-
     /* ===================== Tabs over the table ========================== */
     .health-tabs {
         display: flex;
@@ -982,105 +953,6 @@
 
     .timeline-group:first-child {
         padding-top: 0.1rem;
-    }
-
-    /* ===================== Needs Attention ============================= */
-    .attention-list {
-        display: grid;
-        gap: 2px;
-        align-content: start;
-        padding: 0.35rem 0.5rem 0.45rem;
-        /* One row per host keeps this short; the cap is a guard, not a plan. */
-        max-height: 268px;
-        overflow-y: auto;
-    }
-
-    /* Reads left to right the way the sentence does: which host, what is
-       wrong, how close to its limit, and what else that host has going on. */
-    .attention-row {
-        display: grid;
-        grid-template-columns: minmax(130px, 200px) 62px minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 0.55rem;
-        padding: 0.3rem 0.5rem;
-        border-left: 3px solid var(--tone, var(--warning));
-        border-radius: 0 6px 6px 0;
-        background: var(--tone-soft, rgba(245, 158, 11, 0.08));
-    }
-
-    .attention-kind {
-        color: var(--tone, var(--warning));
-        font-size: 0.58rem;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-    }
-
-    .attention-name {
-        color: var(--text-primary);
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-decoration: none;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .attention-name:hover {
-        color: var(--primary);
-        text-decoration: underline;
-    }
-
-    .attention-detail {
-        color: var(--text-secondary);
-        font-size: 0.68rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .attention-more {
-        color: var(--text-muted);
-        font-size: 0.64rem;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    .attention-pct {
-        color: var(--tone, var(--warning));
-        font-size: 0.75rem;
-        font-weight: 800;
-        white-space: nowrap;
-        text-align: right;
-        min-width: 34px;
-    }
-
-    .attention-row.is-critical {
-        --tone: var(--danger);
-        --tone-soft: rgba(239, 68, 68, 0.09);
-    }
-
-    /* Nothing wrong takes one line, so the sections below it do not move
-       every time the count changes. */
-    .attention-clear {
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.42rem 0.6rem;
-        color: var(--success);
-        font-size: 0.72rem;
-        font-weight: 600;
-    }
-
-    @media (max-width: 760px) {
-        .attention-row {
-            grid-template-columns: minmax(0, 1fr) auto;
-        }
-
-        .attention-row .attention-kind,
-        .attention-row .attention-more {
-            grid-column: 1 / -1;
-        }
     }
 
     /* ===================== Internet cell =============================== */
@@ -1265,23 +1137,6 @@
     .topcard-sorts button[aria-pressed="true"] {
         background: var(--primary);
         color: #fff;
-    }
-
-    /* In the rail the row stacks, because the host name and the reading will
-       not sit side by side in 330px. */
-    .health-rail .attention-row {
-        grid-template-columns: minmax(0, 1fr) auto;
-        row-gap: 0.1rem;
-    }
-
-    .health-rail .attention-kind {
-        grid-row: 2;
-    }
-
-    .health-rail .attention-detail {
-        grid-column: 1 / -1;
-        grid-row: 3;
-        white-space: normal;
     }
 
     /* ===================== Top metric cards ============================ */
@@ -1549,13 +1404,6 @@
         white-space: nowrap;
     }
 
-    @media (max-width: 1180px) {
-        .health-cols {
-            grid-template-columns: minmax(0, 1fr);
-        }
-
-    }
-
     @media (max-width: 1440px) {
         .health-overview {
             grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -1579,8 +1427,7 @@
     }
 
     @media (max-width: 760px) {
-        .health-overview,
-        .health-rail {
+        .health-overview {
             grid-template-columns: 1fr;
         }
 
@@ -1627,7 +1474,6 @@
         .main-content, .content-area { margin: 0 !important; padding: 0 !important; }
         body { background: #fff !important; color: #111 !important; }
         .health-overview { grid-template-columns: 1fr 1fr !important; }
-        .health-cols { grid-template-columns: 1fr !important; }
         .health-tabs { display: none !important; }
         .health-hero, .health-summary-card, .health-panel, .health-table-card {
             box-shadow: none !important;
@@ -1726,8 +1572,6 @@
         <div class="health-panel"><div class="health-loading">Loading...</div></div>
     </section>
 
-    <div class="health-cols">
-        <div class="health-main">
         <section class="health-chart-card" id="timeline-card">
             <div class="health-chart-header">
                 <h3 class="health-chart-title">
@@ -1755,24 +1599,6 @@
             </div>
         </section>
 
-        </div>
-
-        <aside class="health-rail">
-        <section class="health-panel" id="attention-card">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
-                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                       title="CPU, memory, disk and internet across every live host, one row per host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
-                </h3>
-                <span id="attention-count" class="health-panel-count">-</span>
-            </div>
-            <div class="attention-list" id="attention-list">
-                <div class="health-loading">Loading...</div>
-            </div>
-        </section>
-        </aside>
-    </div>
 
     <section class="health-table-card">
         <div class="health-tabs" id="server-tabs" role="tablist" aria-label="Server filter"></div>
@@ -2090,18 +1916,21 @@ function numeric(value) {
     return Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : 0;
 }
 
-function barColor(value) {
+function barColor(value, limit) {
     const num = numeric(value);
-    if (num >= 90) return 'var(--danger)';
-    if (num >= 75) return 'var(--warning)';
+    const cap = Number(limit) > 0 ? Number(limit) : 90;
+    const share = num / cap;
+    if (share >= 1) return 'var(--danger)';
+    // 75 of a 90% limit is 83%: the same amber the page has always shown.
+    if (share >= 0.83) return 'var(--warning)';
     return 'var(--success)';
 }
 
-function metricBar(value) {
+function metricBar(value, limit) {
     const num = numeric(value);
     return `
         <div class="health-bar-track" aria-hidden="true">
-            <div class="health-bar-fill" style="width:${num}%; --bar-color:${barColor(num)};"></div>
+            <div class="health-bar-fill" style="width:${num}%; --bar-color:${barColor(num, limit)};"></div>
         </div>
     `;
 }
@@ -2370,87 +2199,17 @@ function applyServerFilter(id) {
     if (latestTopCards) renderTopCards(latestTopCards);
 }
 
-const ATTENTION_LABELS = { cpu: 'CPU', ram: 'Memory', disk: 'Disk', internet: 'Internet' };
-
-// The API returns one entry per metric, so a host with three problems appears
-// three times. People fix hosts, not metrics: fold them into one row each,
-// leading with that host's worst problem and summarising the rest.
-function groupAttention(items) {
-    const byHost = new Map();
-    (items || []).forEach(item => {
-        const key = normalizeServerId(item.device_id);
-        if (!byHost.has(key)) byHost.set(key, []);
-        byHost.get(key).push(item);
-    });
-
-    const rank = item => (item.severity === 'critical' ? 1000 : 0) + item.percent;
-
-    return [...byHost.entries()]
-        .map(([id, hostItems]) => {
-            const sorted = [...hostItems].sort((a, b) => rank(b) - rank(a));
-            return {
-                id,
-                name: sorted[0].name,
-                severity: sorted.some(item => item.severity === 'critical') ? 'critical' : 'warning',
-                worst: sorted[0],
-                others: sorted.slice(1),
-            };
-        })
-        .sort((a, b) => rank(b.worst) - rank(a.worst));
-}
-
-function renderAttention(items) {
-    const list = document.getElementById('attention-list');
-    const count = document.getElementById('attention-count');
-    if (!list) return;
-
-    const hosts = groupAttention(items).filter(host => serverMatchesSelection({ id: host.id }));
-    const issues = hosts.reduce((total, host) => total + 1 + host.others.length, 0);
-
-    if (count) {
-        count.textContent = hosts.length
-            ? `${hosts.length} host${hosts.length === 1 ? '' : 's'}, ${issues} issue${issues === 1 ? '' : 's'}`
-            : 'all clear';
-    }
-
-    if (!hosts.length) {
-        list.innerHTML = `
-            <div class="attention-clear">
-                <i class="fa-solid fa-circle-check"></i>
-                Nothing is near its limit, and every internet check is passing.
-            </div>
-        `;
-        return;
-    }
-
-    list.innerHTML = hosts.map(host => {
-        const worst = host.worst;
-        const more = host.others
-            .map(item => `${(ATTENTION_LABELS[item.kind] || item.kind).toLowerCase()} ${Math.round(item.percent)}%`)
-            .join(' \u00b7 ');
-        // A lost connection has no percentage to show, only the fact of it.
-        const figure = worst.kind === 'internet' && worst.severity === 'critical'
-            ? ''
-            : `${Math.round(worst.percent)}%`;
-
-        return `
-            <div class="attention-row${host.severity === 'critical' ? ' is-critical' : ''}">
-                <a class="attention-name" href="#" data-server-filter="${esc(host.id)}" title="Filter the table to ${esc(host.name || '')}">${esc(host.name || 'Unknown')}</a>
-                <span class="attention-kind">${esc(ATTENTION_LABELS[worst.kind] || worst.kind)}</span>
-                <span class="attention-detail">${esc(worst.detail || '')}${more ? `<span class="attention-more"> &nbsp;+ ${esc(more)}</span>` : ''}</span>
-                <span class="attention-pct">${figure}</span>
-            </div>
-        `;
-    }).join('');
-}
-
-function renderMetricCell(value, subtext = '', stale = false) {
+function renderMetricCell(value, limit, subtext = '', stale = false) {
+    const share = Number(limit) > 0 && Number.isFinite(Number(value))
+        ? Math.round(Number(value) / Number(limit) * 100)
+        : null;
+    const title = share === null ? '' : `${pct(value)} of a ${Math.round(limit)}% limit (${share}%)`;
     return `
-        <div class="metric-cell${stale ? ' is-stale' : ''}">
+        <div class="metric-cell${stale ? ' is-stale' : ''}"${title ? ` title="${esc(title)}"` : ''}>
             <div class="metric-cell-top">
                 <span>${pct(value)}</span>
             </div>
-            ${metricBar(value)}
+            ${metricBar(value, limit)}
             ${subtext ? `<small class="text-muted">${subtext}</small>` : ''}
         </div>
     `;
@@ -2592,9 +2351,9 @@ function renderServers(servers, totalServers = servers.length) {
                         </span>
                     </div>
                 </td>
-                <td>${renderMetricCell(server.cpu, loadText, stale)}</td>
-                <td>${renderMetricCell(server.ram, '', stale)}</td>
-                <td>${renderMetricCell(server.disk, '', stale)}</td>
+                <td>${renderMetricCell(server.cpu, server.cpu_threshold, loadText, stale)}</td>
+                <td>${renderMetricCell(server.ram, server.ram_threshold, '', stale)}</td>
+                <td>${renderMetricCell(server.disk, server.disk_threshold, '', stale)}</td>
                 <td>${renderTrafficCell(server)}</td>
                 <td>${renderInternetCell(server)}</td>
                 <td class="uptime-cell${stale ? ' is-stale' : ''}">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
@@ -2722,7 +2481,6 @@ function renderServerHealthData(data) {
     const filtered = buildFilteredData(data);
     const summary = filtered.summary || {};
     setSummary(summary);
-    renderAttention(data.attention || []);
 
     const allServers = filtered.servers || [];
     const focused = allServers.filter(focusMatcher(healthFocus));
@@ -3042,8 +2800,8 @@ function topTone(card, row, index) {
         const slow = Number(latestServerHealthData?.thresholds?.internet_slow_latency_ms) || 800;
         return row.rank_value > slow ? 'var(--danger)' : (row.rank_value > slow * 0.6 ? 'var(--warning)' : 'var(--success)');
     }
-    // barColor already maps a 0-100 reading onto the page's severity colours.
-    if (card.unit === '%') return barColor(row.rank_value);
+    // Against the host's own limit, not a figure that is the same for everyone.
+    if (card.unit === '%') return barColor(row.rank_value, row.limit);
     return index === 0 ? 'var(--info)' : 'var(--primary)';
 }
 

@@ -609,13 +609,6 @@ def _age_seconds(raw):
     return max(0.0, age)
 
 
-ATTENTION_METRICS = (
-    ('cpu', 'CPU', 'cpu_threshold', 85),
-    ('ram', 'RAM', 'ram_threshold', 90),
-    ('disk', 'Disk', 'disk_threshold', 90),
-)
-
-
 def _is_live(item):
     """A reading from a host that stopped reporting is history, not a state."""
     return not item.get('is_stale') and str(item.get('status') or '').lower() != 'down'
@@ -627,93 +620,6 @@ def _threshold_for(device, column, default):
         return value if value > 0 else default
     except (TypeError, ValueError):
         return default
-
-
-def _sustained_cpu(server, cpu_medians):
-    """The CPU figure the attention list should judge, or None to skip it.
-
-    A single reading swings from idle to saturated between polls: over six
-    hours one host here covered 17% to 118% of its own limit. Judging that
-    instant puts rows in and out of the panel every refresh, and disagrees with
-    the alerting, which has always required the threshold to be held for
-    threshold_duration_minutes. This uses the median over that same window.
-    """
-    entry = cpu_medians.get(server['id'])
-    if not entry or entry['samples'] < 2:
-        return None
-    return entry['median']
-
-
-def _attention_items(server, device, cpu_medians=None):
-    """Everything about one server that is close to, or past, its own limit.
-
-    Ranked by percentage of that server's own threshold rather than by raw
-    usage: 94% RAM against a 95% limit is nearer the edge than 83% against 90%,
-    and sorting on the raw number gets that backwards.
-    """
-    items = []
-
-    for key, label, column, default in ATTENTION_METRICS:
-        if key == 'cpu':
-            value = _sustained_cpu(server, cpu_medians or {})
-            if value is None:
-                continue
-        else:
-            try:
-                value = float(server.get(key))
-            except (TypeError, ValueError):
-                continue
-        limit = _threshold_for(device, column, default)
-        percent = value / limit * 100
-        if percent < Config.ATTENTION_MIN_PERCENT:
-            continue
-        items.append({
-            'kind': key,
-            'label': label,
-            'device_id': server['id'],
-            'name': server['name'],
-            'value': round(value, 1),
-            'limit': round(limit, 1),
-            'percent': round(percent, 1),
-            'severity': 'critical' if value >= limit else 'warning',
-            'detail': ('%s%% of a %d%% limit' % (round(value, 1), round(limit))
-                       + (' sustained' if key == 'cpu' else '')),
-        })
-
-    status = str(server.get('internet_status') or '').strip().lower()
-    if status and status != 'online':
-        items.append({
-            'kind': 'internet',
-            'label': 'Internet',
-            'device_id': server['id'],
-            'name': server['name'],
-            'value': None,
-            'limit': None,
-            # Above anything merely near its limit: the connection is out, not
-            # heading that way.
-            'percent': 101.0,
-            'severity': 'critical',
-            'detail': status.replace('_', ' '),
-        })
-    elif status == 'online':
-        try:
-            latency = float(server.get('internet_latency_ms'))
-        except (TypeError, ValueError):
-            latency = None
-        if latency is not None and latency > Config.INTERNET_SLOW_LATENCY_MS:
-            items.append({
-                'kind': 'internet',
-                'label': 'Internet',
-                'device_id': server['id'],
-                'name': server['name'],
-                'value': round(latency),
-                'limit': Config.INTERNET_SLOW_LATENCY_MS,
-                'percent': round(latency / Config.INTERNET_SLOW_LATENCY_MS * 100, 1),
-                'severity': 'warning',
-                'detail': '%d ms to reach the internet' % round(latency),
-            })
-
-    return items
 
 
 def _slow_threshold_ms(device):
@@ -749,8 +655,6 @@ def get_server_health():
     service_down = []
     pending_reboot = []
     disk_rows = []
-    attention = []
-    device_by_id = {}
 
     def _bps(value):
         try:
@@ -816,7 +720,6 @@ def get_server_health():
             'disk_threshold': device.get('disk_threshold'),
         }
         servers.append(server)
-        device_by_id[server['id']] = device
         if server['pending_reboot']:
             pending_reboot.append(server)
         for service in service_status:
@@ -840,16 +743,6 @@ def get_server_health():
             })
 
     hidden_stale = {}
-
-    # One query for every server's recent CPU, rather than one per server.
-    cpu_window = max(
-        (int(d.get('threshold_duration_minutes') or 5) for d in device_by_id.values()),
-        default=5,
-    )
-    cpu_medians = _get_db().get_recent_metric_medians(list(device_by_id), 'cpu', cpu_window)
-    for server in servers:
-        if _is_live(server):
-            attention.extend(_attention_items(server, device_by_id[server['id']], cpu_medians))
 
     def _top(items, key, limit=10, label=None):
         candidates = [item for item in items if item.get(key) is not None]
@@ -881,7 +774,6 @@ def get_server_health():
                                     if s.get('internet_status')
                                     and str(s.get('internet_status')).lower() != 'online'),
             'internet_unchecked': sum(1 for s in servers if not s.get('internet_status')),
-            'attention': len(attention),
             'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
             'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
@@ -895,16 +787,8 @@ def get_server_health():
         'hidden_stale': hidden_stale,
         'service_down': service_down,
         'pending_reboot': pending_reboot,
-        # Severity first: a lost connection outranks any metric merely climbing,
-        # however high that metric's percentage happens to compute.
-        'attention': sorted(
-            attention,
-            key=lambda item: (0 if item['severity'] == 'critical' else 1, -item['percent']),
-        ),
         'thresholds': {
             'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
-            'attention_min_percent': Config.ATTENTION_MIN_PERCENT,
-            'cpu_sustained_minutes': cpu_window,
             'internet_slow_latency_ms': Config.INTERNET_SLOW_LATENCY_MS,
             'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
             'slow_ms': {
@@ -1165,7 +1049,8 @@ def get_server_health_top_metrics():
             if median is not None:
                 cpu_rows.append(dict(base(device_id), rank_value=round(median, 1),
                                      current=numeric(devices[device_id].get('cpu_usage')),
-                                     unit='%', series=cpu))
+                                     unit='%', series=cpu,
+                                     limit=_threshold_for(devices[device_id], 'cpu_threshold', 85)))
 
         ram = series.get((device_id, 'ram'))
         current_ram = numeric(devices[device_id].get('ram_usage'))

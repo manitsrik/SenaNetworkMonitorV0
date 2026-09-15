@@ -412,6 +412,11 @@
         border-bottom: 1px solid var(--border-color);
     }
 
+    .health-chart-title[title],
+    .health-panel-title[title] {
+        cursor: help;
+    }
+
     .health-panel-title,
     .health-table-title {
         display: flex;
@@ -1348,12 +1353,6 @@
         line-height: 1.3;
     }
 
-    .health-info {
-        color: var(--text-muted);
-        font-size: 0.68rem;
-        cursor: help;
-    }
-
     /* --- Freshness / stale data --- */
     .stale-chip {
         display: inline-flex;
@@ -1588,10 +1587,8 @@
 
         <section class="health-chart-card" id="timeline-card">
             <div class="health-chart-header">
-                <h3 class="health-chart-title">
+                <h3 class="health-chart-title" title="Each row is one server over time. A block is shaded by the mix of results in its slice, with brief incidents drawn at a minimum width so they stay visible. Hatched grey means no check was recorded at all: a gap in monitoring, not a healthy server. The percentage on the right is the share of checks that came back up. A blue line marks when the slow thresholds were last recalibrated, since checks to its left keep the verdict they were given at the time and cannot be re-judged.">
                     <i class="fa-solid fa-timeline"></i> Availability Timeline
-                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                       title="Each row is one server over time. A block is shaded by the mix of results in its slice, with brief incidents drawn at a minimum width so they stay visible. Hatched grey means no check was recorded at all: a gap in monitoring, not a healthy server. The percentage on the right is the share of checks that came back up. A blue line marks when the slow thresholds were last recalibrated, since checks to its left keep the verdict they were given at the time and cannot be re-judged."></i>
                 </h3>
                 <div class="health-chart-controls">
                     <div class="health-range-group" id="timeline-range-group" role="group" aria-label="Timeline window">
@@ -1653,10 +1650,8 @@
 
     <section class="health-chart-card" id="collection-card">
         <div class="health-chart-header">
-            <h3 class="health-chart-title">
+            <h3 class="health-chart-title" title="How long a full metric collection takes per host: connect over SSH/WinRM/WMI, run every command, return. This measures the monitoring path, not the server's own performance, so it lives below the server data rather than above it.">
                 <i class="fa-solid fa-stopwatch"></i> Monitoring Health
-                <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="How long a full metric collection takes per host: connect over SSH/WinRM/WMI, run every command, return. This measures the monitoring path, not the server's own performance, so it lives below the server data rather than above it."></i>
             </h3>
             <div class="health-chart-controls">
                 <div class="health-range-group" id="collection-range-group" role="group" aria-label="Collection window">
@@ -2951,10 +2946,9 @@ function renderTopCards(data) {
         return `
             <div class="health-panel">
                 <div class="health-panel-header">
-                    <h3 class="health-panel-title">
+                    <h3 class="health-panel-title" title="Ranked by ${esc(card.ranked_by)}. The line is the last ${esc(String(data.hours))} hours.">
                         <i class="fa-solid ${esc(TOPCARD_ICON[card.key] || 'fa-chart-simple')} topcard-icon"></i>
                         ${esc(card.title)}
-                        <i class="fa-solid fa-circle-info health-info" tabindex="0" title="Ranked by ${esc(card.ranked_by)}. The line is the last ${esc(String(data.hours))} hours."></i>
                     </h3>
                     ${card.soonest ? `
                     <span class="topcard-sorts">

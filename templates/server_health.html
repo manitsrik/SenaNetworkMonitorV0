@@ -1087,17 +1087,20 @@
     .attention-list {
         display: grid;
         gap: 2px;
-        padding: 0.4rem 0.55rem 0.5rem;
-        max-height: 232px;
+        padding: 0.35rem 0.5rem 0.45rem;
+        /* One row per host keeps this short; the cap is a guard, not a plan. */
+        max-height: 216px;
         overflow-y: auto;
     }
 
+    /* Reads left to right the way the sentence does: which host, what is
+       wrong, how close to its limit, and what else that host has going on. */
     .attention-row {
         display: grid;
-        grid-template-columns: 42px minmax(0, 1fr) auto;
+        grid-template-columns: minmax(130px, 200px) 62px minmax(0, 1fr) auto;
         align-items: center;
-        gap: 0.45rem;
-        padding: 0.3rem 0.35rem;
+        gap: 0.55rem;
+        padding: 0.3rem 0.5rem;
         border-left: 3px solid var(--tone, var(--warning));
         border-radius: 0 6px 6px 0;
         background: var(--tone-soft, rgba(245, 158, 11, 0.08));
@@ -1113,7 +1116,7 @@
 
     .attention-name {
         color: var(--text-primary);
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         font-weight: 700;
         text-decoration: none;
         overflow: hidden;
@@ -1128,22 +1131,54 @@
 
     .attention-detail {
         color: var(--text-secondary);
-        font-size: 0.62rem;
+        font-size: 0.68rem;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
+    .attention-more {
+        color: var(--text-muted);
+        font-size: 0.64rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
     .attention-pct {
         color: var(--tone, var(--warning));
-        font-size: 0.72rem;
+        font-size: 0.75rem;
         font-weight: 800;
         white-space: nowrap;
+        text-align: right;
+        min-width: 34px;
     }
 
     .attention-row.is-critical {
         --tone: var(--danger);
         --tone-soft: rgba(239, 68, 68, 0.09);
+    }
+
+    /* Nothing wrong takes one line, so the sections below it do not move
+       every time the count changes. */
+    .attention-clear {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.42rem 0.6rem;
+        color: var(--success);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
+    @media (max-width: 760px) {
+        .attention-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .attention-row .attention-kind,
+        .attention-row .attention-more {
+            grid-column: 1 / -1;
+        }
     }
 
     /* ===================== Internet cell =============================== */
@@ -1678,6 +1713,20 @@
         </button>
     </section>
 
+    <section class="health-panel" id="attention-card">
+        <div class="health-panel-header">
+            <h3 class="health-panel-title">
+                <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
+                <i class="fa-solid fa-circle-info health-info" tabindex="0"
+                   title="CPU, memory, disk and internet across every live host, one row per host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
+            </h3>
+            <span id="attention-count" class="health-panel-count">-</span>
+        </div>
+        <div class="attention-list" id="attention-list">
+            <div class="health-loading">Loading...</div>
+        </div>
+    </section>
+
     <div class="health-cols">
         <div class="health-main">
         <section class="health-chart-card" id="timeline-card">
@@ -1746,19 +1795,6 @@
         </div>
 
         <aside class="health-rail">
-        <section class="health-panel is-rail" id="attention-card">
-            <div class="health-panel-header">
-                <h3 class="health-panel-title">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
-                    <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                       title="CPU, memory, disk and internet across every live host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
-                </h3>
-                <span id="attention-count" class="health-panel-count">-</span>
-            </div>
-            <div class="attention-list" id="attention-list">
-                <div class="health-loading">Loading...</div>
-            </div>
-        </section>
         <section class="health-chart-card" id="capacity-card">
             <div class="health-chart-header">
                 <h3 class="health-chart-title">
@@ -2133,32 +2169,78 @@ function serverFilterLink(id, name) {
 
 // Readings from a host that stopped reporting are not "top consumers", so
 // they are left out of the ranking rather than ranked against live numbers.
-const ATTENTION_ICONS = { cpu: 'CPU', ram: 'RAM', disk: 'DISK', internet: 'NET' };
+const ATTENTION_LABELS = { cpu: 'CPU', ram: 'Memory', disk: 'Disk', internet: 'Internet' };
+
+// The API returns one entry per metric, so a host with three problems appears
+// three times. People fix hosts, not metrics: fold them into one row each,
+// leading with that host's worst problem and summarising the rest.
+function groupAttention(items) {
+    const byHost = new Map();
+    (items || []).forEach(item => {
+        const key = normalizeServerId(item.device_id);
+        if (!byHost.has(key)) byHost.set(key, []);
+        byHost.get(key).push(item);
+    });
+
+    const rank = item => (item.severity === 'critical' ? 1000 : 0) + item.percent;
+
+    return [...byHost.entries()]
+        .map(([id, hostItems]) => {
+            const sorted = [...hostItems].sort((a, b) => rank(b) - rank(a));
+            return {
+                id,
+                name: sorted[0].name,
+                severity: sorted.some(item => item.severity === 'critical') ? 'critical' : 'warning',
+                worst: sorted[0],
+                others: sorted.slice(1),
+            };
+        })
+        .sort((a, b) => rank(b.worst) - rank(a.worst));
+}
 
 function renderAttention(items) {
     const list = document.getElementById('attention-list');
     const count = document.getElementById('attention-count');
     if (!list) return;
 
-    const rows = (items || []).filter(item => serverMatchesSelection({ id: item.device_id }));
-    if (count) count.textContent = rows.length ? `${rows.length} items` : 'all clear';
+    const hosts = groupAttention(items).filter(host => serverMatchesSelection({ id: host.id }));
+    const issues = hosts.reduce((total, host) => total + 1 + host.others.length, 0);
 
-    if (!rows.length) {
-        const floor = latestServerHealthData?.thresholds?.attention_min_percent ?? 75;
-        list.innerHTML = `<div class="health-empty">Nothing is within ${100 - floor}% of its limit, and every internet check is passing.</div>`;
+    if (count) {
+        count.textContent = hosts.length
+            ? `${hosts.length} host${hosts.length === 1 ? '' : 's'}, ${issues} issue${issues === 1 ? '' : 's'}`
+            : 'all clear';
+    }
+
+    if (!hosts.length) {
+        list.innerHTML = `
+            <div class="attention-clear">
+                <i class="fa-solid fa-circle-check"></i>
+                Nothing is near its limit, and every internet check is passing.
+            </div>
+        `;
         return;
     }
 
-    list.innerHTML = rows.map(item => `
-        <div class="attention-row${item.severity === 'critical' ? ' is-critical' : ''}">
-            <span class="attention-kind">${esc(ATTENTION_ICONS[item.kind] || item.kind)}</span>
-            <div>
-                <a class="attention-name" href="#" data-server-filter="${esc(normalizeServerId(item.device_id))}">${esc(item.name || 'Unknown')}</a>
-                <div class="attention-detail">${esc(item.detail || '')}</div>
+    list.innerHTML = hosts.map(host => {
+        const worst = host.worst;
+        const more = host.others
+            .map(item => `${(ATTENTION_LABELS[item.kind] || item.kind).toLowerCase()} ${Math.round(item.percent)}%`)
+            .join(' \u00b7 ');
+        // A lost connection has no percentage to show, only the fact of it.
+        const figure = worst.kind === 'internet' && worst.severity === 'critical'
+            ? ''
+            : `${Math.round(worst.percent)}%`;
+
+        return `
+            <div class="attention-row${host.severity === 'critical' ? ' is-critical' : ''}">
+                <a class="attention-name" href="#" data-server-filter="${esc(host.id)}" title="Filter the table to ${esc(host.name || '')}">${esc(host.name || 'Unknown')}</a>
+                <span class="attention-kind">${esc(ATTENTION_LABELS[worst.kind] || worst.kind)}</span>
+                <span class="attention-detail">${esc(worst.detail || '')}${more ? `<span class="attention-more"> &nbsp;+ ${esc(more)}</span>` : ''}</span>
+                <span class="attention-pct">${figure}</span>
             </div>
-            <span class="attention-pct">${item.kind === 'internet' && item.severity === 'critical' ? '!' : `${Math.round(item.percent)}%`}</span>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function setHiddenStaleNote(hidden) {

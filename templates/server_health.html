@@ -932,11 +932,6 @@
         padding: 0.42rem 0.6rem;
     }
 
-    .health-rail .capacity-grid {
-        grid-template-columns: 1fr;
-        padding: 0.4rem 0.55rem;
-    }
-
     /* ===================== Tabs over the table ========================== */
     .health-tabs {
         display: flex;
@@ -1143,87 +1138,6 @@
     .internet-bad { color: var(--danger); }
     .internet-none { color: var(--text-muted); font-weight: 500; }
 
-    /* ===================== Capacity Outlook: small multiples ============ */
-    .capacity-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-        gap: 0.4rem;
-        padding: 0.5rem 0.65rem;
-    }
-
-    .capacity-cell {
-        display: flex;
-        flex-direction: column;
-        gap: 0.28rem;
-        padding: 0.45rem 0.55rem;
-        border: 1px solid var(--health-line);
-        border-left: 3px solid var(--cap-accent, var(--success));
-        border-radius: 7px;
-        background: var(--bg-secondary);
-    }
-
-    .capacity-cell.is-stale {
-        opacity: 0.6;
-        border-left-style: dashed;
-    }
-
-    .capacity-cell-top {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 0.4rem;
-    }
-
-    .capacity-name {
-        color: var(--text-primary);
-        font-size: 0.72rem;
-        font-weight: 800;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        text-decoration: none;
-    }
-
-    .capacity-name:hover {
-        color: var(--primary);
-        text-decoration: underline;
-    }
-
-    .capacity-current {
-        color: var(--cap-accent, var(--text-primary));
-        font-size: 0.86rem;
-        font-weight: 800;
-        white-space: nowrap;
-    }
-
-    .capacity-spark {
-        display: block;
-        width: 100%;
-        height: 34px;
-        overflow: visible;
-    }
-
-    .capacity-foot {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.35rem;
-        font-size: 0.62rem;
-        white-space: nowrap;
-    }
-
-    .capacity-eta {
-        color: var(--cap-accent, var(--text-secondary));
-        font-weight: 800;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .capacity-slope {
-        color: var(--text-muted);
-        font-weight: 700;
-    }
-
     /* ===================== Availability Timeline ======================== */
     .timeline-body {
         display: flex;
@@ -1318,6 +1232,91 @@
             rgba(148, 163, 184, 0.45) 0 2px,
             rgba(148, 163, 184, 0.12) 2px 4px
         );
+    }
+
+    .topcard-row {
+        cursor: pointer;
+    }
+
+    .topcard-row:hover {
+        background: var(--health-soft);
+    }
+
+    .topcard-row.is-open {
+        background: var(--bg-tertiary);
+    }
+
+    /* The detail opens under its own row rather than in a dialog, so several
+       hosts can be compared at once and nothing covers the page. */
+    .topcard-detail {
+        padding: 0.4rem 0.3rem 0.5rem;
+        border-bottom: 1px solid var(--line-soft, var(--health-line));
+    }
+
+    .topcard-chart {
+        display: block;
+        width: 100%;
+        height: 62px;
+    }
+
+    .topcard-facts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.28rem 0.7rem;
+        margin-top: 0.3rem;
+        font-size: 0.64rem;
+        color: var(--text-secondary);
+    }
+
+    .topcard-facts b {
+        color: var(--text-primary);
+        font-weight: 700;
+    }
+
+    .topcard-eta {
+        color: var(--eta, var(--text-secondary));
+        font-weight: 800;
+    }
+
+    .topcard-sorts {
+        display: inline-flex;
+        border: 1px solid var(--health-line);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+
+    .topcard-sorts button {
+        min-height: 20px;
+        padding: 0.1rem 0.42rem;
+        border: 0;
+        background: none;
+        color: var(--text-secondary);
+        font: inherit;
+        font-size: 0.62rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .topcard-sorts button[aria-pressed="true"] {
+        background: var(--primary);
+        color: #fff;
+    }
+
+    /* In the rail the row stacks, because the host name and the reading will
+       not sit side by side in 330px. */
+    .health-rail .attention-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        row-gap: 0.1rem;
+    }
+
+    .health-rail .attention-kind {
+        grid-row: 2;
+    }
+
+    .health-rail .attention-detail {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        white-space: normal;
     }
 
     /* ===================== Top metric cards ============================ */
@@ -1576,9 +1575,6 @@
             grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
         }
 
-        .health-rail .capacity-grid {
-            grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-        }
     }
 
     @media (max-width: 1440px) {
@@ -1605,7 +1601,6 @@
 
     @media (max-width: 760px) {
         .health-overview,
-        .capacity-grid,
         .health-rail {
             grid-template-columns: 1fr;
         }
@@ -1748,20 +1743,6 @@
         </button>
     </section>
 
-    <section class="health-panel" id="attention-card">
-        <div class="health-panel-header">
-            <h3 class="health-panel-title">
-                <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
-                <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="CPU, memory, disk and internet across every live host, one row per host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
-            </h3>
-            <span id="attention-count" class="health-panel-count">-</span>
-        </div>
-        <div class="attention-list" id="attention-list">
-            <div class="health-loading">Loading...</div>
-        </div>
-    </section>
-
     <div class="health-cols">
         <div class="health-main">
         <section class="health-chart-card" id="timeline-card">
@@ -1830,34 +1811,19 @@
         </div>
 
         <aside class="health-rail">
-        <section class="health-chart-card" id="capacity-card">
-            <div class="health-chart-header">
-                <h3 class="health-chart-title">
-                    <i class="fa-solid fa-chart-area"></i> Capacity Outlook
+        <section class="health-panel" id="attention-card">
+            <div class="health-panel-header">
+                <h3 class="health-panel-title">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Needs Attention
                     <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                       title="Each server's own trend over the window, projected forward to the alert threshold configured for that device. Answers what the table cannot: which servers are on course to run out."></i>
+                       title="CPU, memory, disk and internet across every live host, one row per host, ranked by how close each is to that host's own configured limit rather than by raw usage. 94% memory against a 95% limit is nearer the edge than 83% against 90%. Hosts that are down or whose metrics have gone stale are left out."></i>
                 </h3>
-                <div class="health-chart-controls">
-                    <div class="health-range-group" id="capacity-metric-group" role="group" aria-label="Capacity metric">
-                        <button type="button" class="health-range-btn is-active" data-capacity-metric="ram">RAM</button>
-                        <button type="button" class="health-range-btn" data-capacity-metric="disk">Disk</button>
-                    </div>
-                    <div class="health-range-group" id="capacity-range-group" role="group" aria-label="Capacity window">
-                        <button type="button" class="health-range-btn" data-capacity-days="7">7d</button>
-                        <button type="button" class="health-range-btn is-active" data-capacity-days="30">30d</button>
-                    </div>
-                    <label class="health-toggle" title="Hide servers that are flat or falling">
-                        <input type="checkbox" id="capacity-rising-only" checked>
-                        Rising only
-                    </label>
-                    </div>
+                <span id="attention-count" class="health-panel-count">-</span>
             </div>
-            <div class="capacity-grid" id="capacity-grid">
+            <div class="attention-list" id="attention-list">
                 <div class="health-loading">Loading...</div>
             </div>
-            <div class="health-chart-hint" id="capacity-hint"></div>
         </section>
-
         </aside>
     </div>
 
@@ -1893,7 +1859,6 @@
 {% block scripts %}
 <script>
 let latestServerHealthData = null;
-let latestCapacityData = null;
 let latestTimelineData = null;
 let latestCollectionData = null;
 let latestTopCards = null;
@@ -1904,9 +1869,6 @@ let serverSearchMap = new Map();
 // Triage first: the table opens on the worst servers instead of alphabetically.
 let serverSortState = { key: 'status', direction: 'asc' };
 let healthFocus = 'all';
-let capacityMetric = 'ram';
-let capacityDays = 30;
-let capacityRisingOnly = true;
 let timelineHours = 24;
 let collectionRange = { minutes: 360, sample: 72 };
 
@@ -1981,9 +1943,6 @@ function loadPrefs() {
 function savePrefs() {
     try {
         localStorage.setItem(PREFS_KEY, JSON.stringify({
-            capacityMetric,
-            capacityDays,
-            capacityRisingOnly,
             timelineHours,
             collectionRange,
         }));
@@ -2003,15 +1962,6 @@ function markActive(attribute, value) {
 function applyStoredPrefs() {
     const prefs = loadPrefs();
 
-    // markActive returns false for a metric that no longer has a button, which
-    // leaves a browser that stored "cpu" on the default rather than asking the
-    // API for something it will now reject.
-    if (prefs.capacityMetric && markActive('data-capacity-metric', prefs.capacityMetric)) {
-        capacityMetric = prefs.capacityMetric;
-    }
-    if (prefs.capacityDays && markActive('data-capacity-days', prefs.capacityDays)) {
-        capacityDays = Number(prefs.capacityDays);
-    }
     if (prefs.timelineHours && markActive('data-timeline-hours', prefs.timelineHours)) {
         timelineHours = Number(prefs.timelineHours);
     }
@@ -2020,11 +1970,6 @@ function applyStoredPrefs() {
             minutes: Number(prefs.collectionRange.minutes),
             sample: Number(prefs.collectionRange.sample) || 72,
         };
-    }
-    if (typeof prefs.capacityRisingOnly === 'boolean') {
-        capacityRisingOnly = prefs.capacityRisingOnly;
-        const toggle = document.getElementById('capacity-rising-only');
-        if (toggle) toggle.checked = capacityRisingOnly;
     }
 }
 
@@ -2444,7 +2389,6 @@ function applyServerFilter(id) {
     if (latestServerHealthData) renderServerHealthData(latestServerHealthData);
     // The three lower sections all narrow to the selected server; re-render
     // from cache rather than refetching everything on every filter click.
-    if (latestCapacityData) renderCapacity(latestCapacityData);
     if (latestTimelineData) renderTimeline(latestTimelineData);
     if (latestCollectionData) renderCollectionHealth(latestCollectionData);
     if (latestTopCards) renderTopCards(latestTopCards);
@@ -2832,120 +2776,6 @@ async function loadServerHealth() {
     }
 }
 
-// ============================ Capacity Outlook ============================
-
-function capacityAccent(entry) {
-    if (entry.is_stale) return 'var(--text-muted)';
-    if (entry.over_limit) return 'var(--danger)';
-    if (entry.days_to_limit !== null && entry.days_to_limit <= 30) return 'var(--danger)';
-    if (entry.days_to_limit !== null && entry.days_to_limit <= 90) return 'var(--warning)';
-    return 'var(--success)';
-}
-
-function formatEta(days) {
-    if (days === null || days === undefined) return null;
-    if (days < 60) return `${Math.round(days)} days`;
-    if (days < 730) return `${Math.round(days / 30)} months`;
-    return `${(days / 365).toFixed(1)} years`;
-}
-
-// A hand-rolled SVG beats a chart instance per card: a dozen of these render
-// in one pass and cost nothing to redraw.
-function sparkline(values, limit, accent) {
-    if (!values || values.length < 2) return '<div class="capacity-spark"></div>';
-    const w = 100;
-    const h = 34;
-    const ceiling = Math.max(limit, ...values) * 1.08 || 1;
-    const x = index => (index / (values.length - 1)) * w;
-    const y = value => h - (value / ceiling) * h;
-
-    const line = values.map((value, index) => `${index ? 'L' : 'M'}${x(index).toFixed(2)},${y(value).toFixed(2)}`).join(' ');
-    const area = `${line} L${w},${h} L0,${h} Z`;
-    const limitY = y(limit);
-    const limitLine = limitY >= 0 && limitY <= h
-        ? `<line x1="0" y1="${limitY.toFixed(2)}" x2="${w}" y2="${limitY.toFixed(2)}" stroke="var(--danger)" stroke-width="0.8" stroke-dasharray="3 2" opacity="0.65" vector-effect="non-scaling-stroke"/>`
-        : '';
-
-    return `
-        <svg class="capacity-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
-            <path d="${area}" fill="${accent}" opacity="0.12"/>
-            <path d="${line}" fill="none" stroke="${accent}" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
-            ${limitLine}
-        </svg>
-    `;
-}
-
-function renderCapacity(data) {
-    const grid = document.getElementById('capacity-grid');
-    const hint = document.getElementById('capacity-hint');
-    if (!grid) return;
-
-    const all = (data.servers || []).filter(serverMatchesSelection);
-    const rising = all.filter(entry => !entry.is_stale && (entry.slope_per_day || 0) > 0.01);
-    const shown = capacityRisingOnly && rising.length ? rising : all;
-
-    if (!shown.length) {
-        grid.innerHTML = '<div class="health-empty">No resource history for these servers yet.</div>';
-        if (hint) hint.textContent = '';
-        return;
-    }
-
-    grid.innerHTML = shown.map(entry => {
-        const accent = capacityAccent(entry);
-        const eta = formatEta(entry.days_to_limit);
-        let footLeft;
-        if (entry.is_stale) {
-            footLeft = 'stale data, no forecast';
-        } else if (entry.over_limit) {
-            footLeft = `over its ${entry.limit}% limit`;
-        } else if (eta) {
-            footLeft = `${entry.limit}% in ${eta}`;
-        } else {
-            footLeft = 'flat or falling';
-        }
-        const slope = entry.slope_per_month;
-        const slopeText = slope === null || slope === undefined
-            ? ''
-            : `${slope > 0 ? '+' : ''}${slope.toFixed(1)}pt/mo`;
-
-        return `
-            <div class="capacity-cell${entry.is_stale ? ' is-stale' : ''}" style="--cap-accent:${accent};">
-                <div class="capacity-cell-top">
-                    <a class="capacity-name" href="#" data-server-filter="${esc(normalizeServerId(entry.id))}" title="${esc(entry.name || '')} (${esc(entry.ip_address || '')})">${esc(entry.name || 'Unknown')}</a>
-                    <span class="capacity-current">${entry.current}%</span>
-                </div>
-                ${sparkline(entry.values, entry.limit, accent)}
-                <div class="capacity-foot">
-                    <span class="capacity-eta">${esc(footLeft)}</span>
-                    <span class="capacity-slope">${esc(slopeText)}</span>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    const urgent = shown.filter(e => !e.is_stale && (e.over_limit || (e.days_to_limit !== null && e.days_to_limit <= 90)));
-    const notes = [`${data.metric_label} over the last ${data.days} days, projected to each device's own alert threshold.`];
-    if (urgent.length) {
-        notes.push(`${urgent.length} server${urgent.length === 1 ? '' : 's'} reach that threshold within 90 days at the current rate.`);
-    }
-    if (hint) hint.textContent = notes.join(' ');
-}
-
-async function loadCapacity() {
-    const grid = document.getElementById('capacity-grid');
-    try {
-        const query = `metric=${capacityMetric}&days=${capacityDays}&buckets=40`;
-        const res = await fetch(`/api/server-health/capacity?${query}&_t=${Date.now()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data.success === false) throw new Error(data.error || 'Unable to load capacity trend');
-        latestCapacityData = data;
-        renderCapacity(data);
-    } catch (error) {
-        if (grid) grid.innerHTML = `<div class="health-error">Unable to load capacity trend: ${esc(error.message)}</div>`;
-    }
-}
-
 // ========================= Availability Timeline ==========================
 
 // Minimum share of a slice any non-up status gets. Colouring a bucket purely by
@@ -3237,6 +3067,63 @@ function topTone(card, row, index) {
     return index === 0 ? 'var(--info)' : 'var(--primary)';
 }
 
+// Which rows are open, and which ordering each card is showing. Kept outside
+// the render so a refresh does not close what someone is reading.
+const topOpen = new Set();
+const topSort = new Map();
+
+function topDetail(card, row, colour) {
+    const points = (row.series || []).filter(v => v !== null && Number.isFinite(Number(v))).map(Number);
+    if (!points.length) return '<div class="topcard-detail"><span class="health-empty">No history for this one yet.</span></div>';
+
+    const width = 240;
+    const height = 62;
+    const limit = Number.isFinite(Number(row.limit)) ? Number(row.limit) : null;
+    const ceiling = Math.max(...points, limit || 0) * 1.08 || 1;
+    const series = row.series || [];
+    const x = index => (index / Math.max(1, series.length - 1)) * width;
+    const y = value => height - (value / ceiling) * height;
+
+    let path = '';
+    let pen = false;
+    series.forEach((value, index) => {
+        if (value === null || !Number.isFinite(Number(value))) { pen = false; return; }
+        path += `${pen ? 'L' : 'M'}${x(index).toFixed(1)},${y(Number(value)).toFixed(1)} `;
+        pen = true;
+    });
+
+    const limitY = limit === null ? null : y(limit);
+    const facts = [];
+    facts.push(`now <b>${esc(topValueText({ rank_value: row.current ?? row.rank_value }, card.unit))}</b>`);
+    facts.push(`peak <b>${esc(topValueText({ rank_value: Math.max(...points) }, card.unit))}</b>`);
+    facts.push(`low <b>${esc(topValueText({ rank_value: Math.min(...points) }, card.unit))}</b>`);
+
+    if (row.over_limit) {
+        facts.push(`<span class="topcard-eta" style="--eta:var(--danger)">over its ${esc(String(row.limit))}% limit</span>`);
+    } else if (row.days_to_limit !== null && row.days_to_limit !== undefined) {
+        const days = row.days_to_limit;
+        const eta = days < 60 ? `${Math.round(days)} days` : (days < 730 ? `${Math.round(days / 30)} months` : 'beyond a year');
+        const urgency = days <= 30 ? 'var(--danger)' : (days <= 90 ? 'var(--warning)' : 'var(--success)');
+        facts.push(`<span class="topcard-eta" style="--eta:${urgency}">${esc(String(row.limit))}% in ${esc(eta)}</span>`);
+    }
+    if (row.slope_per_month !== null && row.slope_per_month !== undefined) {
+        facts.push(`${row.slope_per_month > 0 ? '+' : ''}${row.slope_per_month}pt/mo over ${esc(String(row.projection_days || 30))}d`);
+    }
+
+    return `
+        <div class="topcard-detail">
+            <svg class="topcard-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+                <path d="${path.trim()} L${width},${height} L0,${height} Z" fill="${colour}" opacity="0.10"/>
+                <path d="${path.trim()}" fill="none" stroke="${colour}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+                ${limitY !== null && limitY >= 0 && limitY <= height
+                    ? `<line x1="0" y1="${limitY.toFixed(1)}" x2="${width}" y2="${limitY.toFixed(1)}" stroke="var(--danger)" stroke-width="1" stroke-dasharray="4 3" opacity="0.7" vector-effect="non-scaling-stroke"/>`
+                    : ''}
+            </svg>
+            <div class="topcard-facts">${facts.join('<span></span>')}</div>
+        </div>
+    `;
+}
+
 function renderTopCards(data) {
     const host = document.getElementById('topcards');
     if (!host) return;
@@ -3248,19 +3135,29 @@ function renderTopCards(data) {
     }
 
     host.innerHTML = cards.map(card => {
-        const rows = card.rows.filter(row => serverMatchesSelection({ id: row.id }));
+        // A card with a forecast can be read two ways, and they disagree: a
+        // host at 61% climbing fast runs out before one steady at 89%.
+        const mode = topSort.get(card.key) || 'now';
+        const source = (mode === 'soonest' && card.soonest) ? card.soonest : card.rows;
+        const rows = source.filter(row => serverMatchesSelection({ id: row.id }));
         const body = rows.length ? rows.map((row, index) => {
             const colour = topTone(card, row, index);
+            const key = `${card.key}:${row.id}:${row.label || ''}`;
+            const open = topOpen.has(key);
+            const figure = mode === 'soonest' && row.days_to_limit !== null && row.days_to_limit !== undefined
+                ? `${Math.round(row.days_to_limit)}d`
+                : topValueText(row, card.unit);
             return `
-                <div class="topcard-row">
+                <div class="topcard-row${open ? ' is-open' : ''}" data-topcard-key="${esc(key)}" role="button" tabindex="0" aria-expanded="${open}">
                     <span class="topcard-rank">${index + 1}</span>
                     <div>
                         <a class="topcard-name" href="#" data-server-filter="${esc(normalizeServerId(row.id))}">${esc(row.name || 'Unknown')}</a>
                         <span class="topcard-ip">${esc(row.label ? `Partition ${row.label}` : (row.ip_address || ''))}</span>
                     </div>
-                    <span class="topcard-value" style="color:${colour}">${esc(topValueText(row, card.unit))}</span>
+                    <span class="topcard-value" style="color:${colour}">${esc(figure)}</span>
                     ${topSpark(row.series, colour)}
                 </div>
+                ${open ? topDetail(card, row, colour) : ''}
             `;
         }).join('') : '<div class="health-empty">No data for this selection.</div>';
 
@@ -3271,15 +3168,46 @@ function renderTopCards(data) {
                         ${esc(card.title)}
                         <i class="fa-solid fa-circle-info health-info" tabindex="0" title="Ranked by ${esc(card.ranked_by)}. The line is the last ${esc(String(data.hours))} hours."></i>
                     </h3>
-                    <button type="button" class="topcard-viewall" data-view-all="${esc(card.sort_key)}">View all &rarr;</button>
+                    <span style="display:inline-flex;align-items:center;gap:0.35rem">
+                        ${card.soonest ? `
+                        <span class="topcard-sorts">
+                            <button type="button" data-topsort="${esc(card.key)}:now" aria-pressed="${mode !== 'soonest'}">Now</button>
+                            <button type="button" data-topsort="${esc(card.key)}:soonest" aria-pressed="${mode === 'soonest'}">Days left</button>
+                        </span>` : ''}
+                        <button type="button" class="topcard-viewall" data-view-all="${esc(card.sort_key)}">View all &rarr;</button>
+                    </span>
                 </div>
                 <div class="topcard-list">${body}</div>
             </div>
         `;
     }).join('');
 
+    host.querySelectorAll('[data-topsort]').forEach(button => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
+            const [cardKey, mode] = button.getAttribute('data-topsort').split(':');
+            topSort.set(cardKey, mode);
+            renderTopCards(latestTopCards);
+        });
+    });
+
+    host.querySelectorAll('[data-topcard-key]').forEach(rowEl => {
+        const toggle = event => {
+            // The host name is a filter link; only the rest of the row expands.
+            if (event.target.closest('[data-server-filter]')) return;
+            const key = rowEl.getAttribute('data-topcard-key');
+            if (topOpen.has(key)) topOpen.delete(key); else topOpen.add(key);
+            renderTopCards(latestTopCards);
+        };
+        rowEl.addEventListener('click', toggle);
+        rowEl.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(event); }
+        });
+    });
+
     host.querySelectorAll('[data-view-all]').forEach(button => {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', event => {
+            event.stopPropagation();
             // Send them to the table already sorted on the column they were reading.
             setHealthFocus('all');
             serverSortState = { key: button.getAttribute('data-view-all'), direction: 'desc' };
@@ -3304,7 +3232,6 @@ async function loadTopCards() {
 }
 
 function refreshCharts() {
-    loadCapacity();
     loadTimeline();
     loadCollectionHealth();
     loadTopCards();
@@ -3375,18 +3302,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    bindGroup('data-capacity-metric', button => {
-        capacityMetric = button.getAttribute('data-capacity-metric') || 'ram';
-        savePrefs();
-        loadCapacity();
-    });
-
-    bindGroup('data-capacity-days', button => {
-        capacityDays = Number(button.getAttribute('data-capacity-days')) || 30;
-        savePrefs();
-        loadCapacity();
-    });
-
     bindGroup('data-timeline-hours', button => {
         timelineHours = Number(button.getAttribute('data-timeline-hours')) || 24;
         savePrefs();
@@ -3402,14 +3317,6 @@ document.addEventListener('DOMContentLoaded', () => {
         loadCollectionHealth();
     });
 
-    const risingOnly = document.getElementById('capacity-rising-only');
-    if (risingOnly) {
-        risingOnly.addEventListener('change', () => {
-            capacityRisingOnly = risingOnly.checked;
-            savePrefs();
-            if (latestCapacityData) renderCapacity(latestCapacityData);
-        });
-    }
 
     document.addEventListener('keydown', event => {
         if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') {

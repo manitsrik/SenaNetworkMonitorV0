@@ -1106,10 +1106,41 @@ def get_server_health_top_metrics():
         return jsonify({'success': True, 'hours': hours, 'cards': []})
 
     ids = list(devices)
+    # The sparkline window is far too short to fit a trend line through: over
+    # seven days the slope flipped sign on half the fleet. The projection comes
+    # from its own long window, the same one Capacity Outlook used.
+    projection_days = max(7, min(request.args.get('projection_days', 30, type=int) or 30, 90))
     partition_types = db.get_partition_metric_types(ids, hours=hours)
     series = db.get_metric_series(ids, ['cpu', 'ram', 'network_in', 'network_out'] + partition_types,
                                   hours=hours, buckets=buckets)
     latency = db.get_internet_latency_series(ids, hours=hours, buckets=buckets)
+
+    # Only the metrics that accumulate get a forecast.
+    long_series = db.get_metric_series(ids, ['ram'] + partition_types,
+                                       hours=projection_days * 24, buckets=40)
+
+    def projection(device_id, metric_key, limit_column, default_limit):
+        points = long_series.get((device_id, metric_key))
+        if not points:
+            return {}
+        bucket_days = projection_days / float(len(points))
+        samples = [((len(points) - 1 - i) * bucket_days, v)
+                   for i, v in enumerate(points) if v is not None]
+        if len(samples) < 3:
+            return {}
+        slope = _linear_slope_per_day(samples)
+        current = samples[-1][1]
+        limit = _threshold_for(devices[device_id], limit_column, default_limit)
+        days = None
+        if slope and slope > 0.01 and current < limit:
+            days = round((limit - current) / slope, 1)
+        return {
+            'limit': round(limit, 1),
+            'slope_per_month': round(slope * 30, 2) if slope is not None else None,
+            'days_to_limit': days,
+            'over_limit': current >= limit,
+            'projection_days': projection_days,
+        }
 
     def base(device_id):
         device = devices[device_id]
@@ -1140,7 +1171,8 @@ def get_server_health_top_metrics():
         current_ram = numeric(devices[device_id].get('ram_usage'))
         if ram and current_ram is not None:
             ram_rows.append(dict(base(device_id), rank_value=round(current_ram, 1),
-                                 current=round(current_ram, 1), unit='%', series=ram))
+                                 current=round(current_ram, 1), unit='%', series=ram,
+                                 **projection(device_id, 'ram', 'ram_threshold', 90)))
 
         # One line for the interface, in and out together, as the table shows it.
         inbound = series.get((device_id, 'network_in')) or []
@@ -1175,6 +1207,7 @@ def get_server_health_top_metrics():
             if not mount or usage is None:
                 continue
             points = series.get((device_id, 'disk:%s' % str(mount).strip()[:120]))
+            metric_key = 'disk:%s' % str(mount).strip()[:120]
             disk_rows.append(dict(
                 base(device_id),
                 rank_value=round(usage, 1),
@@ -1182,6 +1215,7 @@ def get_server_health_top_metrics():
                 unit='%',
                 label=str(mount),
                 series=points or [],
+                **projection(device_id, metric_key, 'disk_threshold', 90),
             ))
 
     latency_rows = []
@@ -1196,19 +1230,36 @@ def get_server_health_top_metrics():
     def top(rows):
         return sorted(rows, key=lambda r: -(r['rank_value'] or 0))[:limit]
 
+    def soonest(rows):
+        """Nearest to running out first: already over, then by days remaining.
+
+        A different list from the one above, not a reshuffle of it: a host at
+        61% climbing 36 points a month reaches its limit before one sitting
+        steady at 89%, and ranking on the current figure never shows that.
+        """
+        forecast = [r for r in rows if r.get('over_limit') or r.get('days_to_limit') is not None]
+        return sorted(
+            forecast,
+            key=lambda r: (0, -(r['current'] or 0)) if r.get('over_limit')
+            else (1, r['days_to_limit']),
+        )[:limit]
+
     return jsonify({
         'success': True,
         'hours': hours,
         'buckets': buckets,
+        'projection_days': projection_days,
         'cards': [
             {'key': 'cpu', 'title': 'Top CPU Usage', 'unit': '%',
              'ranked_by': 'median over the window, because a single CPU reading swings too far to rank on',
              'sort_key': 'cpu', 'rows': top(cpu_rows)},
             {'key': 'ram', 'title': 'Top Memory Usage', 'unit': '%',
-             'ranked_by': 'current usage', 'sort_key': 'ram', 'rows': top(ram_rows)},
+             'ranked_by': 'current usage', 'sort_key': 'ram', 'rows': top(ram_rows),
+             'soonest': soonest(ram_rows)},
             {'key': 'disk', 'title': 'Top Disk / Partition', 'unit': '%',
              'ranked_by': 'current usage of each mounted partition',
-             'sort_key': 'disk', 'rows': top(disk_rows)},
+             'sort_key': 'disk', 'rows': top(disk_rows),
+             'soonest': soonest(disk_rows)},
             {'key': 'network', 'title': 'Top Network I/O', 'unit': 'bps',
              'ranked_by': 'current throughput, in and out combined',
              'sort_key': 'traffic', 'rows': top(net_rows)},

@@ -1492,7 +1492,7 @@
             <h3 class="health-chart-title">
                 <i class="fa-solid fa-timeline"></i> Availability Timeline
                 <i class="fa-solid fa-circle-info health-info" tabindex="0"
-                   title="Each band is one server over time, coloured by the worst check in each slice. Grey means no check was recorded at all, which is a gap in monitoring rather than a healthy server."></i>
+                   title="Each row is one server over time. A block is shaded by the mix of results in its slice, with brief incidents drawn at a minimum width so they stay visible. Hatched grey means no check was recorded at all: a gap in monitoring, not a healthy server. The percentage on the right is the share of checks that came back up. A blue line marks when the slow thresholds were last recalibrated, since checks to its left keep the verdict they were given at the time and cannot be re-judged."></i>
             </h3>
             <div class="health-chart-controls">
                 <div class="health-range-group" id="timeline-range-group" role="group" aria-label="Timeline window">
@@ -1501,6 +1501,8 @@
                     <button type="button" class="health-range-btn" data-timeline-hours="168">7d</button>
                     <button type="button" class="health-range-btn" data-timeline-hours="720">30d</button>
                 </div>
+                <span class="health-chart-stat" id="timeline-resolution">-</span>
+                <span class="health-chart-stat is-warning" id="timeline-gap" hidden></span>
                 <span class="timeline-key"><i class="timeline-swatch is-up"></i> up</span>
                 <span class="timeline-key"><i class="timeline-swatch is-slow"></i> slow</span>
                 <span class="timeline-key"><i class="timeline-swatch is-down"></i> down</span>
@@ -1510,7 +1512,6 @@
         <div class="timeline-body" id="timeline-body">
             <div class="health-loading">Loading...</div>
         </div>
-        <div class="health-chart-hint" id="timeline-hint"></div>
     </section>
 
     <section class="health-panels">
@@ -2545,13 +2546,15 @@ function bucketSlice(counts) {
 
 function renderTimeline(data) {
     const body = document.getElementById('timeline-body');
-    const hint = document.getElementById('timeline-hint');
+    const resolution = document.getElementById('timeline-resolution');
+    const gap = document.getElementById('timeline-gap');
     if (!body) return;
 
     const servers = (data.servers || []).filter(serverMatchesSelection);
     if (!servers.length) {
         body.innerHTML = '<div class="health-empty">No status history for these servers yet.</div>';
-        if (hint) hint.textContent = '';
+        if (resolution) resolution.textContent = '-';
+        if (gap) gap.hidden = true;
         return;
     }
 
@@ -2594,30 +2597,30 @@ function renderTimeline(data) {
         `;
     }).join('');
 
-    // A slice with no check on any server is the monitor having stopped, which
-    // is worth saying out loud rather than leaving as an unexplained gap.
     const bucketCount = (servers[0].band || []).length;
+    const perBucket = bucketCount ? (data.hours * 60) / bucketCount : 0;
+    if (resolution) {
+        resolution.textContent = perBucket < 90
+            ? `${Math.round(perBucket)} min/block`
+            : `${(perBucket / 60).toFixed(1)} h/block`;
+    }
+
+    // A slice with no check on any server is the monitor having stopped. That
+    // is a finding rather than an explanation, so it stays on screen as a
+    // warning while the rest of the commentary lives behind the info icon.
     let blind = 0;
     for (let index = 0; index < bucketCount; index += 1) {
         if (servers.every(server => (server.band || [])[index] === 'none')) blind += 1;
     }
-    const notes = [];
-
-    if (blind) {
-        const hoursPerBucket = data.hours / (bucketCount || 1);
-        const missing = blind * hoursPerBucket;
-        notes.push(`No check was recorded for any server across ${missing < 1 ? `${Math.round(missing * 60)} minutes` : `${missing.toFixed(1)} hours`} of this window: monitoring was not running.`);
+    if (gap) {
+        gap.hidden = blind === 0;
+        if (blind) {
+            const missing = blind * (perBucket / 60);
+            const span = missing < 1 ? `${Math.round(missing * 60)} min` : `${missing.toFixed(1)} h`;
+            gap.textContent = `monitoring stopped for ${span}`;
+            gap.setAttribute('title', `No check was recorded for any server across ${span} of this window: the monitor was not running.`);
+        }
     }
-    const perBucket = bucketCount ? (data.hours * 60) / bucketCount : 0;
-    notes.unshift(perBucket < 90
-        ? `Last ${formatWindowHours(data.hours)}, ${Math.round(perBucket)} minutes per block.`
-        : `Last ${formatWindowHours(data.hours)}, ${(perBucket / 60).toFixed(1)} hours per block.`);
-
-    if (calibrationIndex > 0) {
-        notes.push(`The blue line marks ${data.calibrated_at}, when the slow thresholds were recalibrated. Checks to its left keep the verdict they were given at the time and cannot be re-judged.`);
-    }
-    notes.push('Percentages are the share of checks that came back up. Each block is shaded by its own mix of results, with brief incidents drawn at a minimum width so they stay visible.');
-    if (hint) hint.textContent = notes.join(' ');
 }
 
 async function loadTimeline() {

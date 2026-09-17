@@ -14,8 +14,10 @@ def run_maintenance():
     conn = db.get_connection()
     cursor = conn.cursor()
     
-    # Define retention period (7 days for history, 30 days for alerts)
-    history_retention_days = 7
+    # Retention comes from Config so a manual run cannot quietly delete history
+    # the scheduled cleanup was keeping. This script used to hard-code 7 days
+    # against a 30-day setting, so running it by hand threw away three weeks.
+    history_retention_days = Config.RETENTION_DAYS
     alert_retention_days = 30
     
     history_cutoff = (datetime.now() - timedelta(days=history_retention_days)).strftime('%Y-%m-%d %H:%M:%S')

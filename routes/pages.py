@@ -70,6 +70,20 @@ def server_dashboard(device_id):
     return render_template('server_dashboard.html', device_id=device_id)
 
 
+@pages_bp.route('/vpn-health')
+@login_required
+def vpn_health():
+    """VPN branch-site health dashboard."""
+    return render_template('vpn_health.html')
+
+
+@pages_bp.route('/vpn-site/<int:device_id>')
+@login_required
+def vpn_site(device_id):
+    """Single VPN branch site, in detail."""
+    return render_template('vpn_site.html', device_id=device_id)
+
+
 @pages_bp.route('/history')
 @login_required
 def history():

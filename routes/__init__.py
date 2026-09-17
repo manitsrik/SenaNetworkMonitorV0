@@ -20,6 +20,7 @@ from .sso import sso_bp
 from .assignments import assignments_bp
 from .plugins import plugins_bp
 from .assistant import assistant_bp
+from .vpn import vpn_bp
 
 ALL_BLUEPRINTS = [
     auth_bp,
@@ -41,5 +42,6 @@ ALL_BLUEPRINTS = [
     assignments_bp,
     plugins_bp,
     assistant_bp,
+    vpn_bp,
 ]
 

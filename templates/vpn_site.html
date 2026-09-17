@@ -1,0 +1,719 @@
+{% extends "layout.html" %}
+{% set active_page = 'vpn_health' %}
+
+{% block title %}VPN Site{% endblock %}
+{% block page_title %}VPN Site{% endblock %}
+
+{% block header_actions %}
+<div class="vs-header-actions">
+    <a href="/vpn-health" class="vs-back"><i class="fa-solid fa-arrow-left"></i> All VPN sites</a>
+    <div class="vs-range-group" role="group" aria-label="Reporting window">
+        <button type="button" class="vs-range-btn" data-hours="6">6h</button>
+        <button type="button" class="vs-range-btn is-active" data-hours="24">24h</button>
+        <button type="button" class="vs-range-btn" data-hours="168">7d</button>
+        <button type="button" class="vs-range-btn" data-hours="720">30d</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+    .vs-page {
+        --vs-surface: var(--bg-secondary);
+        --vs-sunken: var(--bg-primary);
+        --vs-line: var(--border-color);
+        --vs-line-soft: rgba(148, 163, 184, 0.18);
+        --vs-ink: var(--text-primary);
+        --vs-ink-2: var(--text-secondary);
+        --vs-ink-3: var(--text-muted);
+        --vs-good: #1b7f5a;
+        --vs-warn: #d98324;
+        --vs-crit: #d13438;
+        --vs-good-soft: rgba(27, 127, 90, 0.12);
+        --vs-warn-soft: rgba(217, 131, 36, 0.14);
+        --vs-crit-soft: rgba(209, 52, 56, 0.12);
+        --vs-nodata: rgba(148, 163, 184, 0.34);
+        --vs-nodata-2: rgba(148, 163, 184, 0.12);
+        --vs-accent: var(--primary);
+        --vs-accent-soft: rgba(45, 106, 79, 0.09);
+        display: grid;
+        gap: 0.75rem;
+        font-size: 13px;
+        color: var(--vs-ink);
+    }
+
+    [data-theme="dark"] .vs-page {
+        --vs-good: #25966a;
+        --vs-warn: #b98a00;
+        --vs-crit: #c74a4d;
+        --vs-good-soft: rgba(37, 150, 106, 0.18);
+        --vs-warn-soft: rgba(185, 138, 0, 0.20);
+        --vs-crit-soft: rgba(199, 74, 77, 0.18);
+    }
+
+    .vs-page .num {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .vs-header-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .vs-back {
+        display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; font-weight: 600;
+        color: var(--text-secondary); text-decoration: none;
+        border: 1px solid var(--border-color); border-radius: 8px; padding: 0.22rem 0.6rem;
+    }
+    .vs-back:hover { color: var(--primary); border-color: var(--primary); }
+    .vs-range-group { display: inline-flex; border: 1px solid var(--border-color); border-radius: 999px; overflow: hidden; }
+    .vs-range-btn {
+        border: 0; background: var(--bg-secondary); color: var(--text-secondary);
+        font: inherit; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.65rem; cursor: pointer;
+    }
+    .vs-range-btn.is-active { background: var(--primary); color: #fff; }
+
+    /* ---------- identity ---------- */
+    .vs-ident {
+        display: flex; align-items: flex-start; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap;
+        background: var(--vs-surface); border: 1px solid var(--vs-line); border-radius: 10px; padding: 0.7rem 0.9rem;
+    }
+    .vs-ident h2 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+    .vs-ident-meta { font-size: 0.72rem; color: var(--vs-ink-3); margin-top: 0.12rem; }
+    .vs-ident-meta span + span::before { content: "·"; margin: 0 0.35rem; }
+    .vs-pill {
+        display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.55rem; border-radius: 999px;
+        font-size: 0.68rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap;
+    }
+    .vs-pill.is-healthy { background: var(--vs-good-soft); color: var(--vs-good); }
+    .vs-pill.is-down { background: var(--vs-crit-soft); color: var(--vs-crit); }
+    .vs-pill.is-degraded { background: var(--vs-warn-soft); color: var(--vs-warn); }
+    .vs-held { font-size: 0.7rem; color: var(--vs-ink-2); margin-top: 0.25rem; text-align: right; }
+
+    /* ---------- figures ---------- */
+    .vs-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; }
+    .vs-figure {
+        background: var(--vs-surface); border: 1px solid var(--vs-line); border-radius: 10px;
+        padding: 0.6rem 0.75rem; position: relative; overflow: hidden;
+    }
+    .vs-figure::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--tone, var(--vs-accent)); }
+    .vs-figure-label { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vs-ink-2); }
+    .vs-figure-value { font-size: 1.5rem; font-weight: 700; line-height: 1.1; color: var(--tone, var(--vs-ink)); letter-spacing: -0.02em; }
+    .vs-figure-value small { font-size: 0.8rem; font-weight: 600; }
+    .vs-figure-note { font-size: 0.66rem; color: var(--vs-ink-2); margin-top: 0.1rem; }
+    .vs-delta { font-weight: 700; }
+    .vs-delta.is-worse { color: var(--vs-crit); }
+    .vs-delta.is-better { color: var(--vs-good); }
+
+    /* ---------- panels ---------- */
+    .vs-panel { background: var(--vs-surface); border: 1px solid var(--vs-line); border-radius: 10px; overflow: hidden; }
+    .vs-phead {
+        display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap;
+        padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--vs-line-soft);
+    }
+    .vs-phead h3 { margin: 0; font-size: 0.82rem; font-weight: 700; }
+    .vs-phead .vs-sub { font-size: 0.7rem; color: var(--vs-ink-3); font-weight: 500; }
+    .vs-loading { padding: 1.6rem; text-align: center; color: var(--vs-ink-3); font-size: 0.78rem; }
+
+    /* Chart.js needs a box with a real height to draw into, the same way the
+       server dashboard sizes its canvases. */
+    .vs-chartbox { position: relative; height: 240px; padding: 0.7rem 0.8rem 0.5rem; }
+    /* Jitter is read for its shape and whether it crosses its line, not for
+       precise values, so it does not need the height latency does. */
+    .vs-chartbox.is-compact { height: 130px; }
+    .vs-legend { display: flex; flex-wrap: wrap; gap: 0.7rem; padding: 0 0.8rem 0.55rem; font-size: 0.68rem; color: var(--vs-ink-2); }
+    .vs-empty { padding: 1.6rem; text-align: center; color: var(--vs-ink-3); font-size: 0.78rem; }
+
+    /* ---------- availability band ---------- */
+    .vs-band { display: flex; gap: 1px; height: 26px; margin: 0.7rem 0.8rem 0.2rem; border-radius: 4px; overflow: hidden; background: var(--vs-nodata-2); }
+    .vs-band i { flex: 1 1 0; min-width: 0; background: var(--slice, var(--vs-good)); }
+    .vs-axis { display: flex; justify-content: space-between; padding: 0.15rem 0.8rem 0.6rem; font-size: 0.64rem; color: var(--vs-ink-3); }
+
+    /* ---------- outages ---------- */
+    .vs-tablewrap { overflow-x: auto; }
+    .vs-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 520px; }
+    .vs-table thead th {
+        background: var(--vs-sunken); text-align: left; white-space: nowrap; padding: 0.45rem 0.8rem;
+        font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+        color: var(--vs-ink-3); border-bottom: 1px solid var(--vs-line);
+    }
+    .vs-table thead th.is-right, .vs-table tbody td.is-right { text-align: right; }
+    .vs-table tbody td { padding: 0.45rem 0.8rem; border-bottom: 1px solid var(--vs-line-soft); font-size: 0.74rem; }
+    .vs-table tbody tr:last-child td { border-bottom: 0; }
+
+    /* Reserved for the interface traffic this page will carry once a site has
+       SNMP credentials. Ping cannot answer how much is flowing, only whether
+       the far end replies. */
+    .vs-pending {
+        border: 1px dashed var(--vs-line); border-radius: 10px; padding: 0.9rem;
+        text-align: center; font-size: 0.7rem; color: var(--vs-ink-3); background: var(--vs-surface);
+    }
+    .vs-pending b { color: var(--vs-ink-2); font-weight: 600; }
+
+    @media (max-width: 720px) {
+        .vs-band { height: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .vs-page * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="vs-page" data-device-id="{{ device_id }}">
+    <section class="vs-ident" id="vs-ident"><div class="vs-loading">Loading...</div></section>
+
+    <section class="vs-figures" id="vs-figures"></section>
+
+    <section class="vs-panel">
+        <div class="vs-phead">
+            <div>
+                <h3>Latency</h3>
+                <div class="vs-sub" id="vs-latency-sub">Slowest and typical reply in each bucket</div>
+            </div>
+        </div>
+        <div class="vs-chartbox" id="vs-latency-box"><canvas id="vs-latency-chart"></canvas></div>
+        <div class="vs-empty" id="vs-latency-empty" hidden></div>
+    </section>
+
+    <!-- Stacked under latency rather than beside it: the same time runs along
+         both, so a spike in one can be read straight down against the other.
+         Side by side would halve a chart that is already dense. -->
+    <section class="vs-panel" id="vs-jitter-panel">
+        <div class="vs-phead">
+            <div>
+                <h3>Jitter</h3>
+                <div class="vs-sub">Average spread between the fastest and slowest packet inside one check</div>
+            </div>
+        </div>
+        <div class="vs-chartbox is-compact" id="vs-jitter-box"><canvas id="vs-jitter-chart"></canvas></div>
+        <div class="vs-empty" id="vs-jitter-empty" hidden></div>
+    </section>
+
+    <section class="vs-panel">
+        <div class="vs-phead">
+            <div>
+                <h3>Availability</h3>
+                <div class="vs-sub" id="vs-band-sub">Every check in the window</div>
+            </div>
+            <div class="vs-legend" style="padding:0">
+                <span><i style="background:var(--vs-good)"></i>reply</span>
+                <span><i style="background:var(--vs-warn)"></i>over threshold</span>
+                <span><i style="background:var(--vs-crit)"></i>no reply</span>
+                <span><i style="background:var(--vs-nodata)"></i>no check</span>
+            </div>
+        </div>
+        <div class="vs-band" id="vs-band"></div>
+        <div class="vs-axis" id="vs-axis"></div>
+    </section>
+
+    <section class="vs-panel">
+        <div class="vs-phead">
+            <div>
+                <h3>Outages</h3>
+                <div class="vs-sub">Each unbroken run of failed checks, newest first</div>
+            </div>
+            <span class="vs-sub" id="vs-outage-count"></span>
+        </div>
+        <div class="vs-tablewrap">
+            <table class="vs-table">
+                <thead><tr>
+                    <th>Started</th><th>Ended</th><th class="is-right">Lasted</th><th class="is-right">Failed checks</th>
+                </tr></thead>
+                <tbody id="vs-outages"><tr><td colspan="4" class="vs-loading">Loading...</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="vs-pending" id="vs-pending" hidden></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var root = document.querySelector('.vs-page');
+    var deviceId = parseInt(root.dataset.deviceId, 10);
+    var hours = 24;
+    var data = null;
+    var charts = { latency: null, jitter: null };
+    var refreshTimer = null;
+
+    var esc = function (v) {
+        return String(v === null || v === undefined ? '' : v)
+            .replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+    };
+    var TONE = { down: 'var(--vs-crit)', degraded: 'var(--vs-warn)', healthy: 'var(--vs-good)' };
+    var LABEL = { down: 'Down', degraded: 'Degraded', healthy: 'Healthy' };
+
+    function ms(v) {
+        if (v === null || v === undefined) { return '&mdash;'; }
+        return (+v).toFixed(v < 10 ? 1 : 0) + ' ms';
+    }
+    function pct(v, digits) {
+        if (v === null || v === undefined) { return '&mdash;'; }
+        return (+v).toFixed(digits === undefined ? 1 : digits) + '%';
+    }
+    function dur(sec) {
+        if (sec === null || sec === undefined) { return '&mdash;'; }
+        sec = Math.max(0, Math.round(sec));
+        var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+        if (d) { return d + ' d ' + h + ' h'; }
+        if (h) { return h + ' h ' + m + ' m'; }
+        if (m) { return m + ' m'; }
+        return sec + ' s';
+    }
+    function clock(iso) {
+        if (!iso) { return '&mdash;'; }
+        var t = new Date(iso);
+        if (isNaN(t.getTime())) { return esc(iso); }
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        return pad(t.getDate()) + '/' + pad(t.getMonth() + 1) + ' ' + pad(t.getHours()) + ':' + pad(t.getMinutes());
+    }
+    // A window wider than a day needs the date on the axis. Printing only the
+    // clock made the marks of a 7-day view read 16:50, 10:49, 22:49 - in order,
+    // 42 hours apart, and looking for all the world like time running backwards.
+    function axisLabel(raw) {
+        if (!raw) { return ''; }
+        var text = String(raw);
+        return hours <= 24 ? text.slice(11, 16) : text.slice(8, 10) + '/' + text.slice(5, 7) + ' ' + text.slice(11, 16);
+    }
+
+    function windowLabel() {
+        if (hours >= 24 && hours % 24 === 0) {
+            var d = hours / 24;
+            return d === 1 ? '24 hours' : d + ' days';
+        }
+        return hours + ' hours';
+    }
+
+    /* ---------- identity + figures ---------- */
+    function renderIdent() {
+        var s = data.site;
+        document.getElementById('vs-ident').innerHTML =
+            '<div><h2>' + esc(s.name) + '</h2>'
+            + '<div class="vs-ident-meta"><span class="num">' + esc(s.ip_address) + '</span>'
+            + '<span>' + esc(s.location || 'no location set') + '</span>'
+            + '<span>' + (s.has_coordinates ? 'on the map' : 'no coordinates') + '</span>'
+            + '<span>' + (s.snmp_metrics_enabled ? 'SNMP metrics on' : 'ping only') + '</span></div></div>'
+            + '<div style="text-align:right">'
+            + '<span class="vs-pill is-' + s.state + '">' + LABEL[s.state] + '</span>'
+            + '<div class="vs-held">' + LABEL[s.state] + ' for <b class="num">' + dur(s.state_age_seconds) + '</b></div>'
+            + '</div>';
+        document.title = s.name + ' - VPN Site';
+    }
+
+    // A figure on its own says what is happening; against the window before it,
+    // it says whether that is new. Direction is what matters, so the arrow is
+    // coloured by whether it got worse, not by whether it went up.
+    function delta(now, was, lowerIsBetter) {
+        if (now === null || now === undefined || was === null || was === undefined) {
+            return '<span style="color:var(--vs-ink-3)">nothing to compare with</span>';
+        }
+        var diff = now - was;
+        if (Math.abs(diff) < 0.05) { return 'unchanged from the previous ' + windowLabel(); }
+        var worse = lowerIsBetter ? diff > 0 : diff < 0;
+        return '<span class="vs-delta ' + (worse ? 'is-worse' : 'is-better') + '">'
+            + (diff > 0 ? '↑' : '↓') + ' ' + Math.abs(diff).toFixed(Math.abs(diff) < 10 ? 1 : 0)
+            + '</span> vs the previous ' + windowLabel();
+    }
+
+    function renderFigures() {
+        var s = data.site, p = data.previous, t = data.thresholds;
+        var lossNote = !s.packet_loss_samples
+            ? 'not recorded yet'
+            : (s.packet_loss_samples < s.checks
+                ? 'over ' + s.packet_loss_samples + ' of ' + s.checks + ' checks'
+                : 'over all ' + s.checks + ' checks');
+        var figures = [
+            {
+                label: 'p95 latency', value: s.p95 === null ? '&mdash;' : Math.round(s.p95) + '<small> ms</small>',
+                tone: (s.p95 || 0) >= t.degraded_p95_ms ? 'var(--vs-warn)' : 'var(--vs-good)',
+                note: delta(s.p95, p.p95, true)
+            },
+            {
+                label: 'Jitter', value: s.jitter === null ? '&mdash;' : Math.round(s.jitter) + '<small> ms</small>',
+                tone: (s.jitter || 0) >= t.degraded_jitter_ms ? 'var(--vs-warn)' : 'var(--vs-good)',
+                note: delta(s.jitter, p.jitter, true)
+            },
+            {
+                label: 'Packet loss', value: s.packet_loss_pct === null ? '&mdash;' : (+s.packet_loss_pct).toFixed(1) + '<small>%</small>',
+                tone: (s.packet_loss_pct || 0) >= t.degraded_loss_pct ? 'var(--vs-warn)' : 'var(--vs-good)',
+                note: lossNote
+            },
+            {
+                label: 'Reachable', value: s.reach_pct === null ? '&mdash;' : (+s.reach_pct).toFixed(1) + '<small>%</small>',
+                tone: (s.reach_pct === null || s.reach_pct >= 99.5) ? 'var(--vs-good)' : 'var(--vs-crit)',
+                // Availability is the one figure here where up is good, so it is
+                // read against the window before when it moved at all.
+                note: (s.reach_pct !== null && p.reach_pct !== null
+                       && Math.abs(s.reach_pct - p.reach_pct) >= 0.05)
+                    ? delta(s.reach_pct, p.reach_pct, false)
+                    : s.down_checks + ' of ' + s.checks + ' checks failed'
+            },
+            {
+                label: 'Downtime', value: dur(data.downtime_seconds),
+                tone: data.downtime_seconds ? 'var(--vs-crit)' : 'var(--vs-good)',
+                note: data.episodes === 0 ? 'no outage in this window'
+                    : (data.episodes === 1 ? 'one unbroken run' : data.episodes + ' separate runs')
+            }
+        ];
+        document.getElementById('vs-figures').innerHTML = figures.map(function (f) {
+            return '<article class="vs-figure" style="--tone:' + f.tone + '">'
+                + '<div class="vs-figure-label">' + esc(f.label) + '</div>'
+                + '<div class="vs-figure-value num">' + f.value + '</div>'
+                + '<div class="vs-figure-note">' + f.note + '</div></article>';
+        }).join('');
+    }
+
+    /* ---------- chart ---------- */
+    // A day of checks over a hundred-odd buckets leaves three to six replies in
+    // each, so the "95th percentile" of a bucket is just its largest value. It
+    // is drawn as what it is - the slowest reply - with the middle reply beneath
+    // it, so the level and the departures from it are both visible. Comparisons
+    // get the slow line only; ten lines would be a thicket.
+    // Chart.js, configured the way the server dashboard configures its own line
+    // charts: a time axis, 2px lines with no dots until hover, a soft 0.18
+    // tension, gaps left unbridged, and the threshold drawn by a plugin rather
+    // than faked as a dataset that would appear in the legend.
+    function chartColors() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'light';
+        return {
+            text: theme === 'light' ? '#64748b' : 'rgba(255,255,255,0.65)',
+            grid: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+        };
+    }
+    function timeUnitFor(minutes) {
+        return minutes <= 60 ? 'minute' : (minutes <= 1440 ? 'hour' : 'day');
+    }
+
+    var thresholdPlugin = {
+        id: 'vpnSiteThreshold',
+        afterDatasetsDraw: function (chart) {
+            var config = chart.options && chart.options.plugins && chart.options.plugins.vpnThreshold;
+            var yScale = chart.scales && chart.scales.y;
+            var area = chart.chartArea;
+            if (!config || !isFinite(config.value) || !yScale || !area) { return; }
+            var y = yScale.getPixelForValue(config.value);
+            if (y < area.top || y > area.bottom) { return; }
+            var ctx = chart.ctx;
+            ctx.save();
+            ctx.strokeStyle = '#d98324';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(area.left, y);
+            ctx.lineTo(area.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#d98324';
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(config.label, area.right - 4, y - 5);
+            ctx.restore();
+        }
+    };
+
+    // Buckets are evenly spaced, so each one's x is derived from the newest
+    // label rather than read per point: a bucket nobody checked carries no
+    // label of its own and still has to sit in the right place on the axis.
+    function timeGrid(count) {
+        var labels = data.labels || [];
+        var stepMs = (hours * 3600 * 1000) / Math.max(1, count);
+        var anchorIndex = count - 1, anchor = null;
+        for (var i = labels.length - 1; i >= 0; i--) {
+            if (labels[i]) {
+                anchor = new Date(String(labels[i]).replace(' ', 'T'));
+                anchorIndex = i;
+                break;
+            }
+        }
+        if (!anchor || isNaN(anchor.getTime())) { anchor = new Date(); anchorIndex = count - 1; }
+        var grid = [];
+        for (var j = 0; j < count; j++) {
+            grid.push(new Date(anchor.getTime() - (anchorIndex - j) * stepMs));
+        }
+        return grid;
+    }
+
+    function seriesFor(metric) {
+        // Canvas cannot resolve a CSS variable, so the colours arrive as values.
+        var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        var own = dark ? '#e2e8f0' : '#334155';
+        var ownFill = dark ? 'rgba(226,232,240,0.10)' : 'rgba(51,65,85,0.10)';
+        // Slot one of the documented categorical order, not the status green:
+        // a line coloured "good" would read as a verdict on the reading rather
+        // than as the second of two series.
+        var typical = dark ? '#3987e5' : '#2a78d6';
+        if (metric === 'jitter') {
+            return [{ name: 'Jitter', points: data.jitter_series || [],
+                      stroke: own, fillColour: ownFill, width: 2.2 }];
+        }
+        return [
+            { name: 'Slowest reply', points: data.peak_series || [],
+              stroke: own, fillColour: ownFill, width: 2.2 },
+            { name: 'Typical reply', points: data.typical_series || [],
+              stroke: typical, fillColour: 'transparent', width: 1.8, dashed: true }
+        ];
+    }
+
+    // Both charts pin their y axis to the same width. Chart.js otherwise sizes
+    // it from the tick labels, and "800 ms" is wider than "40 ms" - the two
+    // plots would start at different x and the whole point of stacking them,
+    // reading a spike straight down from one to the other, would be lost.
+    var Y_AXIS_WIDTH = 56;
+
+    function drawMetric(spec) {
+        var lines = seriesFor(spec.metric);
+        var count = 0;
+        lines.forEach(function (l) { count = Math.max(count, l.points.length); });
+        var all = [];
+        lines.forEach(function (l) {
+            l.points.forEach(function (v) { if (v !== null && v !== undefined) { all.push(v); } });
+        });
+
+        var box = document.getElementById(spec.boxId);
+        var empty = document.getElementById(spec.emptyId);
+        if (!all.length) {
+            if (charts[spec.metric]) { charts[spec.metric].destroy(); charts[spec.metric] = null; }
+            box.hidden = true;
+            empty.hidden = false;
+            empty.textContent = spec.emptyText;
+            return false;
+        }
+        box.hidden = false;
+        empty.hidden = true;
+
+        var threshold = spec.threshold;
+        var grid = timeGrid(count);
+        var colors = chartColors();
+
+        var datasets = lines.map(function (l, i) {
+            return {
+                label: l.name,
+                data: grid.map(function (x, j) {
+                    var v = l.points[j];
+                    return { x: x, y: (v === null || v === undefined) ? null : v };
+                }),
+                borderColor: l.stroke,
+                backgroundColor: i === 0 ? l.fillColour : 'transparent',
+                borderWidth: l.width,
+                borderDash: l.dashed ? [4, 3] : [],
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                tension: 0.18,
+                spanGaps: false,
+                fill: i === 0
+            };
+        });
+
+        var options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: timeUnitFor(hours * 60) },
+                    grid: { color: colors.grid },
+                    ticks: { color: colors.text, font: { size: 10 } }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: Math.ceil(Math.max(threshold, Math.max.apply(null, all)) * 1.1),
+                    grid: { color: colors.grid },
+                    ticks: {
+                        color: colors.text, font: { size: 10 },
+                        // A short plot with the usual number of ticks crowds
+                        // its own labels into each other.
+                        maxTicksLimit: spec.compact ? 4 : 8,
+                        callback: function (v) { return v + ' ms'; }
+                    },
+                    afterFit: function (scale) { scale.width = Y_AXIS_WIDTH; }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: lines.length > 1,
+                    position: 'bottom',
+                    labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 10 } }
+                },
+                vpnThreshold: { value: threshold, label: spec.thresholdLabel },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            return ctx.dataset.label + ': ' + Math.round(ctx.parsed.y) + ' ms';
+                        }
+                    }
+                }
+            }
+        };
+
+        if (charts[spec.metric]) {
+            charts[spec.metric].data = { datasets: datasets };
+            charts[spec.metric].options = options;
+            charts[spec.metric].update('none');
+        } else {
+            charts[spec.metric] = new Chart(document.getElementById(spec.canvasId).getContext('2d'), {
+                type: 'line',
+                data: { datasets: datasets },
+                options: options,
+                plugins: [thresholdPlugin]
+            });
+        }
+        return true;
+    }
+
+    function renderChart() {
+        var t = data.thresholds;
+
+        drawMetric({
+            metric: 'latency',
+            boxId: 'vs-latency-box', emptyId: 'vs-latency-empty',
+            canvasId: 'vs-latency-chart',
+            threshold: t.degraded_p95_ms,
+            thresholdLabel: 'Degraded when the window p95 passes ' + t.degraded_p95_ms + ' ms',
+            emptyText: 'No replies recorded in this window.'
+        });
+        document.getElementById('vs-latency-sub').textContent =
+            'Slowest and typical reply in each bucket · p95 over the whole window is '
+            + (data.site.p95 === null ? 'not available' : Math.round(data.site.p95) + ' ms');
+
+        // Jitter has only existed since the collector was upgraded, so over a
+        // long window the panel would be an empty rectangle. Hidden until it
+        // has something to say, rather than left as dead space.
+        var drew = drawMetric({
+            metric: 'jitter',
+            boxId: 'vs-jitter-box', emptyId: 'vs-jitter-empty',
+            canvasId: 'vs-jitter-chart',
+            compact: true,
+            threshold: t.degraded_jitter_ms,
+            thresholdLabel: 'Degraded above ' + t.degraded_jitter_ms + ' ms',
+            emptyText: 'No jitter recorded in this window.'
+        });
+        document.getElementById('vs-jitter-panel').hidden = !drew;
+    }
+
+    /* ---------- availability band ---------- */
+    var MIN_SHARE = 0.14;
+    function slice(mix) {
+        if (!mix) { return { css: 'var(--vs-nodata)', title: 'no check recorded' }; }
+        var u = mix[0], sl = mix[1], dn = mix[2], total = u + sl + dn;
+        if (!total) { return { css: 'var(--vs-nodata)', title: 'no check recorded' }; }
+        var ds = dn / total, ss = sl / total;
+        if (dn) { ds = Math.max(ds, MIN_SHARE); }
+        if (sl) { ss = Math.max(ss, MIN_SHARE); }
+        var bad = ds + ss;
+        if (bad > 1) { ds /= bad; ss /= bad; }
+        var parts = [], words = [], c = 0;
+        if (ds > 0) {
+            parts.push('var(--vs-crit) ' + (c * 100).toFixed(1) + '% ' + ((c + ds) * 100).toFixed(1) + '%');
+            c += ds; words.push(dn + ' no reply');
+        }
+        if (ss > 0) {
+            parts.push('var(--vs-warn) ' + (c * 100).toFixed(1) + '% ' + ((c + ss) * 100).toFixed(1) + '%');
+            c += ss; words.push(sl + ' slow');
+        }
+        parts.push('var(--vs-good) ' + (c * 100).toFixed(1) + '% 100%');
+        if (u) { words.push(u + ' ok'); }
+        return {
+            css: parts.length === 1 ? 'var(--vs-good)' : 'linear-gradient(to top, ' + parts.join(',') + ')',
+            title: words.join(', ')
+        };
+    }
+
+    function renderBand() {
+        var mix = data.mix || [];
+        document.getElementById('vs-band').innerHTML = mix.map(function (m) {
+            var q = slice(m);
+            return '<i style="--slice:' + q.css + '" title="' + esc(q.title) + '"></i>';
+        }).join('');
+        var labels = data.labels || [];
+        var marks = [];
+        [0, 0.25, 0.5, 0.75].forEach(function (f) {
+            marks.push(axisLabel(labels[Math.floor(labels.length * f)]));
+        });
+        marks.push('now');
+        document.getElementById('vs-axis').innerHTML = marks.map(function (m) {
+            return '<span class="num">' + esc(m) + '</span>';
+        }).join('');
+        document.getElementById('vs-band-sub').textContent =
+            'Last ' + windowLabel() + ' · ' + (data.buckets || mix.length) + ' blocks';
+    }
+
+    /* ---------- outages ---------- */
+    function renderOutages() {
+        var rows = data.outages || [];
+        document.getElementById('vs-outage-count').textContent =
+            rows.length ? rows.length + (rows.length === 1 ? ' outage' : ' outages') : '';
+        document.getElementById('vs-outages').innerHTML = rows.length ? rows.map(function (o) {
+            var started = new Date(o.started), ended = new Date(o.ended);
+            var span = (ended - started) / 1000;
+            return '<tr><td class="num">' + clock(o.started) + '</td>'
+                + '<td class="num">' + clock(o.ended) + '</td>'
+                + '<td class="is-right num">' + dur(span) + '</td>'
+                + '<td class="is-right num">' + o.checks + '</td></tr>';
+        }).join('')
+            : '<tr><td colspan="4" class="vs-loading">This site answered every check in the window.</td></tr>';
+    }
+
+    function renderPending() {
+        var el = document.getElementById('vs-pending');
+        el.hidden = data.site.snmp_metrics_enabled;
+        el.innerHTML = 'Interface traffic, router uptime and tunnel state need SNMP, which is off for this site. '
+            + 'Turn on <b>Collect SNMP metrics</b> on the device to add them here — ping can say whether the far '
+            + 'end replies, not how much is flowing through it.';
+    }
+
+    /* ---------- load ---------- */
+    function load() {
+        var query = '/api/vpn-site/' + deviceId + '?hours=' + hours;
+        fetch(query).then(function (r) { return r.json(); }).then(function (res) {
+            if (!res.success) { throw new Error(res.error || 'request failed'); }
+            data = res;
+            renderIdent();
+            renderFigures();
+            renderChart();
+            renderBand();
+            renderOutages();
+            renderPending();
+        }).catch(function (err) {
+            console.error('VPN site load failed', err);
+            document.getElementById('vs-ident').innerHTML =
+                '<div class="vs-loading">Could not load this site. It may no longer be a VPN router.</div>';
+        });
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.vs-range-btn'), function (b) {
+        b.addEventListener('click', function () {
+            hours = +b.dataset.hours;
+            Array.prototype.forEach.call(document.querySelectorAll('.vs-range-btn'), function (o) {
+                o.classList.toggle('is-active', o === b);
+            });
+            load();
+            startRefresh();
+        });
+    });
+
+    function refreshMs() {
+        if (hours <= 24) { return 30000; }
+        if (hours <= 168) { return 120000; }
+        return 300000;
+    }
+    function startRefresh() {
+        clearInterval(refreshTimer);
+        refreshTimer = setInterval(load, refreshMs());
+    }
+
+    // Chart.js writes its colours onto the canvas when it draws, so a theme
+    // switch has to redraw it or the grid and ticks keep the old theme's ink.
+    window.addEventListener('themechange', function () {
+        if (data) { renderChart(); }
+    });
+
+    load();
+    startRefresh();
+    window.addEventListener('beforeunload', function () { clearInterval(refreshTimer); });
+})();
+</script>
+{% endblock %}

@@ -49,3 +49,4 @@ backups/*.json
 
 # Design mockups: these embed real hostnames and IPs
 server_health_mockup.html
+vpn_health_mockup.html

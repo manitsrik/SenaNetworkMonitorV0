@@ -106,35 +106,86 @@ class NetworkMonitor:
     
     def ping_device(self, ip_address):
         """
-        Ping a device and return status and response time
-        Returns: dict with 'status' ('up' or 'down') and 'response_time' (ms)
+        Ping a device and return status, response time and per-check quality
+        Returns: dict with 'status' ('up' or 'down'), 'response_time' (ms),
+                 'packet_loss' (percent), 'rtt_min' and 'rtt_max' (ms)
+
+        Every check already sends Config.PING_COUNT packets, so the loss ratio
+        and the spread between the fastest and slowest reply cost nothing extra
+        to keep. A branch link that answers every check but loses a third of its
+        packets looks identical to a healthy one on the average alone.
         """
         try:
             # Perform ping natively (patched sockets make it yield)
-            response = ping(ip_address, count=Config.PING_COUNT, 
+            response = ping(ip_address, count=Config.PING_COUNT,
                             timeout=Config.PING_TIMEOUT, verbose=False)
-            
+
             # Check if any pings were successful
             if response.success():
-                # Calculate average response time in milliseconds
-                avg_time = response.rtt_avg_ms
+                # Latency describes the packets that came back. The library
+                # folds a timed-out packet into rtt_avg/min/max at the full
+                # timeout, so one lost packet out of three turned a 1.5 ms link
+                # into a recorded 670 ms - a loss reported as slowness, in the
+                # same column and against the same threshold as a real latency.
+                replies = self._reply_times(response)
+                if replies:
+                    avg_time = sum(replies) / len(replies)
+                    low, high = min(replies), max(replies)
+                else:
+                    avg_time, low, high = response.rtt_avg_ms, response.rtt_min_ms, response.rtt_max_ms
                 # Check if response time is slow
                 status = 'slow' if avg_time > Config.MONITOR_THRESHOLDS.get('ping', Config.DEFAULT_SLOW_THRESHOLD) else 'up'
                 return {
                     'status': status,
-                    'response_time': round(avg_time, 2)
+                    'response_time': round(avg_time, 2),
+                    'packet_loss': self._loss_percent(response),
+                    'rtt_min': round(low, 2),
+                    'rtt_max': round(high, 2),
                 }
             else:
+                # Nothing came back: the loss is total, and there is no RTT to record.
                 return {
                     'status': 'down',
-                    'response_time': None
+                    'response_time': None,
+                    'packet_loss': 100.0,
+                    'rtt_min': None,
+                    'rtt_max': None,
                 }
         except Exception as e:
             print(f"Error pinging {ip_address}: {e}")
             return {
                 'status': 'down',
-                'response_time': None
+                'response_time': None,
+                'packet_loss': None,
+                'rtt_min': None,
+                'rtt_max': None,
             }
+
+    @staticmethod
+    def _reply_times(response):
+        """Round-trip times of the packets that actually answered, in ms.
+
+        Returns an empty list when the per-packet detail cannot be read, so the
+        caller falls back to the library's own figures rather than reporting a
+        latency of zero.
+        """
+        try:
+            return [r.time_elapsed_ms for r in response if r.success]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _loss_percent(response):
+        """Packet loss for one ping check, as a percentage.
+
+        pythonping reports it as a 0-1 ratio; older builds have raised instead
+        of returning it, and a check that cannot report loss must not be read
+        as a check that lost nothing.
+        """
+        try:
+            return round(float(response.packet_loss) * 100, 2)
+        except Exception:
+            return None
     
     def check_tcp_port(self, ip_address, port=80):
         """
@@ -931,7 +982,25 @@ class NetworkMonitor:
                 boot = stdout.read().decode().strip()
                 if boot:
                     result['last_boot_time'] = boot
-                
+
+                # Pending reboot. Debian and Ubuntu drop a flag file when a
+                # package upgrade needs a restart; the RHEL family ships
+                # needs-restarting, which exits 1 when one is due. A host with
+                # neither is left as None rather than reported clean: calling a
+                # server up to date when nothing ever checked is the one answer
+                # worse than no answer, and None leaves the stored value alone.
+                reboot_cmd = (
+                    "if [ -f /run/reboot-required ] || [ -f /var/run/reboot-required ]; then echo yes; "
+                    "elif command -v needs-restarting >/dev/null 2>&1; then "
+                    "needs-restarting -r >/dev/null 2>&1; c=$?; "
+                    "if [ $c -eq 0 ]; then echo no; elif [ $c -eq 1 ]; then echo yes; else echo unknown; fi; "
+                    "else echo unknown; fi"
+                )
+                _, stdout, _ = client.exec_command(reboot_cmd)
+                reboot_flag = stdout.read().decode().strip().lower()
+                if reboot_flag in ('yes', 'no'):
+                    result['pending_reboot'] = reboot_flag == 'yes'
+
                 # Get Network Traffic (Total excluding loopback)
                 _, stdout, _ = client.exec_command("cat /proc/net/dev | awk 'NR>2 && $1 != \"lo:\" {i+=$2; o+=$10} END {print i, o}'")
                 out = stdout.read().decode().strip().split()
@@ -1372,18 +1441,24 @@ class NetworkMonitor:
                         except Exception as e:
                             print(f"[WinRM] Uptime parse error for {ip_address}: {e}")
 
-                # Detect pending reboot using common Windows registry indicators.
+                # Detect pending reboot from the two keys that mean what the
+                # badge claims: a patch that does not take effect until the
+                # host restarts.
+                #
+                # PendingFileRenameOperations used to count here as well, and
+                # it made the flag useless. Every installer, antivirus and
+                # backup agent queues a locked-file replacement into that key,
+                # so it is rarely empty on a working server: the whole Windows
+                # fleet reported "pending reboot" permanently, and a flag that
+                # is always on says nothing.
                 ps_pending_reboot = '''
                 $paths = @(
                   'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Component Based Servicing\\RebootPending',
-                  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired',
-                  'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager'
+                  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired'
                 )
                 $pending = $false
                 if (Test-Path $paths[0]) { $pending = $true }
                 if (Test-Path $paths[1]) { $pending = $true }
-                $sm = Get-ItemProperty -Path $paths[2] -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
-                if ($sm.PendingFileRenameOperations) { $pending = $true }
                 if ($pending) { 'true' } else { 'false' }
                 '''
                 r = run_ps('pending_reboot', ps_pending_reboot)
@@ -1850,7 +1925,7 @@ class NetworkMonitor:
                         self.alerter.trigger_alert(
                             device,
                             'pending_reboot',
-                            'Windows reports a pending reboot. Schedule a restart during the next maintenance window.'
+                            'The host reports a pending reboot. Schedule a restart during the next maintenance window.'
                         )
                 except Exception as e:
                     print(f"[METRICS] Error updating metrics for {device['name']}: {e}")
@@ -1900,7 +1975,10 @@ class NetworkMonitor:
             result.get('ssl_expiry_date'),
             result.get('ssl_days_left'),
             result.get('ssl_issuer'),
-            result.get('ssl_status')
+            result.get('ssl_status'),
+            packet_loss=result.get('packet_loss'),
+            rtt_min=result.get('rtt_min'),
+            rtt_max=result.get('rtt_max'),
         )
         
         # ==== Alert Triggers ====
@@ -2442,10 +2520,19 @@ class NetworkMonitor:
         print(f"[BW] Polled {len(samples)} interfaces on {ip_address}")
 
     def poll_bandwidth_all_snmp_devices(self):
-        """Poll bandwidth for all SNMP devices. Called by scheduler every 60s."""
+        """Poll bandwidth for every device that exposes SNMP. Called by scheduler every 60s.
+
+        A device qualifies either by being monitored over SNMP outright, or by
+        having snmp_metrics_enabled set: a branch router judged up or down by
+        ping still has interface counters worth collecting, and tying the two
+        together meant choosing between reachability and throughput.
+        """
         all_devices = self.db.get_all_devices()
-        # Filter for enabled SNMP devices
-        snmp_devices = [d for d in all_devices if d.get('monitor_type') == 'snmp' and d.get('is_enabled')]
+        snmp_devices = [
+            d for d in all_devices
+            if d.get('is_enabled')
+            and (d.get('monitor_type') == 'snmp' or d.get('snmp_metrics_enabled'))
+        ]
         if not snmp_devices:
             return
         

@@ -666,6 +666,7 @@ function showAddDeviceModal() {
     document.getElementById('device-form').reset();
     document.getElementById('device-id').value = '';
     document.getElementById('monitor-type').value = 'ping';
+    document.getElementById('device-snmp-metrics').checked = false;
     // Reset SNMP fields to defaults
     document.getElementById('snmp-community').value = 'public';
     document.getElementById('snmp-port').value = '161';
@@ -869,6 +870,7 @@ async function editDevice(deviceId) {
             document.getElementById('device-latitude').value = device.latitude || '';
             document.getElementById('device-longitude').value = device.longitude || '';
             document.getElementById('device-enabled').checked = !!device.is_enabled;
+            document.getElementById('device-snmp-metrics').checked = !!device.snmp_metrics_enabled;
 
             // Load SSH settings
             document.getElementById('ssh-username').value = device.ssh_username || '';
@@ -961,6 +963,7 @@ async function saveDevice(event) {
             monitor_type: monitorType,
             expected_status_code: 200,
             is_enabled: document.getElementById('device-enabled').checked,
+            snmp_metrics_enabled: document.getElementById('device-snmp-metrics').checked,
             parent_device_id: getElementValue('parent-device') ? parseInt(getElementValue('parent-device')) : null
         };
 

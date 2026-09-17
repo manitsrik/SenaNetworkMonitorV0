@@ -366,32 +366,13 @@ class Database:
             ('internet_target', 'TEXT'),
             ('internet_error', 'TEXT'),
             ('internet_checked_at', 'TIMESTAMP'),
+            # SNMP metric collection runs alongside the device's own monitor_type,
+            # so a branch router can stay on ping for up/down while SNMP supplies
+            # interface counters. Without this the two were mutually exclusive.
+            ('snmp_metrics_enabled', f'{bool_type} DEFAULT {bool_default_false}'),
         ]
         for col_name, col_type in metrics_columns:
             self._add_column_if_missing(conn, cursor, 'devices', col_name, col_type)
-        
-        # Default Alert Escalation Settings Let's ensure these exist 
-        default_escalation_settings = {
-            'escalation_enabled': 'false',
-            'escalation_time_minutes': '15',
-            'escalation_email_recipient': '',
-            'escalation_telegram_chat_id': '',
-            'reports_enabled': 'false',
-            'report_time': '08:00',
-            'report_recipient': '',
-            'server_reports_enabled': 'false',
-            'server_report_frequency': 'daily',
-            'server_report_weekday': '0',
-            'server_report_recipient': ''
-        }
-        for k, v in default_escalation_settings.items():
-            try:
-                if self.db_type == 'postgresql':
-                    cursor.execute(f'INSERT INTO alert_settings (setting_key, setting_value) VALUES ({ph}, {ph}) ON CONFLICT (setting_key) DO NOTHING', (k, v))
-                else:
-                    cursor.execute(f'INSERT OR IGNORE INTO alert_settings (setting_key, setting_value) VALUES (?, ?)', (k, v))
-            except Exception:
-                pass
         
         # Topology table
         cursor.execute(f'''
@@ -412,11 +393,25 @@ class Database:
                 device_id INTEGER,
                 status TEXT,
                 response_time REAL,
+                packet_loss REAL,
+                rtt_min REAL,
+                rtt_max REAL,
                 checked_at TIMESTAMP DEFAULT {timestamp_default},
                 FOREIGN KEY (device_id) REFERENCES devices(id)
             )
         ''')
-        
+
+        # Migration: per-check quality columns.
+        #
+        # A ping check already sends Config.PING_COUNT packets and the library
+        # hands back the loss ratio and the spread, but only the average ever
+        # reached the table. Keeping all three turns "how many checks failed"
+        # into real packet loss, and lets jitter be measured inside one check
+        # instead of inferred from the gap between consecutive ones.
+        for col_name in ('packet_loss', 'rtt_min', 'rtt_max'):
+            self._add_column_if_missing(conn, cursor, 'status_history', col_name, 'REAL')
+
+
         # Alert settings table
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS alert_settings (
@@ -426,6 +421,57 @@ class Database:
                 updated_at TIMESTAMP DEFAULT {timestamp_default}
             )
         ''')
+
+        # Default settings, seeded right after the table they go into. This ran
+        # forty lines earlier before - above the CREATE TABLE - so on a fresh
+        # database every insert hit "no such table" and was swallowed below.
+        default_escalation_settings = {
+            'escalation_enabled': 'false',
+            'escalation_time_minutes': '15',
+            'escalation_email_recipient': '',
+            'escalation_telegram_chat_id': '',
+            'reports_enabled': 'false',
+            'report_time': '08:00',
+            'report_recipient': '',
+            'server_reports_enabled': 'false',
+            'server_report_frequency': 'daily',
+            'server_report_weekday': '0',
+            'server_report_recipient': '',
+            # A VPN site can answer every ping and still be unusable. These two
+            # thresholds are what the VPN dashboard calls "degraded"; they live
+            # here rather than in Config so they can be tuned from Settings
+            # without a deploy, the way the slow thresholds already are.
+            'vpn_degraded_p95_ms': '100',
+            'vpn_degraded_jitter_ms': '30',
+            # Latency now describes the packets that answered, so a link that
+            # drops one in three no longer shows up as a slow one. Loss needs a
+            # line of its own or it stops being visible anywhere.
+            'vpn_degraded_loss_pct': '1',
+        }
+        # `ph` was read here without ever being defined in this method, so every
+        # insert below raised NameError straight into the bare except and not one
+        # default was ever written. Nothing failed loudly: each feature simply
+        # read its own fallback forever.
+        ph = self._ph()
+        for k, v in default_escalation_settings.items():
+            try:
+                if self.db_type == 'postgresql':
+                    cursor.execute(f'INSERT INTO alert_settings (setting_key, setting_value) VALUES ({ph}, {ph}) ON CONFLICT (setting_key) DO NOTHING', (k, v))
+                else:
+                    cursor.execute(f'INSERT OR IGNORE INTO alert_settings (setting_key, setting_value) VALUES (?, ?)', (k, v))
+            except Exception:
+                pass
+
+        # Commit the seeds before the next migration runs. On PostgreSQL every
+        # ADD COLUMN starts by rolling back the open transaction, which silently
+        # discarded these rows: the defaults added here never reached the
+        # database, and a setting that is missing rather than wrong is the kind
+        # of thing nobody notices until a feature quietly reads its fallback.
+        try:
+            conn.commit()
+        except Exception:
+            self._safe_rollback(conn)
+        
         
         # Alert history table
         cursor.execute(f'''
@@ -1079,7 +1125,7 @@ class Database:
                    wmi_username=None, wmi_password=None, expected_ports=None,
                    monitored_services=None, cpu_threshold=85, ram_threshold=90,
                    disk_threshold=90, swap_threshold=80, threshold_duration_minutes=5,
-                   plugin_config_json=None):
+                   plugin_config_json=None, snmp_metrics_enabled=False):
         """Add a new device"""
         conn = self.get_connection()
         cursor = self._cursor(conn)
@@ -1104,8 +1150,8 @@ class Database:
                                        wmi_username, wmi_password, expected_ports,
                                        monitored_services, cpu_threshold, ram_threshold,
                                        disk_threshold, swap_threshold, threshold_duration_minutes,
-                                       plugin_config_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                       plugin_config_json, snmp_metrics_enabled)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
@@ -1120,7 +1166,7 @@ class Database:
                       wmi_username, wmi_password, expected_ports,
                       monitored_services, cpu_threshold, ram_threshold,
                       disk_threshold, swap_threshold, threshold_duration_minutes,
-                      plugin_config_json))
+                      plugin_config_json, bool(snmp_metrics_enabled)))
                 device_id = cursor.fetchone()['id']
             else:
                 status_init = 'disabled' if not is_enabled else 'unknown'
@@ -1137,8 +1183,8 @@ class Database:
                                        wmi_username, wmi_password, expected_ports,
                                        monitored_services, cpu_threshold, ram_threshold,
                                        disk_threshold, swap_threshold, threshold_duration_minutes,
-                                       plugin_config_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                       plugin_config_json, snmp_metrics_enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (name, ip_address, device_type or Config.DEFAULT_DEVICE_TYPE, 
                       location or Config.DEFAULT_LOCATION, status_init, monitor_type, expected_status_code,
                       snmp_community, snmp_port, snmp_version,
@@ -1152,7 +1198,7 @@ class Database:
                       wmi_username, wmi_password, expected_ports,
                       monitored_services, cpu_threshold, ram_threshold,
                       disk_threshold, swap_threshold, threshold_duration_minutes,
-                      plugin_config_json))
+                      plugin_config_json, 1 if snmp_metrics_enabled else 0))
                 device_id = cursor.lastrowid
             conn.commit()
             return {'success': True, 'id': device_id}
@@ -1202,7 +1248,7 @@ class Database:
                      cpu_threshold='__NOT_SET__',
                      ram_threshold='__NOT_SET__', disk_threshold='__NOT_SET__',
                      swap_threshold='__NOT_SET__', threshold_duration_minutes='__NOT_SET__',
-                     plugin_config_json='__NOT_SET__'):
+                     plugin_config_json='__NOT_SET__', snmp_metrics_enabled=None):
         """Update device information"""
         # Strip whitespace from IP address and name
         if ip_address:
@@ -1330,7 +1376,16 @@ class Database:
                 updates.append(f"status = {ph}")
                 params.append('disabled' if not is_enabled else 'unknown')
                 updates.append("response_time = NULL")
-            
+
+            # Independent of monitor_type: a device judged up or down by ping can
+            # still have its interface counters collected over SNMP.
+            if snmp_metrics_enabled is not None:
+                updates.append(f'snmp_metrics_enabled = {ph}')
+                if self.db_type == 'postgresql':
+                    params.append(bool(snmp_metrics_enabled))
+                else:
+                    params.append(1 if snmp_metrics_enabled else 0)
+
             # parent_device_id uses sentinel value to distinguish "not provided" from "set to None"
             if parent_device_id != '__NOT_SET__':
                 updates.append(f'parent_device_id = {ph}')
@@ -1697,7 +1752,8 @@ class Database:
     def update_device_status(self, device_id, status, response_time=None, http_status_code=None,
                              snmp_uptime=None, snmp_sysname=None, snmp_sysdescr=None,
                              snmp_syslocation=None, snmp_syscontact=None,
-                             ssl_expiry_date=None, ssl_days_left=None, ssl_issuer=None, ssl_status=None):
+                             ssl_expiry_date=None, ssl_days_left=None, ssl_issuer=None, ssl_status=None,
+                             packet_loss=None, rtt_min=None, rtt_max=None):
         """Update device status"""
         conn = self.get_connection()
         try:
@@ -1708,10 +1764,13 @@ class Database:
             
             # Get old status, escalation level and enabled state to detect changes accurately
             cursor.execute(f'SELECT status, escalation_level, is_enabled FROM devices WHERE id = {ph}', (device_id,))
-            current_row = cursor.fetchone()
+            # sqlite3.Row indexes like a mapping but has no .get, so the raw row
+            # is only dict-like on PostgreSQL. Normalising first keeps this path
+            # working on both engines.
+            current_row = self._row_to_dict(cursor.fetchone())
             if current_row:
                 old_status = current_row['status']
-                old_escalation_level = current_row.get('escalation_level', 0)
+                old_escalation_level = current_row.get('escalation_level') or 0
                 is_enabled = bool(current_row.get('is_enabled', True))
             else:
                 old_status = 'unknown'
@@ -1723,6 +1782,7 @@ class Database:
                 status = 'disabled'
                 response_time = None
                 http_status_code = None
+                packet_loss = rtt_min = rtt_max = None
             
             # Build update query dynamically based on provided values
             update_parts = [f'status = {ph}', f'response_time = {ph}', f'last_check = {ph}', f'http_status_code = {ph}']
@@ -1773,9 +1833,10 @@ class Database:
             
             # Log to history
             cursor.execute(f'''
-                INSERT INTO status_history (device_id, status, response_time, checked_at)
-                VALUES ({self._ph(4)})
-            ''', (device_id, status, response_time, now))
+                INSERT INTO status_history
+                    (device_id, status, response_time, packet_loss, rtt_min, rtt_max, checked_at)
+                VALUES ({self._ph(7)})
+            ''', (device_id, status, response_time, packet_loss, rtt_min, rtt_max, now))
             
             conn.commit()
             
@@ -2653,7 +2714,406 @@ class Database:
 
         result['__labels__'] = labels
         return result
-    
+
+    def get_link_quality(self, device_ids, hours=24, offset_hours=0):
+        """Per-device link quality over the window, aggregated in SQL.
+
+        `offset_hours` slides the window back by that many hours, so the same
+        figures can be read for the period before this one and compared. A site
+        whose p95 went from 8 ms to 45 ms is still inside every threshold and is
+        still the most interesting thing on the page.
+
+        A reachability percentage answers "did it reply"; these columns answer
+        "was the reply any use". Jitter is measured inside a single check as the
+        spread between its fastest and slowest packet, so it means the same
+        thing regardless of how far apart two checks happen to fall, and packet
+        loss is the real ratio the ping reported rather than the share of checks
+        that failed outright.
+
+        Rows written before those columns existed carry NULL, which averages
+        cleanly away rather than reading as a perfect zero.
+        """
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        offset_hours = max(0, min(int(offset_hours or 0), 30 * 24))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours + offset_hours)
+            # No upper bound on the live window, so the current period always
+            # runs right up to the newest check.
+            until = f" AND checked_at < {self._cutoff_sql('hours', offset_hours)}" if offset_hours else ''
+            ids = list(device_ids)
+
+            cursor.execute(f'''
+                SELECT device_id,
+                       COUNT(*) AS checks,
+                       SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS up_n,
+                       SUM(CASE WHEN status = 'slow' THEN 1 ELSE 0 END) AS slow_n,
+                       SUM(CASE WHEN status = 'down' THEN 1 ELSE 0 END) AS down_n,
+                       AVG(response_time) AS rtt_avg,
+                       MIN(rtt_min) AS rtt_min,
+                       MAX(rtt_max) AS rtt_max,
+                       AVG(rtt_max - rtt_min) AS jitter,
+                       AVG(packet_loss) AS loss_pct,
+                       COUNT(packet_loss) AS loss_samples
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}{until}
+                GROUP BY device_id
+            ''', ids)
+            stats = {int(r['device_id']): dict(r) for r in self._rows_to_dicts(cursor.fetchall())}
+
+            # p95 by rank rather than percentile_cont: window functions are the
+            # one percentile spelling both engines share.
+            cursor.execute(f'''
+                SELECT device_id, MIN(response_time) AS p95 FROM (
+                    SELECT device_id, response_time,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY device_id ORDER BY response_time
+                           ) AS rn,
+                           COUNT(*) OVER (PARTITION BY device_id) AS n
+                    FROM status_history
+                    WHERE device_id IN ({placeholders})
+                      AND checked_at >= {cutoff}{until}
+                      AND response_time IS NOT NULL
+                ) ranked
+                WHERE rn >= n * 0.95
+                GROUP BY device_id
+            ''', ids)
+            for row in self._rows_to_dicts(cursor.fetchall()):
+                stats.setdefault(int(row['device_id']), {})['p95'] = row['p95']
+
+            # Flaps: every crossing between reachable and not, in time order. A
+            # site that drops out six times for a minute each is a worse link
+            # than one that drops once for six minutes, and availability alone
+            # scores them the same.
+            cursor.execute(f'''
+                SELECT device_id, SUM(flip) AS flaps FROM (
+                    SELECT device_id,
+                           CASE WHEN reachable <> LAG(reachable) OVER (
+                                    PARTITION BY device_id ORDER BY checked_at
+                                ) THEN 1 ELSE 0 END AS flip
+                    FROM (
+                        SELECT device_id, checked_at,
+                               CASE WHEN status IN ('up', 'slow') THEN 1 ELSE 0 END AS reachable
+                        FROM status_history
+                        WHERE device_id IN ({placeholders})
+                          AND checked_at >= {cutoff}{until}
+                    ) marked
+                ) flips
+                GROUP BY device_id
+            ''', ids)
+            for row in self._rows_to_dicts(cursor.fetchall()):
+                stats.setdefault(int(row['device_id']), {})['flaps'] = int(row['flaps'] or 0)
+
+            for device_id, entry in stats.items():
+                checks = int(entry.get('checks') or 0)
+                reached = int(entry.get('up_n') or 0) + int(entry.get('slow_n') or 0)
+                entry['device_id'] = device_id
+                entry['checks'] = checks
+                entry['reach_pct'] = round(reached / checks * 100, 3) if checks else None
+                entry['flaps'] = int(entry.get('flaps') or 0)
+                entry['loss_samples'] = int(entry.get('loss_samples') or 0)
+                for key in ('rtt_avg', 'rtt_min', 'rtt_max', 'jitter', 'p95', 'loss_pct'):
+                    value = entry.get(key)
+                    entry[key] = round(float(value), 2) if value is not None else None
+            return stats
+        except Exception as e:
+            print(f"[DB ERROR] get_link_quality: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_outage_list(self, device_id, hours=24, limit=60):
+        """Every unbroken run of failed checks for one device, newest first.
+
+        The summary counts answer "how much"; this answers "when", which is the
+        only form an outage can be matched against a change request, a power
+        cut, or the same hour on another site.
+
+        The end of a run is the last failed check, not the first good one, so a
+        reported outage never claims time the site was already answering in.
+        """
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        limit = max(1, min(int(limit or 60), 500))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cutoff = self._cutoff_sql('hours', hours)
+
+            cursor.execute(f'''
+                SELECT MIN(checked_at) AS started, MAX(checked_at) AS ended, COUNT(*) AS checks
+                FROM (
+                    SELECT checked_at, reachable,
+                           ROW_NUMBER() OVER (ORDER BY checked_at)
+                           - ROW_NUMBER() OVER (PARTITION BY reachable ORDER BY checked_at) AS grp
+                    FROM (
+                        SELECT checked_at,
+                               CASE WHEN status IN ('up', 'slow') THEN 1 ELSE 0 END AS reachable
+                        FROM status_history
+                        WHERE device_id = {ph}
+                          AND checked_at >= {cutoff}
+                    ) marked
+                ) grouped
+                WHERE reachable = 0
+                GROUP BY grp
+                ORDER BY MIN(checked_at) DESC
+            ''', (device_id,))
+            return self._rows_to_dicts(cursor.fetchall())[:limit]
+        except Exception as e:
+            print(f"[DB ERROR] get_outage_list: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def get_link_quality_series(self, device_ids, hours=24, buckets=40):
+        """Per-device latency and jitter over time, for the sparkline beside a rank.
+
+        Two latency series, not one. A day of checks split into a hundred-odd
+        buckets leaves three to six replies in each, and the ninety-fifth
+        percentile of four values is simply the largest of them - a useful line,
+        but it is the slowest reply, not a percentile, and calling it p95 put a
+        13 ms site on a chart that peaked at 670. `typical` is the middle reply
+        in the bucket and `peak` the slowest; together they say what the level
+        is and how far it departs from it.
+
+        The table gives one number per site for the whole window, which cannot
+        tell a link that is steadily bad from one that spiked once and dragged
+        its own average up. It also settles a question the averages cannot: if
+        several sites spike in the same bucket, the fault is on the monitoring
+        host rather than on four separate branch links.
+        """
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        buckets = max(8, min(int(buckets or 40), 200))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours)
+            if self.db_type == 'postgresql':
+                bucket = f"FLOOR(EXTRACT(EPOCH FROM checked_at::timestamp) / {bucket_seconds})"
+            else:
+                bucket = f"CAST(strftime('%s', checked_at) / {bucket_seconds} AS INTEGER)"
+
+            cursor.execute(f'''
+                SELECT device_id, bucket_id,
+                       MIN(CASE WHEN rn >= n * 0.5 THEN response_time END) AS typical,
+                       MIN(CASE WHEN rn >= n * 0.95 THEN response_time END) AS peak,
+                       AVG(spread) AS jitter
+                FROM (
+                    SELECT device_id, {bucket} AS bucket_id, response_time,
+                           rtt_max - rtt_min AS spread,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY device_id, {bucket} ORDER BY response_time
+                           ) AS rn,
+                           COUNT(*) OVER (PARTITION BY device_id, {bucket}) AS n
+                    FROM status_history
+                    WHERE device_id IN ({placeholders})
+                      AND checked_at >= {cutoff}
+                      AND response_time IS NOT NULL
+                ) ranked
+                GROUP BY device_id, bucket_id
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+            if not rows:
+                return {}
+
+            newest = max(int(r['bucket_id']) for r in rows)
+            oldest = newest - buckets + 1
+            result = {}
+            for row in rows:
+                index = int(row['bucket_id']) - oldest
+                if index < 0 or index >= buckets:
+                    continue
+                entry = result.setdefault(int(row['device_id']), {
+                    'peak': [None] * buckets, 'typical': [None] * buckets, 'jitter': [None] * buckets,
+                })
+                if row['peak'] is not None:
+                    entry['peak'][index] = round(float(row['peak']), 1)
+                if row['typical'] is not None:
+                    entry['typical'][index] = round(float(row['typical']), 1)
+                if row['jitter'] is not None:
+                    entry['jitter'][index] = round(float(row['jitter']), 1)
+            return result
+        except Exception as e:
+            print(f"[DB ERROR] get_link_quality_series: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_outage_episodes(self, device_ids, hours=24):
+        """How the unreachable time was shaped, per device.
+
+        Six two-minute drops and one twelve-minute drop cost the same in a
+        percentage and are not the same fault, so the runs are counted as well
+        as totalled. Length is measured in checks and converted by each device's
+        own spacing, which keeps the query free of timestamp arithmetic that
+        differs between the two engines.
+        """
+        if not device_ids:
+            return {}
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours)
+            epoch = ("EXTRACT(EPOCH FROM checked_at::timestamp)" if self.db_type == 'postgresql'
+                     else "CAST(strftime('%s', checked_at) AS INTEGER)")
+            ids = list(device_ids)
+
+            # Islands and gaps: consecutive checks in the same reachability
+            # state share a constant difference between the two row numbers.
+            cursor.execute(f'''
+                SELECT device_id,
+                       COUNT(*) AS episodes,
+                       MAX(run_length) AS longest_checks,
+                       SUM(run_length) AS down_checks
+                FROM (
+                    SELECT device_id, reachable, grp, COUNT(*) AS run_length
+                    FROM (
+                        SELECT device_id, reachable,
+                               ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY checked_at)
+                               - ROW_NUMBER() OVER (PARTITION BY device_id, reachable ORDER BY checked_at) AS grp
+                        FROM (
+                            SELECT device_id, checked_at,
+                                   CASE WHEN status IN ('up', 'slow') THEN 1 ELSE 0 END AS reachable
+                            FROM status_history
+                            WHERE device_id IN ({placeholders})
+                              AND checked_at >= {cutoff}
+                        ) marked
+                    ) grouped
+                    WHERE reachable = 0
+                    GROUP BY device_id, reachable, grp
+                ) runs
+                GROUP BY device_id
+            ''', ids)
+            episodes = {int(r['device_id']): dict(r) for r in self._rows_to_dicts(cursor.fetchall())}
+
+            # Spacing between checks, per device, so run lengths become minutes.
+            cursor.execute(f'''
+                SELECT device_id, COUNT(*) AS checks,
+                       MIN({epoch}) AS first_seen, MAX({epoch}) AS last_seen
+                FROM status_history
+                WHERE device_id IN ({placeholders})
+                  AND checked_at >= {cutoff}
+                GROUP BY device_id
+            ''', ids)
+
+            result = {}
+            for row in self._rows_to_dicts(cursor.fetchall()):
+                device_id = int(row['device_id'])
+                checks = int(row['checks'] or 0)
+                span = float(row['last_seen'] or 0) - float(row['first_seen'] or 0)
+                interval = span / (checks - 1) if checks > 1 and span > 0 else None
+                entry = episodes.get(device_id, {})
+                down_checks = int(entry.get('down_checks') or 0)
+                longest_checks = int(entry.get('longest_checks') or 0)
+                result[device_id] = {
+                    'device_id': device_id,
+                    'checks': checks,
+                    'interval_seconds': round(interval, 1) if interval else None,
+                    'episodes': int(entry.get('episodes') or 0),
+                    'down_checks': down_checks,
+                    'longest_checks': longest_checks,
+                    'downtime_seconds': round(down_checks * interval) if interval else None,
+                    'longest_outage_seconds': round(longest_checks * interval) if interval else None,
+                }
+            return result
+        except Exception as e:
+            print(f"[DB ERROR] get_outage_episodes: {e}")
+            return {}
+        finally:
+            self.release_connection(conn)
+
+    def get_latency_percentile_series(self, device_ids, hours=24, buckets=96):
+        """Fleet latency per time bucket: the middle reply and the slow tail.
+
+        An average hides the shape that matters here. When one branch degrades,
+        the median holds still and p95 climbs; when the monitoring host itself
+        is struggling, both rise together.
+        """
+        empty = {'labels': [], 'p50': [], 'p95': [], 'samples': []}
+        if not device_ids:
+            return empty
+
+        hours = max(1, min(int(hours or 24), 30 * 24))
+        buckets = max(12, min(int(buckets or 96), 480))
+        bucket_seconds = max(60, int(hours * 3600 / buckets))
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            placeholders = ', '.join([ph] * len(device_ids))
+            cutoff = self._cutoff_sql('hours', hours)
+            if self.db_type == 'postgresql':
+                bucket = f"FLOOR(EXTRACT(EPOCH FROM checked_at::timestamp) / {bucket_seconds})"
+                # A full timestamp, not a clock reading: over a window wider than
+                # a day the hour alone repeats, and a chart cannot place a point
+                # in time from "09:37" alone.
+                label = "to_char(MIN(checked_at::timestamp), 'YYYY-MM-DD HH24:MI:SS')"
+            else:
+                bucket = f"CAST(strftime('%s', checked_at) / {bucket_seconds} AS INTEGER)"
+                label = "strftime('%Y-%m-%d %H:%M:%S', MIN(checked_at))"
+
+            cursor.execute(f'''
+                SELECT bucket_id,
+                       {label} AS bucket_label,
+                       MIN(CASE WHEN rn >= n * 0.5 THEN response_time END) AS p50,
+                       MIN(CASE WHEN rn >= n * 0.95 THEN response_time END) AS p95,
+                       MAX(n) AS samples
+                FROM (
+                    SELECT {bucket} AS bucket_id, checked_at, response_time,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY {bucket} ORDER BY response_time
+                           ) AS rn,
+                           COUNT(*) OVER (PARTITION BY {bucket}) AS n
+                    FROM status_history
+                    WHERE device_id IN ({placeholders})
+                      AND checked_at >= {cutoff}
+                      AND response_time IS NOT NULL
+                ) ranked
+                GROUP BY bucket_id
+                ORDER BY bucket_id ASC
+            ''', list(device_ids))
+            rows = self._rows_to_dicts(cursor.fetchall())
+            if not rows:
+                return empty
+
+            # Buckets with no reply at all are absent from the result, and a
+            # gap has to stay a gap: drawing straight through it would turn a
+            # monitoring outage into a flat, healthy-looking line.
+            newest = int(rows[-1]['bucket_id'])
+            oldest = newest - buckets + 1
+            by_id = {int(r['bucket_id']): r for r in rows}
+            labels, p50, p95, samples = [], [], [], []
+            for bucket_id in range(oldest, newest + 1):
+                row = by_id.get(bucket_id)
+                labels.append(row['bucket_label'] if row else None)
+                p50.append(round(float(row['p50']), 1) if row and row['p50'] is not None else None)
+                p95.append(round(float(row['p95']), 1) if row and row['p95'] is not None else None)
+                samples.append(int(row['samples'] or 0) if row else 0)
+            return {'labels': labels, 'p50': p50, 'p95': p95, 'samples': samples}
+        except Exception as e:
+            print(f"[DB ERROR] get_latency_percentile_series: {e}")
+            return empty
+        finally:
+            self.release_connection(conn)
+
     def get_historical_data(self, start_date=None, end_date=None, device_id=None, device_type=None):
         """Get historical data with optional filters"""
         conn = self.get_connection()

@@ -54,6 +54,9 @@ async function loadSettings() {
         // Escalation settings
         document.getElementById('escalation_enabled').checked = settings.escalation_enabled === 'true';
         document.getElementById('escalation_time_minutes').value = settings.escalation_time_minutes || '15';
+        document.getElementById('vpn_degraded_p95_ms').value = settings.vpn_degraded_p95_ms || '100';
+        document.getElementById('vpn_degraded_jitter_ms').value = settings.vpn_degraded_jitter_ms || '30';
+        document.getElementById('vpn_degraded_loss_pct').value = settings.vpn_degraded_loss_pct || '1';
         document.getElementById('escalation_channel_email').checked = settings.escalation_channel_email === 'true';
         document.getElementById('escalation_email_recipient').value = settings.escalation_email_recipient || '';
         document.getElementById('escalation_channel_telegram').checked = settings.escalation_channel_telegram === 'true';
@@ -108,6 +111,9 @@ async function saveSettings() {
         // Escalation
         escalation_enabled: document.getElementById('escalation_enabled').checked.toString(),
         escalation_time_minutes: document.getElementById('escalation_time_minutes').value,
+        vpn_degraded_p95_ms: document.getElementById('vpn_degraded_p95_ms').value,
+        vpn_degraded_jitter_ms: document.getElementById('vpn_degraded_jitter_ms').value,
+        vpn_degraded_loss_pct: document.getElementById('vpn_degraded_loss_pct').value,
         escalation_channel_email: document.getElementById('escalation_channel_email').checked.toString(),
         escalation_email_recipient: document.getElementById('escalation_email_recipient').value,
         escalation_channel_telegram: document.getElementById('escalation_channel_telegram').checked.toString(),

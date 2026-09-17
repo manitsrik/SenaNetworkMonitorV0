@@ -1,0 +1,1343 @@
+{% extends "layout.html" %}
+{% set active_page = 'vpn_health' %}
+
+{% block title %}VPN Sites{% endblock %}
+{% block page_title %}VPN Site Health{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+{% endblock %}
+
+{% block header_actions %}
+<div class="vpn-header-actions">
+    <div class="vpn-range-group" id="vpn-range-group" role="group" aria-label="Reporting window">
+        <button type="button" class="vpn-range-btn" data-hours="6">6h</button>
+        <button type="button" class="vpn-range-btn is-active" data-hours="24">24h</button>
+        <button type="button" class="vpn-range-btn" data-hours="168">7d</button>
+        <button type="button" class="vpn-range-btn" data-hours="720">30d</button>
+    </div>
+    <span class="vpn-live-pill" title="Refreshes every 30 seconds">
+        <span class="vpn-live-dot"></span> Live
+    </span>
+</div>
+{% endblock %}
+
+{% block content %}
+<style>
+    .vpn-page {
+        --vpn-surface: var(--bg-secondary);
+        --vpn-sunken: var(--bg-primary);
+        --vpn-line: var(--border-color);
+        --vpn-line-soft: rgba(148, 163, 184, 0.18);
+        --vpn-ink: var(--text-primary);
+        --vpn-ink-2: var(--text-secondary);
+        --vpn-ink-3: var(--text-muted);
+        --vpn-good: #1b7f5a;
+        --vpn-warn: #d98324;
+        --vpn-crit: #d13438;
+        --vpn-good-soft: rgba(27, 127, 90, 0.12);
+        --vpn-warn-soft: rgba(217, 131, 36, 0.14);
+        --vpn-crit-soft: rgba(209, 52, 56, 0.12);
+        --vpn-nodata: rgba(148, 163, 184, 0.34);
+        --vpn-nodata-2: rgba(148, 163, 184, 0.12);
+        --vpn-accent: var(--primary);
+        --vpn-accent-soft: rgba(45, 106, 79, 0.09);
+        --vpn-ring: var(--bg-secondary);
+        /* Map markers use the brighter status palette the Geographical Map page
+           already uses, so the same city does not come in two greens. The darker
+           tones above stay on text, where these three would not carry contrast. */
+        --vpn-mk-healthy: #10b981;
+        --vpn-mk-degraded: #f59e0b;
+        --vpn-mk-down: #f43f5e;
+        --vpn-mk-disabled: #64748b;
+        display: grid;
+        gap: 0.75rem;
+        font-size: 13px;
+        color: var(--vpn-ink);
+    }
+
+    [data-theme="dark"] .vpn-page {
+        --vpn-good: #25966a;
+        --vpn-warn: #b98a00;
+        --vpn-crit: #c74a4d;
+        --vpn-good-soft: rgba(37, 150, 106, 0.18);
+        --vpn-warn-soft: rgba(185, 138, 0, 0.20);
+        --vpn-crit-soft: rgba(199, 74, 77, 0.18);
+    }
+
+    .vpn-page .num {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- header controls ---------- */
+    .vpn-header-actions { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .vpn-range-group { display: inline-flex; border: 1px solid var(--border-color); border-radius: 999px; overflow: hidden; }
+    .vpn-range-btn {
+        border: 0; background: var(--bg-secondary); color: var(--text-secondary);
+        font: inherit; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.65rem; cursor: pointer;
+    }
+    .vpn-range-btn.is-active { background: var(--primary); color: #fff; }
+    .vpn-live-pill {
+        display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; font-weight: 600;
+        color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 999px; padding: 0.25rem 0.6rem;
+    }
+    .vpn-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #1b7f5a; }
+
+    /* ---------- kpis ---------- */
+    .vpn-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 0.6rem; }
+    .vpn-kpi {
+        display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 0.6rem;
+        padding: 0.7rem 0.8rem; background: var(--vpn-surface); border: 1px solid var(--vpn-line);
+        border-radius: 10px; position: relative; overflow: hidden;
+    }
+    .vpn-kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--tone, var(--vpn-accent)); }
+    .vpn-kpi.is-quiet::before { opacity: 0.3; }
+    .vpn-kpi-label { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--vpn-ink-2); }
+    .vpn-kpi-value { font-size: 1.8rem; font-weight: 700; line-height: 1.05; color: var(--tone, var(--vpn-ink)); letter-spacing: -0.02em; }
+    .vpn-kpi.is-quiet .vpn-kpi-value { color: var(--vpn-ink-3); }
+    .vpn-kpi-value small { font-size: 0.95rem; font-weight: 600; }
+    .vpn-kpi-note { font-size: 0.7rem; color: var(--vpn-ink-2); margin-top: 0.12rem; }
+
+    /* ---------- top cards ----------
+       Same anatomy as the Server Health cards: a ranked badge, the host over
+       its address, the figure with its second reading beneath, and a sparkline.
+       Keeping the geometry identical means an operator reads both pages the
+       same way without relearning anything. */
+    .vpn-topcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 0.45rem; }
+    .vpn-topcard {
+        background: var(--vpn-surface); border: 1px solid var(--vpn-line); border-radius: 10px;
+        overflow: hidden; display: flex; flex-direction: column;
+    }
+    /* Two of these headers carry a toggle and two do not; a fixed height keeps
+       the first row of all four cards on one line. */
+    .vpn-topcard-head {
+        display: flex; align-items: center; justify-content: space-between; gap: 0.55rem;
+        min-height: 38px; padding: 0.3rem 0.65rem; border-bottom: 1px solid var(--vpn-line);
+    }
+    .vpn-topcard-head h4 {
+        display: flex; align-items: center; gap: 0.42rem; margin: 0;
+        color: var(--vpn-ink); font-size: 0.82rem; line-height: 1.2; font-weight: 700;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help;
+    }
+    .vpn-topcard-icon {
+        flex: 0 0 auto; width: 20px; height: 20px; display: inline-flex;
+        align-items: center; justify-content: center; border-radius: 6px;
+        background: var(--vpn-accent-soft); color: var(--vpn-accent); font-size: 0.7rem;
+    }
+    .vpn-topsorts { display: inline-flex; border: 1px solid var(--vpn-line); border-radius: 999px; overflow: hidden; }
+    .vpn-topsorts button {
+        border: 0; background: none; font: inherit; font-size: 0.62rem; font-weight: 600;
+        color: var(--vpn-ink-2); padding: 0.12rem 0.5rem; cursor: pointer;
+    }
+    .vpn-topsorts button[aria-pressed="true"] { background: var(--vpn-accent); color: #fff; }
+
+    .vpn-toplist { display: grid; gap: 1px; padding: 0.3rem 0.5rem 0.45rem; }
+    .vpn-toprow {
+        display: grid; grid-template-columns: 18px minmax(0, 1fr) auto 58px;
+        align-items: center; gap: 0.45rem; width: 100%; padding: 0.24rem 0.2rem;
+        border: 0; border-bottom: 1px solid var(--vpn-line-soft);
+        background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    }
+    .vpn-toprow:last-child { border-bottom: 0; }
+    .vpn-toprow:hover, .vpn-toprow.is-sel { background: var(--vpn-sunken); }
+    .vpn-toprank {
+        width: 18px; height: 18px; border-radius: 50%; display: inline-flex;
+        align-items: center; justify-content: center;
+        background: var(--bg-tertiary); color: var(--vpn-ink-3);
+        font-size: 0.6rem; font-weight: 800;
+    }
+    /* Only the top three get a colour; below that the rank is just a position. */
+    .vpn-toprow:nth-child(1) .vpn-toprank { background: var(--danger); color: #fff; }
+    .vpn-toprow:nth-child(2) .vpn-toprank { background: var(--warning); color: #fff; }
+    .vpn-toprow:nth-child(3) .vpn-toprank { background: var(--info); color: #fff; }
+    .vpn-topname {
+        color: var(--vpn-ink); font-size: 0.72rem; font-weight: 700; display: block;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vpn-toprow:hover .vpn-topname { color: var(--vpn-accent); }
+    .vpn-topip { color: var(--vpn-ink-3); font-size: 0.6rem; }
+    .vpn-topvalue { font-size: 0.74rem; font-weight: 800; white-space: nowrap; text-align: right; }
+    /* Three of these cards rank on a window, so the figure beside them is not
+       the reading in the table. Saying which it is costs one small word. */
+    .vpn-topstat {
+        display: block; color: var(--vpn-ink-3); font-size: 0.56rem;
+        font-weight: 600; letter-spacing: 0.02em;
+    }
+    .vpn-topspark { display: block; width: 58px; height: 20px; }
+    .vpn-topempty { padding: 1.1rem 0.7rem; text-align: center; font-size: 0.7rem; color: var(--vpn-ink-3); }
+
+    /* ---------- panels ---------- */
+    /* The rail ends exactly where the map ends. It used to stop at a hard-coded
+       568px, which was a guess at the map's height and left a strip of dead
+       space under it; stretching the row means the two columns stay level
+       whatever the map is sized to. */
+    .vpn-cols { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 0.75rem; align-items: stretch; }
+    .vpn-stack { display: grid; gap: 0.75rem; min-height: 0; }
+    .vpn-panel { background: var(--vpn-surface); border: 1px solid var(--vpn-line); border-radius: 10px; overflow: hidden; }
+    .vpn-phead {
+        display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap;
+        padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--vpn-line-soft);
+    }
+    .vpn-phead h3 { margin: 0; font-size: 0.82rem; font-weight: 700; }
+    .vpn-phead .vpn-sub { font-size: 0.7rem; color: var(--vpn-ink-3); font-weight: 500; }
+    .vpn-chip {
+        display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 999px;
+        border: 1px solid var(--vpn-line); font-size: 0.66rem; font-weight: 600; color: var(--vpn-ink-2); white-space: nowrap;
+    }
+    .vpn-chip.is-warn { border-color: var(--vpn-warn); color: var(--vpn-warn); background: var(--vpn-warn-soft); }
+    .vpn-legend { display: flex; gap: 0.6rem; flex-wrap: wrap; font-size: 0.66rem; color: var(--vpn-ink-2); }
+    .vpn-legend span { display: inline-flex; align-items: center; gap: 0.25rem; }
+    .vpn-sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+    .vpn-foot { padding: 0.55rem 0.8rem; border-top: 1px solid var(--vpn-line-soft); font-size: 0.68rem; color: var(--vpn-ink-3); }
+    .vpn-foot b { color: var(--vpn-ink-2); font-weight: 600; }
+    .vpn-loading { padding: 1.6rem; text-align: center; color: var(--vpn-ink-3); font-size: 0.78rem; }
+
+    /* ---------- map ---------- */
+    .vpn-mapwrap { position: relative; width: 100%; height: 620px; max-width: 100%; background: var(--vpn-sunken); z-index: 0; }
+    .vpn-mapwrap .leaflet-container { width: 100%; height: 100%; background: var(--vpn-sunken); font: inherit; }
+    /* OSM tiles are drawn for a light page. Rather than swap in a second tile
+       provider, damp them down so the markers stay the brightest thing on a
+       dark screen. */
+    [data-theme="dark"] .vpn-page .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.7); }
+    [data-theme="dark"] .vpn-page .leaflet-control-zoom a { background: var(--vpn-surface); color: var(--vpn-ink); border-color: var(--vpn-line); }
+
+    /* Markers follow the Geographical Map page: the same glyph in the same disc,
+       and the same pulse. The animation is not decoration - a site that is down
+       beats twice as fast as one that is merely degraded, so the worst thing on
+       screen is the thing that moves most. */
+    .vpn-mk-icon { background: transparent; border: none; }
+    .vpn-mk { position: relative; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .vpn-mk-core {
+        width: 32px; height: 32px; background: var(--tone); border-radius: 50%;
+        display: flex; align-items: center; justify-content: center; z-index: 2;
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5); border: 2px solid #fff;
+    }
+    .vpn-mk-core i { font-size: 14px; color: #fff; }
+    .vpn-mk-pulse {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        border-radius: 50%; background: var(--tone); z-index: 1; opacity: 0.4;
+    }
+    @keyframes vpn-pulse-healthy {
+        0% { transform: scale(0.9); opacity: 0.6; }
+        50% { transform: scale(1.4); opacity: 0.1; }
+        100% { transform: scale(0.9); opacity: 0.6; }
+    }
+    @keyframes vpn-pulse-degraded {
+        0% { transform: scale(0.9); opacity: 0.7; }
+        50% { transform: scale(1.3); opacity: 0.2; }
+        100% { transform: scale(0.9); opacity: 0.7; }
+    }
+    @keyframes vpn-pulse-down {
+        0% { transform: scale(0.9); opacity: 0.8; }
+        50% { transform: scale(1.6); opacity: 0; }
+        100% { transform: scale(0.9); opacity: 0.8; }
+    }
+    .vpn-mk.is-healthy .vpn-mk-pulse { animation: vpn-pulse-healthy 2s infinite ease-in-out; }
+    .vpn-mk.is-degraded .vpn-mk-pulse { animation: vpn-pulse-degraded 1.5s infinite ease-in-out; }
+    .vpn-mk.is-down .vpn-mk-pulse { animation: vpn-pulse-down 1s infinite ease-in-out; }
+    /* A disabled site is not reporting anything, so it must not appear to have
+       a pulse at all - a heartbeat on a site nobody checks would be a lie. It
+       sits flat and faded, present but plainly out of the picture. */
+    .vpn-mk.is-disabled .vpn-mk-pulse { display: none; }
+    .vpn-mk.is-disabled .vpn-mk-core { border-color: rgba(255, 255, 255, 0.75); box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35); opacity: 0.75; }
+    .vpn-mk.is-disabled .vpn-mk-core i { opacity: 0.9; }
+    .vpn-mk:hover .vpn-mk-core, .vpn-mk.is-sel .vpn-mk-core { box-shadow: 0 0 0 4px var(--tone), 0 3px 10px rgba(0, 0, 0, 0.55); }
+    .vpn-mklab {
+        position: absolute; left: 38px; top: 50%; transform: translateY(-50%); white-space: nowrap; pointer-events: none;
+        font-size: 0.66rem; font-weight: 600; color: var(--vpn-ink); padding: 1px 5px; border-radius: 4px;
+        background: var(--vpn-surface); border: 1px solid var(--vpn-line-soft); opacity: 0.95; z-index: 3;
+    }
+
+    .vpn-page .leaflet-popup-content-wrapper {
+        background: var(--vpn-surface); color: var(--vpn-ink); border: 1px solid var(--vpn-line);
+        border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    }
+    .vpn-page .leaflet-popup-tip { background: var(--vpn-surface); border: 1px solid var(--vpn-line); }
+    .vpn-page .leaflet-popup-content { margin: 0.55rem 0.65rem; width: 210px !important; font-size: 0.7rem; }
+    .vpn-page .leaflet-popup-content b { font-size: 0.75rem; display: block; }
+    .vpn-tip-sub { font-size: 0.62rem; color: var(--vpn-ink-3); }
+    .vpn-tip-row { display: flex; justify-content: space-between; gap: 0.7rem; margin-top: 0.15rem; color: var(--vpn-ink-2); }
+    .vpn-tip-row em { font-style: normal; color: var(--vpn-ink); font-weight: 600; }
+    .vpn-page .leaflet-container a.leaflet-popup-close-button { color: var(--vpn-ink-3); }
+    .vpn-maplegend {
+        display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: center; padding: 0.5rem 0.8rem;
+        border-top: 1px solid var(--vpn-line-soft); font-size: 0.66rem; color: var(--vpn-ink-2);
+    }
+    .vpn-maplegend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+    .vpn-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1.5px var(--vpn-ring); }
+
+    /* ---------- attention rail ---------- */
+    .vpn-att button {
+        display: grid; grid-template-columns: auto 1fr auto; gap: 0.15rem 0.55rem; align-items: center; text-align: left;
+        width: 100%; padding: 0.55rem 0.8rem; border: 0; border-bottom: 1px solid var(--vpn-line-soft);
+        background: none; color: inherit; font: inherit; cursor: pointer;
+    }
+    .vpn-att button:last-child { border-bottom: 0; }
+    .vpn-att button:hover, .vpn-att button.is-sel { background: var(--vpn-sunken); }
+    .vpn-att .vpn-bullet { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+    .vpn-att .vpn-att-name { font-size: 0.74rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vpn-att .vpn-att-v { font-size: 0.7rem; font-weight: 700; color: var(--tone); white-space: nowrap; }
+    .vpn-att .vpn-att-why { grid-column: 2 / -1; font-size: 0.68rem; color: var(--vpn-ink-3); }
+    .vpn-att .vpn-att-why b { color: var(--vpn-ink-2); font-weight: 600; }
+
+    /* The rail stands beside the map, so it ends where the map ends and scrolls
+       inside itself. A list that runs past the map would leave the page with a
+       ragged bottom edge on the days when a lot is wrong.
+       min-height:0 is what lets the list actually scroll rather than push the
+       panel taller than its track. */
+    .vpn-stack > .vpn-panel { display: flex; flex-direction: column; min-height: 0; }
+    .vpn-att { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+    /* ---------- timeline ---------- */
+    .vpn-tl-group { padding: 0.5rem 0.8rem 0.2rem; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--vpn-ink-3); }
+    .vpn-tl-row { display: grid; grid-template-columns: 200px minmax(0, 1fr) 54px; gap: 0.55rem; align-items: center; padding: 1.5px 0.8rem; }
+    .vpn-tl-name { font-size: 0.74rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vpn-tl-name .vpn-ip { color: var(--vpn-ink-3); font-weight: 400; font-size: 0.64rem; }
+    .vpn-tl-band { display: flex; gap: 1px; height: 15px; border-radius: 3px; overflow: hidden; background: var(--vpn-nodata-2); }
+    .vpn-tl-band i { flex: 1 1 0; min-width: 0; background: var(--slice, var(--vpn-good)); }
+    .vpn-tl-pct { font-size: 0.7rem; font-weight: 700; text-align: right; }
+    .vpn-tl-axis { display: flex; justify-content: space-between; padding: 0.3rem 0.8rem 0.6rem 13.9rem; font-size: 0.62rem; color: var(--vpn-ink-3); }
+
+    /* ---------- table ---------- */
+    .vpn-tabs { display: flex; gap: 3px; padding: 0.55rem 0.8rem 0; flex-wrap: wrap; }
+    .vpn-tab {
+        border: 1px solid transparent; border-bottom: 0; background: none; font: inherit; font-size: 0.72rem;
+        font-weight: 600; color: var(--vpn-ink-2); padding: 0.35rem 0.65rem; border-radius: 7px 7px 0 0; cursor: pointer;
+    }
+    .vpn-tab[aria-selected="true"] { background: var(--vpn-sunken); border-color: var(--vpn-line); color: var(--vpn-ink); }
+    .vpn-tab .vpn-n { font-family: ui-monospace, monospace; opacity: 0.75; margin-left: 0.25rem; }
+    .vpn-tablewrap { overflow-x: auto; border-top: 1px solid var(--vpn-line); }
+    .vpn-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 1000px; }
+    .vpn-table thead th {
+        background: var(--vpn-sunken); text-align: left; white-space: nowrap; padding: 0.45rem 0.65rem;
+        font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+        color: var(--vpn-ink-3); border-bottom: 1px solid var(--vpn-line);
+    }
+    .vpn-table thead th.is-right, .vpn-table tbody td.is-right { text-align: right; }
+    .vpn-table tbody td { padding: 0.45rem 0.65rem; border-bottom: 1px solid var(--vpn-line-soft); vertical-align: middle; }
+    .vpn-table tbody tr:last-child td { border-bottom: 0; }
+    .vpn-table tbody tr:hover { background: var(--vpn-sunken); }
+    .vpn-table tbody tr.is-sel { background: var(--vpn-accent-soft); }
+    .vpn-host { font-size: 0.76rem; font-weight: 600; }
+    .vpn-host small { display: block; color: var(--vpn-ink-3); font-weight: 400; font-size: 0.66rem; }
+    .vpn-pill {
+        display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1rem 0.45rem; border-radius: 999px;
+        font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; white-space: nowrap;
+    }
+    .vpn-pill.is-healthy { background: var(--vpn-good-soft); color: var(--vpn-good); }
+    .vpn-pill.is-down { background: var(--vpn-crit-soft); color: var(--vpn-crit); }
+    .vpn-pill.is-degraded { background: var(--vpn-warn-soft); color: var(--vpn-warn); }
+    .vpn-rtt { font-size: 0.74rem; font-weight: 600; }
+    .vpn-rtt small { display: block; font-weight: 400; color: var(--vpn-ink-3); font-size: 0.64rem; }
+    .vpn-bar { display: grid; gap: 0.18rem; min-width: 104px; }
+    .vpn-bar-top { display: flex; justify-content: space-between; font-size: 0.7rem; font-weight: 600; }
+    .vpn-bar-track { height: 4px; border-radius: 99px; background: var(--vpn-nodata-2); overflow: hidden; }
+    .vpn-bar-fill { height: 100%; border-radius: 99px; background: var(--m, var(--vpn-good)); }
+    .vpn-open {
+        font-size: 0.68rem; font-weight: 600; color: var(--vpn-accent); text-decoration: none;
+        border: 1px solid var(--vpn-line); border-radius: 7px; padding: 0.15rem 0.5rem; white-space: nowrap;
+    }
+    .vpn-open:hover { border-color: var(--vpn-accent); background: var(--vpn-accent-soft); }
+
+    .vpn-nogeo {
+        font-size: 0.6rem; color: var(--vpn-ink-3); border: 1px dashed var(--vpn-line);
+        border-radius: 999px; padding: 0 0.35rem; margin-left: 0.25rem; white-space: nowrap;
+    }
+    /* Chart.js needs a box with a real height to draw into, the same way the
+       server dashboard sizes its canvases. */
+    .vpn-chartbox { position: relative; height: 280px; padding: 0.7rem 0.8rem 0.3rem; }
+
+    @media (max-width: 1180px) {
+        .vpn-cols { grid-template-columns: minmax(0, 1fr); }
+        .vpn-att { max-height: 420px; }
+        .vpn-tl-row { grid-template-columns: 160px minmax(0, 1fr) 50px; }
+        .vpn-tl-axis { padding-left: 182px; }
+    }
+    @media (max-width: 560px) {
+        .vpn-tl-row { grid-template-columns: minmax(0, 1fr) 46px; }
+        .vpn-tl-row .vpn-tl-band { grid-column: 1 / -1; order: 3; }
+        .vpn-tl-axis { padding-left: 0.8rem; }
+        .vpn-mklab { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .vpn-page * { animation: none !important; transition: none !important; }
+    }
+</style>
+
+<div class="vpn-page">
+    <section class="vpn-kpis" id="vpn-kpis">
+        <div class="vpn-kpi"><div><div class="vpn-kpi-label">Loading</div><div class="vpn-kpi-value">-</div></div></div>
+    </section>
+
+    <section class="vpn-topcards" id="vpn-topcards"></section>
+
+    <div class="vpn-cols">
+        <section class="vpn-panel">
+            <div class="vpn-phead">
+                <div>
+                    <h3>Site Map</h3>
+                    <div class="vpn-sub">Positioned by the latitude and longitude stored on each device</div>
+                </div>
+                <span class="vpn-chip is-warn" id="vpn-mapchip" hidden></span>
+            </div>
+            <div class="vpn-mapwrap" id="vpn-map"></div>
+            <div class="vpn-maplegend" id="vpn-maplegend"></div>
+        </section>
+
+        <div class="vpn-stack">
+            <section class="vpn-panel">
+                <div class="vpn-phead">
+                    <div><h3>Needs attention</h3><div class="vpn-sub">Worst first &middot; click to locate</div></div>
+                    <span class="vpn-chip" id="vpn-attchip" hidden></span>
+                </div>
+                <div class="vpn-att" id="vpn-att"><div class="vpn-loading">Loading...</div></div>
+            </section>
+        </div>
+    </div>
+
+    <section class="vpn-panel">
+        <div class="vpn-phead">
+            <div>
+                <h3>Availability Timeline</h3>
+                <div class="vpn-sub" id="vpn-tl-sub">Percentage is the share of checks that got a reply</div>
+            </div>
+            <div class="vpn-legend">
+                <span><i class="vpn-sw" style="background:var(--vpn-good)"></i>reply</span>
+                <span><i class="vpn-sw" style="background:var(--vpn-warn)"></i>over threshold</span>
+                <span><i class="vpn-sw" style="background:var(--vpn-crit)"></i>no reply</span>
+                <span><i class="vpn-sw" style="background:var(--vpn-nodata)"></i>no check</span>
+            </div>
+        </div>
+        <div id="vpn-timeline"><div class="vpn-loading">Loading...</div></div>
+        <div class="vpn-tl-axis" id="vpn-tl-axis"></div>
+    </section>
+
+    <section class="vpn-panel">
+        <div class="vpn-tabs" role="tablist" id="vpn-tabs"></div>
+        <div class="vpn-tablewrap">
+            <table class="vpn-table">
+                <thead><tr>
+                    <th>Site</th><th>State</th><th class="is-right">Latency now</th>
+                    <th class="is-right">Avg &middot; p95</th><th class="is-right">Jitter</th>
+                    <th class="is-right">Packet loss</th><th>Reachable</th>
+                    <th class="is-right">Flaps</th><th>State held</th><th></th>
+                </tr></thead>
+                <tbody id="vpn-tbody"><tr><td colspan="10" class="vpn-loading">Loading...</td></tr></tbody>
+            </table>
+        </div>
+        <div class="vpn-foot" id="vpn-tfoot"></div>
+    </section>
+
+    <section class="vpn-panel">
+        <div class="vpn-phead">
+            <div>
+                <h3>Fleet Latency</h3>
+                <div class="vpn-sub">Every reply from every site &mdash; the middle site and the slowest 5%</div>
+            </div>
+        </div>
+        <div class="vpn-chartbox" id="vpn-chartbox"><canvas id="vpn-fleet-chart"></canvas></div>
+        <div class="vpn-loading" id="vpn-chart-empty" hidden></div>
+        <div class="vpn-foot" id="vpn-chartfoot"></div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var hours = 24;
+    var selected = null;
+    var tab = 'all';
+    var health = null, timeline = null, latency = null, trend = null, topcards = null;
+    var refreshTimer = null;
+
+    var esc = function (v) {
+        return String(v === null || v === undefined ? '' : v)
+            .replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+    };
+    var TONE = { down: 'var(--vpn-crit)', degraded: 'var(--vpn-warn)', healthy: 'var(--vpn-good)' };
+    var MK_TONE = {
+        down: 'var(--vpn-mk-down)', degraded: 'var(--vpn-mk-degraded)',
+        healthy: 'var(--vpn-mk-healthy)', disabled: 'var(--vpn-mk-disabled)'
+    };
+    var LABEL = { down: 'Down', degraded: 'Degraded', healthy: 'Healthy', disabled: 'Not monitored' };
+
+    function ms(v) {
+        if (v === null || v === undefined) { return '&mdash;'; }
+        return (+v).toFixed(v < 10 ? 1 : 0) + ' ms';
+    }
+    function pct(v, digits) {
+        if (v === null || v === undefined) { return '&mdash;'; }
+        return (+v).toFixed(digits === undefined ? 1 : digits) + '%';
+    }
+    function ago(iso) {
+        // last_check is written by the monitor from a local datetime.now(), and
+        // a naive ISO string is what the Date constructor reads as local too.
+        if (!iso) { return null; }
+        var t = new Date(iso);
+        if (isNaN(t.getTime())) { return null; }
+        return Math.max(0, (Date.now() - t.getTime()) / 1000);
+    }
+    function dur(sec) {
+        if (sec === null || sec === undefined) { return '&mdash;'; }
+        sec = Math.max(0, Math.round(sec));
+        var d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+        if (d) { return d + ' d ' + h + ' h'; }
+        if (h) { return h + ' h ' + m + ' m'; }
+        return m + ' m';
+    }
+
+    function spark(values, tone, w, h) {
+        w = w || 74; h = h || 26;
+        var vals = values.filter(function (v) { return v !== null && v !== undefined; });
+        if (vals.length < 2) { return ''; }
+        var max = Math.max.apply(null, [1].concat(vals));
+        var x = function (i) { return (i / (vals.length - 1)) * w; };
+        var y = function (v) { return h - 2 - (v / max) * (h - 4); };
+        var line = vals.map(function (v, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ',' + y(v).toFixed(1); }).join(' ');
+        var last = vals[vals.length - 1];
+        return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">'
+            + '<path d="' + line + ' L' + w + ',' + h + ' L0,' + h + ' Z" fill="' + tone + '" opacity=".13"/>'
+            + '<path d="' + line + '" fill="none" stroke="' + tone + '" stroke-width="1.6" stroke-linejoin="round"/>'
+            + '<circle cx="' + x(vals.length - 1).toFixed(1) + '" cy="' + y(last).toFixed(1) + '" r="2.4" fill="' + tone + '"/>'
+            + '</svg>';
+    }
+
+    /* ---------- KPIs ---------- */
+    function renderKpis() {
+        var s = health.summary;
+        var worst = health.sites.filter(function (x) { return x.state === 'down'; })
+            .sort(function (a, b) { return (b.state_age_seconds || 0) - (a.state_age_seconds || 0); })[0];
+        var p95Series = latency ? latency.p95 : [];
+        var lastP95 = null, lastP50 = null, peak = 0;
+        if (latency) {
+            for (var i = latency.p95.length - 1; i >= 0; i--) {
+                if (lastP95 === null && latency.p95[i] !== null) { lastP95 = latency.p95[i]; }
+                if (lastP50 === null && latency.p50[i] !== null) { lastP50 = latency.p50[i]; }
+            }
+            peak = Math.max.apply(null, [0].concat(latency.p95.filter(function (v) { return v !== null; })));
+        }
+
+        var cards = [
+            {
+                label: 'Sites monitored', value: s.total_sites, tone: 'var(--vpn-accent)',
+                note: s.disabled + ' more configured but switched off', series: []
+            },
+            {
+                label: 'Down now', value: s.down, tone: 'var(--vpn-crit)',
+                note: worst ? esc(worst.name) + ' &mdash; ' + dur(worst.state_age_seconds) + ' and counting' : 'every site is replying',
+                series: trend ? trend.down : []
+            },
+            {
+                label: 'Degraded', value: s.degraded, tone: 'var(--vpn-warn)',
+                note: 'reachable, but slow or unstable', series: []
+            },
+            {
+                label: 'Availability', value: s.availability_pct === null ? '&mdash;' : (+s.availability_pct).toFixed(1) + '<small>%</small>',
+                tone: 'var(--vpn-accent)', note: 'mean across ' + s.total_sites + ' sites', series: []
+            },
+            {
+                label: 'Fleet p95 latency', value: lastP95 === null ? '&mdash;' : Math.round(lastP95) + '<small> ms</small>',
+                tone: 'var(--vpn-warn)',
+                note: peak ? 'peaked at ' + Math.round(peak) + ' ms &middot; median ' + (lastP50 === null ? '-' : lastP50) + ' ms' : 'no replies in the window',
+                series: p95Series
+            }
+        ];
+
+        document.getElementById('vpn-kpis').innerHTML = cards.map(function (k) {
+            return '<article class="vpn-kpi' + (k.value === 0 ? ' is-quiet' : '') + '" style="--tone:' + k.tone + '">'
+                + '<div><div class="vpn-kpi-label">' + esc(k.label) + '</div>'
+                + '<div class="vpn-kpi-value num">' + k.value + '</div>'
+                + '<div class="vpn-kpi-note">' + k.note + '</div></div>'
+                + '<div>' + (k.series && k.series.length ? spark(k.series, k.tone) : '') + '</div></article>';
+        }).join('');
+    }
+
+    /* ---------- top cards ---------- */
+    var CARD_ICON = {
+        deterioration: 'fa-arrow-trend-up', downtime: 'fa-plug-circle-xmark',
+        jitter: 'fa-wave-square', latency: 'fa-gauge-high'
+    };
+    var cardSort = {};   // card key -> 'rows' | 'longest'
+
+    function topValue(card, row) {
+        if (card.unit === 'min') {
+            var v = row.rank_value;
+            return v >= 60 ? Math.floor(v / 60) + ' h ' + Math.round(v % 60) + ' m' : Math.round(v) + ' min';
+        }
+        return (card.key === 'deterioration' ? '+' : '') + Math.round(row.rank_value) + ' ms';
+    }
+
+    // The second reading under the figure. Three of the four cards rank on a
+    // window, so without this the number reads as a contradiction of the table.
+    function topStat(card, row) {
+        if (card.key === 'deterioration') { return 'was ' + ms(row.previous); }
+        if (card.key === 'downtime') { return row.episodes === 1 ? 'one run' : row.episodes + ' runs'; }
+        if (card.key === 'latency') { return 'now ' + ms(row.current); }
+        return '';
+    }
+
+    // Colour by what the figure means, not by where it sits in the list - the
+    // rank badge already carries the ordering.
+    function topTone(card, row) {
+        var t = health && health.thresholds;
+        if (card.key === 'latency' && t) {
+            return row.rank_value >= t.degraded_p95_ms * 2 ? 'var(--vpn-crit)'
+                : (row.rank_value >= t.degraded_p95_ms ? 'var(--vpn-warn)' : 'var(--vpn-good)');
+        }
+        if (card.key === 'jitter' && t) {
+            return row.rank_value >= t.degraded_jitter_ms * 2 ? 'var(--vpn-crit)'
+                : (row.rank_value >= t.degraded_jitter_ms ? 'var(--vpn-warn)' : 'var(--vpn-good)');
+        }
+        return TONE[row.state] || 'var(--vpn-ink-3)';
+    }
+
+    // A gap in collection breaks the line rather than inventing a value, so the
+    // shading is built per unbroken run: one area closed to the baseline for
+    // each, instead of one fill spanning a hole the line never crossed.
+    function topSpark(values, colour) {
+        var W = 58, H = 20;
+        var points = (values || []).map(function (v) {
+            return v === null || v === undefined || !isFinite(v) ? null : Number(v);
+        });
+        var real = points.filter(function (v) { return v !== null; });
+        if (real.length < 2) { return '<span class="vpn-topspark"></span>'; }
+
+        var max = Math.max.apply(null, real), min = Math.min.apply(null, real);
+        var flat = max === min;
+        var x = function (i) { return (i / (points.length - 1)) * W; };
+        var y = function (v) { return flat ? H / 2 : H - 1.5 - ((v - min) / (max - min)) * (H - 3); };
+
+        var runs = [], run = [];
+        points.forEach(function (v, i) {
+            if (v === null) { if (run.length) { runs.push(run); } run = []; return; }
+            run.push([x(i), y(v)]);
+        });
+        if (run.length) { runs.push(run); }
+
+        var draw = function (part) {
+            return part.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+        };
+        var line = runs.map(draw).join(' ');
+        var area = runs.filter(function (p) { return p.length > 1; }).map(function (part) {
+            return draw(part) + ' L' + part[part.length - 1][0].toFixed(1) + ',' + H
+                + ' L' + part[0][0].toFixed(1) + ',' + H + ' Z';
+        }).join(' ');
+
+        return '<svg class="vpn-topspark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
+            + (area ? '<path d="' + area + '" fill="' + colour + '" opacity="0.15"/>' : '')
+            + '<path d="' + line + '" fill="none" stroke="' + colour + '" stroke-width="1.3"'
+            + ' stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+    }
+
+    // The downtime card's answer to a sparkline: where in the window the site
+    // was missing. A grey block is a bucket nobody checked, which is not the
+    // same as one that came back clean.
+    var BAND_TONE = {
+        up: 'var(--vpn-good)', slow: 'var(--vpn-warn)',
+        down: 'var(--vpn-crit)', unknown: 'var(--vpn-nodata)', none: 'var(--vpn-nodata)'
+    };
+    function topBand(band) {
+        if (!band || !band.length) { return '<span class="vpn-topspark"></span>'; }
+        var W = 58, H = 20, w = W / band.length;
+        var bars = band.map(function (state, i) {
+            return '<rect x="' + (i * w).toFixed(2) + '" y="0" width="' + (w + 0.4).toFixed(2) + '" height="' + H + '"'
+                + ' fill="' + (BAND_TONE[state] || BAND_TONE.none) + '"/>';
+        }).join('');
+        return '<svg class="vpn-topspark" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" aria-hidden="true">'
+            + bars + '</svg>';
+    }
+
+    function renderTopCards() {
+        if (!topcards) { return; }
+        document.getElementById('vpn-topcards').innerHTML = topcards.cards.map(function (card) {
+            var mode = cardSort[card.key] === 'longest' && card.longest ? 'longest' : 'rows';
+            var rows = mode === 'longest' ? card.longest : card.rows;
+            var rankedBy = mode === 'longest' ? card.alt_ranked_by : card.ranked_by;
+            var body = rows.length ? rows.map(function (row, index) {
+                var tone = topTone(card, row);
+                var stat = topStat(card, row);
+                // The compact two-line figure has no room for the full story,
+                // so the detail the stat line cannot fit lives on hover.
+                var detail = card.key === 'deterioration'
+                    ? row.name + ': p95 went from ' + Math.round(row.previous) + ' ms to '
+                      + Math.round(row.current) + ' ms, up ' + row.change_pct + '%'
+                    : row.name + ' — ' + LABEL[row.state];
+                return '<button type="button" class="vpn-toprow' + (selected === row.id ? ' is-sel' : '') + '"'
+                    + ' data-id="' + row.id + '" title="' + esc(detail) + '">'
+                    + '<span class="vpn-toprank num">' + (index + 1) + '</span>'
+                    + '<span><span class="vpn-topname">' + esc(row.name) + '</span>'
+                    + '<span class="vpn-topip num">' + esc(row.ip_address) + '</span></span>'
+                    + '<span class="vpn-topvalue num" style="color:' + tone + '">' + topValue(card, row)
+                    + (stat ? '<span class="vpn-topstat">' + stat + '</span>' : '') + '</span>'
+                    + (card.key === 'downtime' ? topBand(row.band) : topSpark(row.series, tone))
+                    + '</button>';
+            }).join('') : '<div class="vpn-topempty">' + esc(card.empty) + '</div>';
+
+            return '<article class="vpn-topcard">'
+                + '<div class="vpn-topcard-head">'
+                + '<h4 title="Ranked by ' + esc(rankedBy) + '. The line is the last '
+                + esc(String(topcards.hours)) + ' hours.">'
+                + '<span class="vpn-topcard-icon"><i class="fa-solid ' + (CARD_ICON[card.key] || 'fa-chart-simple') + '"></i></span>'
+                + esc(card.title) + '</h4>'
+                + (card.longest
+                    ? '<span class="vpn-topsorts">'
+                      + '<button type="button" data-topsort="' + card.key + ':rows" aria-pressed="' + (mode !== 'longest') + '">Total</button>'
+                      + '<button type="button" data-topsort="' + card.key + ':longest" aria-pressed="' + (mode === 'longest') + '">' + esc(card.alt_label) + '</button>'
+                      + '</span>'
+                    : '')
+                + '</div><div class="vpn-toplist">' + body + '</div></article>';
+        }).join('');
+
+        Array.prototype.forEach.call(document.querySelectorAll('[data-topsort]'), function (b) {
+            b.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                var parts = b.getAttribute('data-topsort').split(':');
+                cardSort[parts[0]] = parts[1];
+                renderTopCards();
+            });
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.vpn-toprow'), function (b) {
+            b.addEventListener('click', function () { select(+b.dataset.id); });
+        });
+    }
+
+    /* ---------- map ---------- */
+    // Real tiles, the same OpenStreetMap layer the Geographical Map page uses,
+    // so a branch sits against the roads and districts people already know.
+    var leafletMap = null, markerLayer = null, markerById = {}, fittedOnce = false;
+
+    function plottable(site) {
+        return site.has_coordinates
+            && isFinite(site.latitude) && isFinite(site.longitude)
+            && Math.abs(site.latitude) <= 90 && Math.abs(site.longitude) <= 180;
+    }
+
+    function markerHtml(s) {
+        // Only the sites that need someone carry a name on the map. Labelling
+        // the healthy and the switched-off ones too would bury them.
+        var named = s.state === 'down' || s.state === 'degraded';
+        return '<div class="vpn-mk is-' + s.state + '" style="--tone:' + MK_TONE[s.state] + '">'
+            + '<div class="vpn-mk-pulse"></div>'
+            + '<div class="vpn-mk-core"><i class="fa-solid fa-network-wired" aria-hidden="true"></i></div>'
+            + (named ? '<span class="vpn-mklab">' + esc(s.name) + '</span>' : '')
+            + '</div>';
+    }
+
+    function popupHtml(s) {
+        return '<b>' + esc(s.name) + '</b>'
+            + '<span class="vpn-tip-sub">' + esc(s.ip_address) + ' &middot; ' + esc(s.location || 'no location set') + '</span>'
+            + '<div class="vpn-tip-row"><span>State</span><em style="color:' + TONE[s.state] + '">' + LABEL[s.state] + '</em></div>'
+            + '<div class="vpn-tip-row"><span>Latency now</span><em class="num">' + ms(s.response_time) + '</em></div>'
+            + '<div class="vpn-tip-row"><span>Avg &middot; p95</span><em class="num">' + ms(s.rtt_avg) + ' &middot; ' + ms(s.p95) + '</em></div>'
+            + '<div class="vpn-tip-row"><span>Jitter</span><em class="num">' + ms(s.jitter) + '</em></div>'
+            + '<div class="vpn-tip-row"><span>Packet loss</span><em class="num">'
+            + (s.packet_loss_samples ? pct(s.packet_loss_pct) : 'not yet recorded') + '</em></div>'
+            + '<div class="vpn-tip-row"><span>Reachable</span><em class="num">' + pct(s.reach_pct) + '</em></div>'
+            + '<div style="margin-top:0.4rem"><a class="vpn-open" href="/vpn-site/' + s.id + '">Open this site</a></div>';
+    }
+
+    function renderMap() {
+        var mapped = health.sites.filter(plottable);
+        var unmapped = health.sites.filter(function (s) { return !plottable(s); });
+
+        if (!leafletMap) {
+            leafletMap = L.map('vpn-map', { zoomControl: true, scrollWheelZoom: true })
+                .setView([13.7563, 100.5018], 10);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(leafletMap);
+            markerLayer = L.layerGroup().addTo(leafletMap);
+        }
+
+        markerLayer.clearLayers();
+        markerById = {};
+        var bounds = L.latLngBounds();
+
+        // Disabled sites first, so a live marker always wins the overlap.
+        var mappedOff = (health.disabled_sites || []).filter(plottable);
+        mappedOff.forEach(function (s) {
+            L.marker([s.latitude, s.longitude], {
+                icon: L.divIcon({
+                    className: 'vpn-mk-icon',
+                    html: markerHtml(s),
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20],
+                    popupAnchor: [0, -20]
+                }),
+                title: s.name + ' — not monitored',
+                opacity: 0.85
+            }).bindPopup(
+                '<b>' + esc(s.name) + '</b>'
+                + '<span class="vpn-tip-sub">' + esc(s.ip_address) + ' &middot; ' + esc(s.location || 'no location set') + '</span>'
+                + '<div class="vpn-tip-row"><span>State</span><em style="color:var(--vpn-mk-disabled)">Not monitored</em></div>'
+                + '<div class="vpn-tip-row"><span>Last checked</span><em class="num">'
+                + (s.last_check ? dur(ago(s.last_check)) + ' ago' : '&mdash;') + '</em></div>'
+                + '<div class="vpn-tip-row" style="margin-top:0.35rem;color:var(--vpn-ink-3)">'
+                + 'Monitoring is switched off for this site, so nothing here is being checked.</div>',
+                { closeButton: true, autoPan: false }
+            ).addTo(markerLayer);
+            bounds.extend([s.latitude, s.longitude]);
+        });
+
+        mapped.forEach(function (s) {
+            var marker = L.marker([s.latitude, s.longitude], {
+                icon: L.divIcon({
+                    className: 'vpn-mk-icon',
+                    html: markerHtml(s),
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 20],
+                    popupAnchor: [0, -20]
+                }),
+                title: s.name + ' — ' + LABEL[s.state],
+                riseOnHover: true
+            });
+            marker.bindPopup(popupHtml(s), { closeButton: true, autoPan: false });
+            marker.on('mouseover', function () { marker.openPopup(); });
+            marker.on('click', function () { select(s.id); });
+            marker.addTo(markerLayer);
+            markerById[s.id] = marker;
+            bounds.extend([s.latitude, s.longitude]);
+        });
+
+        // Frame the sites once. Refitting on every 30-second refresh would undo
+        // whatever the reader had panned to mid-investigation.
+        if (!fittedOnce && bounds.isValid()) {
+            leafletMap.fitBounds(bounds, { padding: [48, 48], maxZoom: 13 });
+            fittedOnce = true;
+        }
+        setTimeout(function () { leafletMap.invalidateSize(); }, 0);
+
+        // A site the map cannot show must say so. A blank spot where a branch
+        // should be reads as "fine", which is the one thing it never means.
+        // Counts monitored sites only. The grey markers are a different thing -
+        // present but switched off - and merging the two numbers would hide the
+        // one that matters: a site being watched that cannot be located.
+        var chip = document.getElementById('vpn-mapchip');
+        chip.hidden = unmapped.length === 0;
+        chip.textContent = unmapped.length + (unmapped.length === 1 ? ' monitored site not on the map' : ' monitored sites not on the map');
+
+        var count = function (state) {
+            return mapped.filter(function (s) { return s.state === state; }).length;
+        };
+        document.getElementById('vpn-maplegend').innerHTML =
+            '<span><i class="vpn-dot" style="background:var(--vpn-mk-healthy)"></i>Healthy <b class="num">' + count('healthy') + '</b></span>'
+            + '<span><i class="vpn-dot" style="background:var(--vpn-mk-degraded)"></i>Degraded <b class="num">' + count('degraded') + '</b></span>'
+            + '<span><i class="vpn-dot" style="background:var(--vpn-mk-down)"></i>Down <b class="num">' + count('down') + '</b></span>'
+            + (mappedOff.length
+                ? '<span title="Monitoring is switched off for these, so they are in none of the figures above"><i class="vpn-dot" style="background:var(--vpn-mk-disabled);opacity:.75"></i>Not monitored <b class="num">'
+                  + mappedOff.length + '</b></span>'
+                : '')
+            + '<span style="margin-left:auto;color:var(--vpn-ink-3)">The faster a marker beats, the worse the site &middot; a still grey one is not being checked</span>';
+
+        if (selected !== null && markerById[selected]) {
+            markSelectedMarker();
+        }
+    }
+
+    function markSelectedMarker() {
+        Object.keys(markerById).forEach(function (id) {
+            var el = markerById[id].getElement();
+            if (el) {
+                var dot = el.querySelector('.vpn-mk');
+                if (dot) { dot.classList.toggle('is-sel', +id === selected); }
+            }
+        });
+    }
+
+    /* ---------- attention rail ---------- */
+    // Which measurement put this site on the list. Leading with p95 whatever the
+    // cause meant a site flagged purely for losing packets was headed by a
+    // latency figure that was inside every threshold.
+    function trigger(s) {
+        var t = health.thresholds;
+        if (s.state === 'down') { return { head: 'DOWN', by: 'down' }; }
+        if (s.reach_pct !== null && s.reach_pct < 99.5) { return { head: 'RECOVERED', by: 'recovered' }; }
+        if ((s.p95 || 0) >= t.degraded_p95_ms) { return { head: ms(s.p95) + ' p95', by: 'p95' }; }
+        if ((s.jitter || 0) >= t.degraded_jitter_ms) { return { head: ms(s.jitter) + ' jitter', by: 'jitter' }; }
+        if ((s.packet_loss_pct || 0) >= t.degraded_loss_pct) { return { head: pct(s.packet_loss_pct) + ' loss', by: 'loss' }; }
+        return { head: ms(s.p95) + ' p95', by: 'p95' };
+    }
+
+    function reason(s) {
+        var by = trigger(s).by;
+        if (by === 'down') {
+            return '<b>' + dur(s.state_age_seconds) + '</b> with no reply &middot; '
+                + s.down_checks + ' of ' + s.checks + ' checks failed';
+        }
+        if (by === 'recovered') {
+            return 'back up <b>' + dur(s.state_age_seconds) + '</b> ago &middot; '
+                + s.down_checks + ' of ' + s.checks + ' checks failed';
+        }
+        // The heading already carries the figure that tripped the threshold, so
+        // this line supplies the others rather than repeating it.
+        var bits = [];
+        if (by !== 'p95') { bits.push('p95 <b>' + ms(s.p95) + '</b>'); }
+        if (by !== 'jitter') { bits.push('jitter <b>' + ms(s.jitter) + '</b>'); }
+        if (by !== 'loss' && s.packet_loss_samples && s.packet_loss_pct > 0) {
+            bits.push('loss <b>' + pct(s.packet_loss_pct) + '</b>');
+        }
+        if (s.checks && s.slow_checks / s.checks >= 0.05) {
+            bits.push('<b>' + Math.round(s.slow_checks / s.checks * 100) + '%</b> of checks over '
+                + health.thresholds.slow_ms + ' ms');
+        }
+        return bits.join(' &middot; ');
+    }
+
+    function renderAttention() {
+        var rows = health.sites.filter(function (s) { return s.state !== 'healthy'; });
+        var el = document.getElementById('vpn-att');
+        var chip = document.getElementById('vpn-attchip');
+        chip.hidden = rows.length === 0;
+        chip.textContent = rows.length + ' of ' + health.sites.length;
+        chip.className = 'vpn-chip' + (rows.some(function (s) { return s.state === 'down'; }) ? ' is-warn' : '');
+        if (!rows.length) {
+            el.innerHTML = '<div class="vpn-loading">Every site is answering, and none are slow or unsteady.</div>';
+            return;
+        }
+        el.innerHTML = rows.map(function (s) {
+            var head = trigger(s).head;
+            return '<button type="button" data-id="' + s.id + '" style="--tone:' + TONE[s.state] + '">'
+                + '<i class="vpn-bullet"></i><span class="vpn-att-name">' + esc(s.name) + '</span>'
+                + '<span class="vpn-att-v num">' + head + '</span>'
+                + '<span class="vpn-att-why">' + reason(s)
+                + (s.has_coordinates ? '' : ' <span class="vpn-nogeo">not on map</span>') + '</span></button>';
+        }).join('');
+        Array.prototype.forEach.call(el.querySelectorAll('button'), function (b) {
+            b.addEventListener('click', function () { select(+b.dataset.id); });
+        });
+    }
+
+    /* ---------- timeline ---------- */
+    var MIN_SHARE = 0.14;
+    function slice(mix) {
+        if (!mix) { return { css: 'var(--vpn-nodata)', title: 'no check recorded' }; }
+        var u = mix[0], sl = mix[1], dn = mix[2], total = u + sl + dn;
+        if (!total) { return { css: 'var(--vpn-nodata)', title: 'no check recorded' }; }
+        var ds = dn / total, ss = sl / total;
+        if (dn) { ds = Math.max(ds, MIN_SHARE); }
+        if (sl) { ss = Math.max(ss, MIN_SHARE); }
+        var bad = ds + ss;
+        if (bad > 1) { ds /= bad; ss /= bad; }
+        var parts = [], words = [], c = 0;
+        if (ds > 0) {
+            parts.push('var(--vpn-crit) ' + (c * 100).toFixed(1) + '% ' + ((c + ds) * 100).toFixed(1) + '%');
+            c += ds; words.push(dn + ' no reply');
+        }
+        if (ss > 0) {
+            parts.push('var(--vpn-warn) ' + (c * 100).toFixed(1) + '% ' + ((c + ss) * 100).toFixed(1) + '%');
+            c += ss; words.push(sl + ' slow');
+        }
+        parts.push('var(--vpn-good) ' + (c * 100).toFixed(1) + '% 100%');
+        if (u) { words.push(u + ' ok'); }
+        return {
+            css: parts.length === 1 ? 'var(--vpn-good)' : 'linear-gradient(to top, ' + parts.join(',') + ')',
+            title: words.join(', ')
+        };
+    }
+
+    function renderTimeline() {
+        var groups = [
+            { title: 'Down or degraded', rows: timeline.sites.filter(function (s) { return s.state !== 'healthy'; }) },
+            { title: 'Healthy', rows: timeline.sites.filter(function (s) { return s.state === 'healthy'; }) }
+        ];
+        document.getElementById('vpn-timeline').innerHTML = groups.map(function (g) {
+            if (!g.rows.length) { return ''; }
+            return '<div class="vpn-tl-group">' + esc(g.title) + ' <span class="num">(' + g.rows.length + ')</span></div>'
+                + g.rows.map(function (s) {
+                    var band = s.mix.map(function (m) {
+                        var q = slice(m);
+                        return '<i style="--slice:' + q.css + '" title="' + esc(q.title) + '"></i>';
+                    }).join('');
+                    var tone = s.reach_pct !== null && s.reach_pct >= 99.5 ? 'var(--vpn-ink-2)' : TONE[s.state];
+                    return '<div class="vpn-tl-row" data-id="' + s.id + '">'
+                        + '<div class="vpn-tl-name">' + esc(s.name) + ' <span class="vpn-ip num">' + esc(s.ip_address) + '</span></div>'
+                        + '<div class="vpn-tl-band">' + band + '</div>'
+                        + '<div class="vpn-tl-pct num" style="color:' + tone + '">'
+                        + (s.reach_pct === null ? '&mdash;' : pct(s.reach_pct, s.reach_pct >= 99.95 ? 0 : 1)) + '</div></div>';
+                }).join('');
+        }).join('');
+
+        var labels = timeline.labels || [];
+        var marks = [];
+        [0, 0.25, 0.5, 0.75].forEach(function (f) {
+            marks.push(axisLabel(labels[Math.floor(labels.length * f)]));
+        });
+        marks.push('now');
+        document.getElementById('vpn-tl-axis').innerHTML = marks.map(function (m) {
+            return '<span class="num">' + esc(m) + '</span>';
+        }).join('');
+        document.getElementById('vpn-tl-sub').textContent =
+            'Last ' + windowLabel() + ' · ' + timeline.buckets + ' blocks · percentage is the share of checks that got a reply';
+    }
+
+    /* ---------- table ---------- */
+    function tabsFor() {
+        var s = health.sites;
+        return [
+            { key: 'all', label: 'All sites', rows: s },
+            { key: 'down', label: 'Down', rows: s.filter(function (x) { return x.state === 'down'; }) },
+            { key: 'degraded', label: 'Degraded', rows: s.filter(function (x) { return x.state === 'degraded'; }) },
+            { key: 'healthy', label: 'Healthy', rows: s.filter(function (x) { return x.state === 'healthy'; }) },
+            { key: 'nogeo', label: 'Not on map', rows: s.filter(function (x) { return !x.has_coordinates; }) }
+        ];
+    }
+
+    function renderTable() {
+        var defs = tabsFor();
+        document.getElementById('vpn-tabs').innerHTML = defs.map(function (t) {
+            return '<button type="button" class="vpn-tab" role="tab" data-tab="' + t.key + '"'
+                + ' aria-selected="' + (t.key === tab) + '">' + esc(t.label)
+                + '<span class="vpn-n">' + t.rows.length + '</span></button>';
+        }).join('');
+        Array.prototype.forEach.call(document.querySelectorAll('.vpn-tab'), function (b) {
+            b.addEventListener('click', function () { tab = b.dataset.tab; renderTable(); });
+        });
+
+        var active = defs.filter(function (t) { return t.key === tab; })[0] || defs[0];
+        var rows = active.rows;
+        document.getElementById('vpn-tbody').innerHTML = rows.length ? rows.map(function (s) {
+            // Loss is averaged over the checks that recorded it, which after an
+            // upgrade or a collection gap is fewer than the checks behind the
+            // reachability figure beside it. Saying so is the difference between
+            // "20% of packets are being lost" and "20% of the last 24 checks
+            // failed, while 99% of the day's 492 succeeded" - both true, and
+            // only the second one is the whole story.
+            var lossCell;
+            if (!s.packet_loss_samples) {
+                lossCell = '<span class="vpn-nogeo" title="Recorded from the first check after the collector was upgraded">not yet recorded</span>';
+            } else {
+                var partial = s.packet_loss_samples < s.checks;
+                lossCell = '<div class="vpn-rtt num" style="color:'
+                    + (s.packet_loss_pct > 0 ? TONE[s.state] : 'inherit') + '"'
+                    + (partial ? ' title="Averaged over the ' + s.packet_loss_samples
+                        + ' checks that recorded packet loss, not all ' + s.checks
+                        + ' in the window. Reachable, beside it, covers all of them."' : '')
+                    + '>' + pct(s.packet_loss_pct)
+                    + (partial ? '<small>of ' + s.packet_loss_samples + ' checks</small>' : '')
+                    + '</div>';
+            }
+            return '<tr data-id="' + s.id + '" class="' + (selected === s.id ? 'is-sel' : '') + '">'
+                + '<td><div class="vpn-host">' + esc(s.name)
+                + (s.has_coordinates ? '' : '<span class="vpn-nogeo">no coords</span>')
+                + '<small class="num">' + esc(s.ip_address) + '</small></div></td>'
+                + '<td><span class="vpn-pill is-' + s.state + '">' + LABEL[s.state] + '</span></td>'
+                + '<td class="is-right"><div class="vpn-rtt num">' + ms(s.response_time) + '</div></td>'
+                + '<td class="is-right"><div class="vpn-rtt num">' + ms(s.rtt_avg) + '<small>p95 ' + ms(s.p95) + '</small></div></td>'
+                + '<td class="is-right"><div class="vpn-rtt num" style="color:'
+                + ((s.jitter || 0) >= health.thresholds.degraded_jitter_ms ? 'var(--vpn-warn)' : 'inherit') + '">' + ms(s.jitter) + '</div></td>'
+                + '<td class="is-right">' + lossCell + '</td>'
+                + '<td><div class="vpn-bar" style="--m:' + (s.reach_pct !== null && s.reach_pct >= 99.5 ? 'var(--vpn-good)' : TONE[s.state]) + '">'
+                + '<div class="vpn-bar-top"><span class="num">' + pct(s.reach_pct) + '</span>'
+                + '<span class="num" style="color:var(--vpn-ink-3)">' + s.checks + ' checks</span></div>'
+                + '<div class="vpn-bar-track"><i class="vpn-bar-fill" style="width:' + (s.reach_pct || 0).toFixed(1) + '%"></i></div></div></td>'
+                + '<td class="is-right num" style="color:' + (s.flaps ? TONE[s.state] : 'var(--vpn-ink-3)') + '">' + s.flaps + '</td>'
+                + '<td><span class="num" style="font-size:0.7rem">' + dur(s.state_age_seconds) + '</span></td>'
+                + '<td><a class="vpn-open" href="/vpn-site/' + s.id + '">Open</a></td></tr>';
+        }).join('') : '<tr><td colspan="10" class="vpn-loading">No sites in this view.</td></tr>';
+
+        Array.prototype.forEach.call(document.querySelectorAll('#vpn-tbody tr[data-id]'), function (tr) {
+            tr.addEventListener('click', function () { select(+tr.dataset.id); });
+        });
+
+        document.getElementById('vpn-tfoot').innerHTML =
+            'Showing <b>' + rows.length + '</b> of ' + health.sites.length + ' monitored sites · worst first · '
+            + 'Degraded means the site replies but p95 is <b>' + health.thresholds.degraded_p95_ms + ' ms</b> or more, '
+            + 'jitter is <b>' + health.thresholds.degraded_jitter_ms + ' ms</b> or more, '
+            + 'packet loss is <b>' + health.thresholds.degraded_loss_pct + '%</b> or more, '
+            + 'or it dropped out during the window. All three thresholds are editable in Settings.';
+    }
+
+    function siteById(id) {
+        return health.sites.filter(function (s) { return s.id === id; })[0];
+    }
+
+    function select(id) {
+        selected = selected === id ? null : id;
+        Array.prototype.forEach.call(document.querySelectorAll('#vpn-tbody tr[data-id]'), function (tr) {
+            tr.classList.toggle('is-sel', +tr.dataset.id === selected);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.vpn-att button'), function (b) {
+            b.classList.toggle('is-sel', +b.dataset.id === selected);
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.vpn-toprow'), function (b) {
+            b.classList.toggle('is-sel', +b.dataset.id === selected);
+        });
+        markSelectedMarker();
+
+        // Picking a site anywhere on the page brings the map to it, so the two
+        // halves never disagree about which branch is being looked at.
+        if (selected !== null && markerById[selected] && leafletMap) {
+            var marker = markerById[selected];
+            leafletMap.panTo(marker.getLatLng(), { animate: true });
+            marker.openPopup();
+        }
+        var row = document.querySelector('#vpn-tbody tr[data-id="' + id + '"]');
+        if (selected && row) { row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    }
+
+    /* ---------- fleet latency ---------- */
+    // Chart.js with the settings the server dashboard uses, so a line on this
+    // page means the same thing as a line on that one.
+    var fleetChart = null;
+
+    function chartColors() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'light';
+        return {
+            text: theme === 'light' ? '#64748b' : 'rgba(255,255,255,0.65)',
+            grid: theme === 'light' ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)'
+        };
+    }
+    function timeUnitFor(minutes) {
+        return minutes <= 60 ? 'minute' : (minutes <= 1440 ? 'hour' : 'day');
+    }
+
+    var fleetThresholdPlugin = {
+        id: 'vpnFleetThreshold',
+        afterDatasetsDraw: function (chart) {
+            var config = chart.options && chart.options.plugins && chart.options.plugins.vpnThreshold;
+            var yScale = chart.scales && chart.scales.y;
+            var area = chart.chartArea;
+            if (!config || !isFinite(config.value) || !yScale || !area) { return; }
+            var y = yScale.getPixelForValue(config.value);
+            if (y < area.top || y > area.bottom) { return; }
+            var ctx = chart.ctx;
+            ctx.save();
+            ctx.strokeStyle = '#d13438';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(area.left, y);
+            ctx.lineTo(area.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#d13438';
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(config.label, area.right - 4, y - 5);
+            ctx.restore();
+        }
+    };
+
+    // Buckets are evenly spaced, so a bucket nobody checked - which carries no
+    // label of its own - still lands in the right place on the axis.
+    function fleetTimeGrid(count) {
+        var labels = latency.labels || [];
+        var stepMs = (hours * 3600 * 1000) / Math.max(1, count);
+        var anchorIndex = count - 1, anchor = null;
+        for (var i = labels.length - 1; i >= 0; i--) {
+            if (labels[i]) {
+                anchor = new Date(String(labels[i]).replace(' ', 'T'));
+                anchorIndex = i;
+                break;
+            }
+        }
+        if (!anchor || isNaN(anchor.getTime())) { anchor = new Date(); anchorIndex = count - 1; }
+        var grid = [];
+        for (var j = 0; j < count; j++) {
+            grid.push(new Date(anchor.getTime() - (anchorIndex - j) * stepMs));
+        }
+        return grid;
+    }
+
+    function renderChart() {
+        var box = document.getElementById('vpn-chartbox');
+        var empty = document.getElementById('vpn-chart-empty');
+        var count = (latency.labels || []).length;
+        var live = (latency.p95 || []).filter(function (v) { return v !== null && v !== undefined; });
+        if (!live.length) {
+            if (fleetChart) { fleetChart.destroy(); fleetChart = null; }
+            box.hidden = true;
+            empty.hidden = false;
+            empty.textContent = 'No replies recorded in this window.';
+            document.getElementById('vpn-chartfoot').textContent = '';
+            return;
+        }
+        box.hidden = false;
+        empty.hidden = true;
+
+        var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        var medianColour = dark ? '#4e9e7a' : '#2d6a4f';
+        var p95Colour = dark ? '#b98a00' : '#d98324';
+        var thr = latency.slow_threshold_ms;
+        var grid = fleetTimeGrid(count);
+        var colors = chartColors();
+
+        var point = function (series) {
+            return grid.map(function (x, i) {
+                var v = series[i];
+                return { x: x, y: (v === null || v === undefined) ? null : v };
+            });
+        };
+
+        var datasets = [
+            {
+                label: 'p95',
+                data: point(latency.p95 || []),
+                borderColor: p95Colour,
+                backgroundColor: dark ? 'rgba(185,138,0,0.14)' : 'rgba(217,131,36,0.14)',
+                borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+                tension: 0.18, spanGaps: false, fill: true
+            },
+            {
+                label: 'median',
+                data: point(latency.p50 || []),
+                borderColor: medianColour,
+                backgroundColor: 'transparent',
+                borderWidth: 2, pointRadius: 0, pointHoverRadius: 4,
+                tension: 0.18, spanGaps: false, fill: false
+            }
+        ];
+
+        var options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: timeUnitFor(hours * 60) },
+                    grid: { color: colors.grid },
+                    ticks: { color: colors.text, font: { size: 10 } }
+                },
+                y: {
+                    min: 0,
+                    suggestedMax: Math.ceil(Math.max(thr, Math.max.apply(null, live)) * 1.1),
+                    grid: { color: colors.grid },
+                    ticks: { color: colors.text, font: { size: 10 }, callback: function (v) { return v + ' ms'; } }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'bottom',
+                    labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 10 } }
+                },
+                vpnThreshold: { value: thr, label: 'Slow threshold ' + thr + ' ms' },
+                tooltip: {
+                    callbacks: {
+                        label: function (ctx) {
+                            return ctx.dataset.label + ': ' + Math.round(ctx.parsed.y) + ' ms';
+                        }
+                    }
+                }
+            }
+        };
+
+        if (fleetChart) {
+            fleetChart.data = { datasets: datasets };
+            fleetChart.options = options;
+            fleetChart.update('none');
+        } else {
+            fleetChart = new Chart(document.getElementById('vpn-fleet-chart').getContext('2d'), {
+                type: 'line',
+                data: { datasets: datasets },
+                options: options,
+                plugins: [fleetThresholdPlugin]
+            });
+        }
+
+        var lastP50 = null;
+        for (var k = (latency.p50 || []).length - 1; k >= 0; k--) {
+            if (latency.p50[k] !== null && latency.p50[k] !== undefined) { lastP50 = latency.p50[k]; break; }
+        }
+        document.getElementById('vpn-chartfoot').innerHTML =
+            'Median sits near <b>' + (lastP50 === null ? '-' : lastP50) + ' ms</b> while p95 runs between <b>'
+            + Math.min.apply(null, live) + ' ms</b> and <b>' + Math.max.apply(null, live) + ' ms</b> \u00b7 '
+            + 'a handful of sites, not the fleet. The ' + thr + ' ms threshold only catches the top of that swing.';
+    }
+
+    // Over a 7- or 30-day window the marks fall tens of hours apart, so the
+    // clock alone runs 16:50, 10:49, 22:49 - correctly ordered and reading
+    // exactly like time going backwards. The date settles it.
+    function axisLabel(raw) {
+        if (!raw) { return ''; }
+        var text = String(raw);
+        return hours <= 24 ? text.slice(11, 16) : text.slice(8, 10) + '/' + text.slice(5, 7) + ' ' + text.slice(11, 16);
+    }
+
+    function windowLabel() {
+        if (hours >= 24 && hours % 24 === 0) {
+            var d = hours / 24;
+            return d + (d === 1 ? ' day' : ' days');
+        }
+        return hours + ' hours';
+    }
+
+    /* ---------- load ---------- */
+    function load() {
+        var buckets = hours > 168 ? 120 : 96;
+        Promise.all([
+            fetch('/api/vpn-health?hours=' + hours).then(function (r) { return r.json(); }),
+            fetch('/api/vpn-health/status-timeline?hours=' + hours + '&buckets=' + buckets).then(function (r) { return r.json(); }),
+            fetch('/api/vpn-health/latency?hours=' + hours + '&buckets=' + buckets).then(function (r) { return r.json(); }),
+            fetch('/api/vpn-health/summary-trend?hours=' + Math.min(hours, 168)).then(function (r) { return r.json(); }),
+            fetch('/api/vpn-health/top-metrics?hours=' + hours + '&limit=5').then(function (r) { return r.json(); })
+        ]).then(function (res) {
+            health = res[0]; timeline = res[1]; latency = res[2]; trend = res[3]; topcards = res[4];
+            if (!health.success) { throw new Error('vpn-health request failed'); }
+            renderKpis();
+            renderTopCards();
+            renderMap();
+            renderAttention();
+            renderTimeline();
+            renderTable();
+            renderChart();
+        }).catch(function (err) {
+            console.error('VPN health load failed', err);
+            document.getElementById('vpn-att').innerHTML =
+                '<div class="vpn-loading">Could not load site data. Check the server log.</div>';
+        });
+    }
+
+    // How often to re-poll, by how much history is on screen. The 30-day view
+    // costs the database around 3.7 seconds of queries; asking for that every
+    // 30 seconds, from every open browser, buys nothing - a month of history
+    // does not visibly change between one minute and the next.
+    function refreshMs() {
+        if (hours <= 24) { return 30000; }
+        if (hours <= 168) { return 120000; }
+        return 300000;
+    }
+
+    function startRefresh() {
+        clearInterval(refreshTimer);
+        refreshTimer = setInterval(load, refreshMs());
+        var pill = document.querySelector('.vpn-live-pill');
+        if (pill) {
+            var every = refreshMs() / 1000;
+            pill.title = 'Refreshes every ' + (every >= 60 ? (every / 60) + ' minutes' : every + ' seconds');
+        }
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.vpn-range-btn'), function (b) {
+        b.addEventListener('click', function () {
+            hours = +b.dataset.hours;
+            Array.prototype.forEach.call(document.querySelectorAll('.vpn-range-btn'), function (o) {
+                o.classList.toggle('is-active', o === b);
+            });
+            load();
+            startRefresh();
+        });
+    });
+
+    window.addEventListener('themechange', function () {
+        if (latency) { renderChart(); }
+    });
+
+    load();
+    startRefresh();
+    window.addEventListener('beforeunload', function () { clearInterval(refreshTimer); });
+})();
+</script>
+{% endblock %}

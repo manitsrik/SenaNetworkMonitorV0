@@ -1735,6 +1735,21 @@ class Database:
             cursor.execute(f'DELETE FROM snmp_traps WHERE device_id = {ph}', (device_id,))
             cursor.execute(f'DELETE FROM syslog_messages WHERE device_id = {ph}', (device_id,))
             
+            # Incidents and anomalies are records of something that
+            # happened. They outlive the device they point at, and both
+            # tables already keep its name beside the id, so the link is
+            # cleared rather than the history thrown away -- which is why
+            # both columns are nullable. Leaving them out was enough to
+            # make any device that had ever been a root cause impossible
+            # to delete: the foreign key refused, and the failure surfaced
+            # only as "Error deleting device" in the browser.
+            cursor.execute(
+                f'UPDATE persistent_incidents SET root_cause_device_id = NULL '
+                f'WHERE root_cause_device_id = {ph}', (device_id,))
+            cursor.execute(
+                f'UPDATE anomaly_snapshots SET device_id = NULL '
+                f'WHERE device_id = {ph}', (device_id,))
+            
             # 2. Finally delete the device itself
             # Note: custom_oids and bandwidth_history have ON DELETE CASCADE, 
             # so they will be handled automatically by the DB.

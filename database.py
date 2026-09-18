@@ -378,6 +378,11 @@ class Database:
             ('security_checks_json', 'TEXT'),
             ('security_checked_at', 'TIMESTAMP'),
             ('security_error', 'TEXT'),
+            # How far the event collection has read. Everything after this
+            # timestamp is new; without it each poll would re-collect and
+            # re-report the same sign-ins.
+            ('security_events_watermark', 'TIMESTAMP'),
+            ('security_events_collected_at', 'TIMESTAMP'),
             # SNMP metric collection runs alongside the device's own monitor_type,
             # so a branch router can stay on ping for up/down while SNMP supplies
             # interface counters. Without this the two were mutually exclusive.
@@ -981,6 +986,37 @@ class Database:
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         ''')
+
+        # Security events (Tier 2). One row per event type per collection, not
+        # per event: a host under a brute-force attack produces one "failed
+        # sign-in x 4,812" finding rather than 4,812 rows, which is both what
+        # an operator wants to read and what keeps a burst from becoming an
+        # outage of its own.
+        #
+        # CASCADE because these events describe the device: once it is gone
+        # there is nothing for them to be about. That differs from incidents,
+        # which are kept and unlinked, because an incident can span hosts.
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS security_events (
+                id           {pk},
+                device_id    INTEGER NOT NULL,
+                event_key    TEXT NOT NULL,
+                severity     TEXT NOT NULL,
+                event_count  INTEGER DEFAULT 1,
+                first_seen   TIMESTAMP,
+                last_seen    TIMESTAMP,
+                accounts     TEXT,
+                sources      TEXT,
+                detail       TEXT,
+                truncated    {bool_type} DEFAULT {bool_default_false},
+                collected_at TIMESTAMP DEFAULT {timestamp_default},
+                FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_se_device_seen '
+                       'ON security_events(device_id, last_seen)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_se_collected '
+                       'ON security_events(collected_at)')
 
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS resource_alert_states (
@@ -2119,6 +2155,97 @@ class Database:
             self._safe_rollback(conn)
             print(f"[DB ERROR] update_security_posture: {e}")
             return False
+        finally:
+            self.release_connection(conn)
+
+    def record_security_events(self, device_id, events, watermark=None):
+        """Store one collection's events and move the device's watermark.
+
+        Both in one transaction: a watermark moved without its events would
+        skip them forever, since the next collection starts after it.
+        """
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            collected_at = datetime.now().isoformat()
+            for event in (events or []):
+                cursor.execute(f'''
+                    INSERT INTO security_events
+                        (device_id, event_key, severity, event_count, first_seen,
+                         last_seen, accounts, sources, detail, truncated, collected_at)
+                    VALUES ({self._ph(11)})
+                ''', (
+                    device_id,
+                    event.get('event_key'),
+                    event.get('severity') or 'info',
+                    int(event.get('count') or 1),
+                    event.get('first_seen'),
+                    event.get('last_seen'),
+                    (event.get('accounts') or None),
+                    (event.get('sources') or None),
+                    (str(event.get('detail'))[:1000] if event.get('detail') else None),
+                    bool(event.get('truncated')),
+                    collected_at,
+                ))
+            cursor.execute(f'''
+                UPDATE devices
+                SET security_events_watermark = COALESCE({ph}, security_events_watermark),
+                    security_events_collected_at = {ph}
+                WHERE id = {ph}
+            ''', (watermark, collected_at, device_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            self._safe_rollback(conn)
+            print(f"[DB ERROR] record_security_events: {e}")
+            return False
+        finally:
+            self.release_connection(conn)
+
+    def get_security_events(self, device_id, hours=24, limit=100):
+        """Recent security events for one device, newest first."""
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cutoff = (datetime.now() - timedelta(hours=max(1, int(hours)))).isoformat()
+            cursor.execute(f'''
+                SELECT event_key, severity, event_count, first_seen, last_seen,
+                       accounts, sources, detail, truncated, collected_at
+                FROM security_events
+                WHERE device_id = {ph} AND collected_at >= {ph}
+                ORDER BY last_seen DESC, id DESC
+                LIMIT {ph}
+            ''', (device_id, cutoff, max(1, int(limit))))
+            return self._rows_to_dicts(cursor.fetchall())
+        except Exception as e:
+            print(f"[DB ERROR] get_security_events: {e}")
+            return []
+        finally:
+            self.release_connection(conn)
+
+    def prune_security_events(self, retention_days):
+        """Drop events past their retention.
+
+        Kept apart from the status history retention on purpose: this is the
+        only copy of authentication history that outlives the host's own log,
+        which here is circular and holds two to three days.
+        """
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            cutoff = (datetime.now() - timedelta(days=max(1, int(retention_days)))).isoformat()
+            cursor.execute(
+                f'DELETE FROM security_events WHERE collected_at < {ph}', (cutoff,))
+            removed = cursor.rowcount
+            conn.commit()
+            return removed
+        except Exception as e:
+            self._safe_rollback(conn)
+            print(f"[DB ERROR] prune_security_events: {e}")
+            return 0
         finally:
             self.release_connection(conn)
 
@@ -5304,7 +5431,18 @@ class Database:
 
             cursor.execute(f'DELETE FROM internet_check_history WHERE checked_at < {ph}', (cutoff_date,))
             deleted_internet = cursor.rowcount
-            
+
+            # Security events keep their own, longer retention. The global one
+            # is 30 days, and the host's own Security log here is circular and
+            # holds two to three -- so after 30 days this row would be the only
+            # remaining record of a sign-in, and then it would be gone too.
+            events_cutoff = (
+                datetime.now() - timedelta(days=Config.SECURITY_EVENTS_RETENTION_DAYS)
+            ).isoformat()
+            cursor.execute(
+                f'DELETE FROM security_events WHERE collected_at < {ph}', (events_cutoff,))
+            deleted_events = cursor.rowcount
+
             conn.commit()
             
             # PostgreSQL: VACUUM ANALYZE for space reclaim and stats update
@@ -5321,7 +5459,9 @@ class Database:
                 f"{deleted_alerts} old alerts, {deleted_bw} old bandwidth samples, "
                 f"{deleted_metrics} old system metric samples, "
                 f"{deleted_internet} old Internet check samples "
-                f"(retention: {Config.RETENTION_DAYS} days)"
+                f"(retention: {Config.RETENTION_DAYS} days), "
+                f"{deleted_events} old security events "
+                f"(retention: {Config.SECURITY_EVENTS_RETENTION_DAYS} days)"
             )
             
         except Exception as e:

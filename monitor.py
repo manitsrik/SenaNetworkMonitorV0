@@ -4,7 +4,7 @@ Handles ping, HTTP, and SNMP monitoring with status updates
 """
 from pythonping import ping
 import async_runtime
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 # from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import Config
 import time
@@ -1266,6 +1266,25 @@ esac
                 key, labels.get(key, key), state, detail))
         return checks
 
+    @staticmethod
+    def _service_tokens(name):
+        """The names a Windows service can reasonably be matched on.
+
+        Kaspersky registers itself as AVP on one host and AVP.KES.21.19 on
+        another, so the version suffix has to be tolerated -- but matching
+        on a substring instead is what caused the bug this replaces:
+        'avp' is inside 'avpsus', so the updater answered for the engine.
+        """
+        name = str(name or '').strip().lower()
+        return {name, name.split('.')[0]} - {''}
+
+    @classmethod
+    def _match_services(cls, running, pattern):
+        needles = {part.strip().lower()
+                   for part in re.split(r'[|,]', pattern or '') if part.strip()}
+        return sorted({name for name in running
+                       if cls._service_tokens(name) & needles}), len(needles)
+
     def _antivirus_from_services(self, running_names):
         """Decide the antivirus checks from the host's running services.
 
@@ -1274,40 +1293,57 @@ esac
         feature -- so on a server neither direct question can be asked.
         What is left is the product's own service.
 
+        An engine and its updater are told apart deliberately. A host was
+        reported as protected while its antivirus was switched off, because
+        Kaspersky's avpsus updater was still running and the match was a
+        substring: 'avp' inside 'avpsus'. The host was compromised.
+        An updater running on its own now fails, and says why.
+
         The matching happens here rather than inside the PowerShell so
         the script stays a fixed size whatever a site adds to the list.
-        An earlier version pasted the pattern into the script and grew
-        back towards the command-line limit that had already broken the
-        whole sweep once.
         """
-        wanted = [part.strip().lower()
-                  for part in re.split(r'[|,]', Config.SECURITY_ANTIVIRUS_SERVICES or '')
-                  if part.strip()]
         running = [name.strip() for name in (running_names or '').split(',') if name.strip()]
-        hits = sorted({name for name in running
-                       if any(needle in name.lower() for needle in wanted)})
-        signature = self._security_check(
-            'av_signature', self.WINDOWS_SECURITY_LABELS['av_signature'], 'unknown',
-            'This product does not report a signature age to the monitor'
-            if hits else 'No antivirus product was found to report a signature age')
-        if hits:
-            shown = ', '.join(hits[:4]) + ('...' if len(hits) > 4 else '')
+        engines, engine_count = self._match_services(
+            running, Config.SECURITY_ANTIVIRUS_SERVICES)
+        helpers, _ = self._match_services(
+            running, Config.SECURITY_ANTIVIRUS_HELPER_SERVICES)
+
+        def signature(detail):
+            return self._security_check(
+                'av_signature', self.WINDOWS_SECURITY_LABELS['av_signature'],
+                'unknown', detail)
+
+        def realtime(state, detail):
+            return self._security_check(
+                'av_realtime', self.WINDOWS_SECURITY_LABELS['av_realtime'], state, detail)
+
+        if engines:
+            shown = ', '.join(engines[:4]) + ('...' if len(engines) > 4 else '')
             return [
-                self._security_check(
-                    'av_realtime', self.WINDOWS_SECURITY_LABELS['av_realtime'], 'pass',
-                    '%s is running' % shown),
-                signature,
+                realtime('pass', '%s is running' % shown),
+                signature('This product does not report a signature age to the monitor'),
             ]
-        # Saying which names were looked for is what makes a wrong
-        # answer here self-correcting: a site whose product runs under
-        # another name can see that and add it to the setting.
+        if helpers:
+            # The most useful thing this check ever says: something is
+            # installed, and the part that protects the host is not running.
+            return [
+                realtime('fail',
+                         'Antivirus is installed but not running: %s is up, and none of '
+                         'the %d scanning services is. Only the updater or management '
+                         'agent is alive, so nothing is protecting this host'
+                         % (', '.join(helpers[:4]), engine_count)),
+                signature('The scanning service is not running, so no signature age '
+                          'is reported'),
+            ]
+        # Saying which names were looked for is what makes a wrong answer
+        # here self-correcting: a site whose product runs under another
+        # name can see that and add it to the setting.
         return [
-            self._security_check(
-                'av_realtime', self.WINDOWS_SECURITY_LABELS['av_realtime'], 'fail',
-                'No antivirus found: no Defender, no Security Center entry, and none of '
-                'the %d known antivirus service names is running among %d running services'
-                % (len(wanted), len(running))),
-            signature,
+            realtime('fail',
+                     'No antivirus found: no Defender, no Security Center entry, and none '
+                     'of the %d known antivirus service names is running among %d running '
+                     'services' % (engine_count, len(running))),
+            signature('No antivirus product was found to report a signature age'),
         ]
 
     def _check_winrm_security(self, session, pending_reboot=None):
@@ -1366,8 +1402,371 @@ esac
                 'The check could not run: %s' % e))
             return self._score_security_checks(checks, error=str(e))
 
+    # ------------------------------------------------------------------
+    # Security events (Tier 2)
+    #
+    # Authentication and account activity, read from the Security event log
+    # on Windows and the journal on Linux. Measured before it was built: a
+    # time-bounded Get-WinEvent -FilterHashtable answers in well under a
+    # second even on an 80 MB, 153,000-record log, because the filter is
+    # pushed down into the event log service rather than pulling records into
+    # PowerShell to be sorted through there. Never write the second shape.
+    #
+    # Collection rides on the session the ordinary poll has already opened.
+    # The expensive part of a WinRM check is the session -- each one starts a
+    # wsmprovhost process holding 77-98 MB on the monitored host -- so opening
+    # a second one on its own timer would cost far more than the query does.
+    #
+    # The scripts return raw lines and the grouping happens here, for the same
+    # reason the antivirus service matching does: it keeps the scripts short
+    # and a fixed size, and it is the part worth testing.
+    # ------------------------------------------------------------------
+
+    SECURITY_EVENT_SEVERITY = {
+        'log_cleared': 'critical',
+        'user_created': 'critical',
+        'user_deleted': 'critical',
+        'account_lockout': 'warning',
+        'service_installed': 'warning',
+        'failed_logon': 'warning',
+        'sudo_failed': 'warning',
+        'login_success': 'info',
+    }
+
+    SECURITY_EVENT_LABELS = {
+        'log_cleared': 'Security log cleared',
+        'user_created': 'Account created',
+        'user_deleted': 'Account deleted',
+        'account_lockout': 'Account locked out',
+        'service_installed': 'Service installed',
+        'failed_logon': 'Failed sign-in',
+        'sudo_failed': 'sudo authentication failure',
+        'login_success': 'Successful sign-in',
+    }
+
+    WINDOWS_EVENTS_SCRIPT = r"""
+$since = [datetime]::ParseExact('__SINCE__','yyyy-MM-ddTHH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)
+$cap = __CAP__
+$out = New-Object System.Collections.ArrayList
+function Val($p, $i) { if ($p -and $p.Count -gt $i -and $p[$i].Value -ne $null) { ([string]$p[$i].Value) -replace '\|','/' } else { '' } }
+function Emit($k, $t, $a, $s) { [void]$out.Add("evt|$k|$($t.ToString('s'))|$a|$s") }
+
+try {
+  $ev = @(Get-WinEvent -FilterHashtable @{LogName='Security'; Id=@(4625,4740,4720,4726,1102); StartTime=$since} -MaxEvents $cap -ErrorAction Stop)
+} catch { $ev = @() }
+foreach ($e in $ev) {
+  $p = $e.Properties
+  switch ($e.Id) {
+    4625 { Emit 'failed_logon' $e.TimeCreated (Val $p 5) (Val $p 19) }
+    4740 { Emit 'account_lockout' $e.TimeCreated (Val $p 0) (Val $p 1) }
+    4720 { Emit 'user_created' $e.TimeCreated (Val $p 0) (Val $p 4) }
+    4726 { Emit 'user_deleted' $e.TimeCreated (Val $p 0) (Val $p 4) }
+    1102 { Emit 'log_cleared' $e.TimeCreated '' '' }
+  }
+}
+if ($ev.Count -ge $cap) { [void]$out.Add('trunc|1') }
+
+# 4624 is the highest-volume event on the log, so the selecting happens
+# here rather than sending every service and machine-account logon over
+# the wire to be thrown away. Type 3 is a network sign-in -- the kind an
+# attacker makes -- and one without a real source address, or by a
+# machine account, or by ANONYMOUS LOGON, is not somebody signing in.
+try {
+  $ok = @(Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4624; StartTime=$since} -MaxEvents $cap -ErrorAction Stop)
+} catch { $ok = @() }
+foreach ($e in $ok) {
+  $p = $e.Properties
+  $user = Val $p 5
+  $type = Val $p 8
+  $src = Val $p 18
+  if ($type -ne '3') { continue }
+  if (-not $src -or $src -eq '-' -or $src -eq '::1' -or $src -eq '127.0.0.1') { continue }
+  if ($user -eq 'ANONYMOUS LOGON' -or $user.EndsWith('$')) { continue }
+  Emit 'login_success' $e.TimeCreated $user $src
+}
+
+try {
+  $sv = @(Get-WinEvent -FilterHashtable @{LogName='System'; Id=7045; StartTime=$since} -MaxEvents 50 -ErrorAction Stop)
+} catch { $sv = @() }
+foreach ($e in $sv) { Emit 'service_installed' $e.TimeCreated (Val $e.Properties 0) (Val $e.Properties 4) }
+
+$out -join "`n"
+"""
+
+    # short-iso puts a full timestamp on every line; the default format omits
+    # the year, which turns every new year into a parsing bug.
+    LINUX_EVENTS_SCRIPT = r"""
+SINCE="__SINCE__"
+if journalctl --since "$SINCE" -o short-iso -t sshd -t sudo --no-pager >/dev/null 2>&1; then
+  journalctl --since "$SINCE" -o short-iso -t sshd -t sudo --no-pager 2>/dev/null \
+    | grep -E 'Failed password|Accepted (password|publickey)|authentication failure' \
+    | head -n __CAP__
+else
+  echo "unreadable|the journal could not be read by this account"
+fi
+"""
+
+    def _security_events_due(self, device):
+        """True when this device is due for an event collection."""
+        if not Config.SECURITY_EVENTS_ENABLED:
+            return False
+        last = self._parse_metric_timestamp(device.get('security_events_collected_at'))
+        if last is None:
+            return True
+        elapsed = (datetime.now() - last).total_seconds()
+        return elapsed >= Config.SECURITY_EVENTS_INTERVAL_MINUTES * 60
+
+    def _security_events_since(self, device):
+        """Where to start reading.
+
+        Bounded by a maximum lookback because the Windows Security log here is
+        circular and holds two to three days: after a longer outage there is
+        nothing further back to read, and asking for it only makes the query
+        scan for records that no longer exist.
+        """
+        floor = datetime.now() - timedelta(hours=Config.SECURITY_EVENTS_MAX_LOOKBACK_HOURS)
+        watermark = self._parse_metric_timestamp(device.get('security_events_watermark'))
+        if watermark is None or watermark < floor:
+            return floor
+        return watermark
+
+    _own_addresses_cache = None
+
+    @classmethod
+    def _own_addresses(cls):
+        """Every address this monitor might appear to sign in from."""
+        if cls._own_addresses_cache is None:
+            found = {'127.0.0.1', '::1'}
+            try:
+                hostname = socket.gethostname()
+                for info in socket.getaddrinfo(hostname, None):
+                    found.add(str(info[4][0]))
+            except Exception:
+                pass
+            for extra in (Config.SECURITY_EVENTS_IGNORE_SOURCES or []):
+                if str(extra).strip():
+                    found.add(str(extra).strip())
+            cls._own_addresses_cache = found
+        return cls._own_addresses_cache
+
+    @classmethod
+    def _drop_monitor_own_logins(cls, events, account):
+        """The monitor signs in every few minutes; that is not news.
+
+        Left in, these are the bulk of what gets recorded on every host --
+        measured at 47 successful network sign-ins per fifteen minutes on
+        a Windows host, all of them this monitor -- and they bury the
+        sign-ins somebody would actually want to see.
+
+        Both the account and the address have to match. Matching on the
+        name alone was a hole: the monitor signs in to some hosts as
+        Administrator, so an intruder using that same name from their own
+        machine would have been filtered away as routine. An address the
+        monitor cannot recognise as its own keeps the event, which is the
+        right way round to be wrong.
+
+        Only successes are dropped: the monitor *failing* to sign in is
+        worth knowing about.
+        """
+        if not account:
+            return events
+        needle = str(account).strip().lower()
+        own = cls._own_addresses()
+        return [event for event in events
+                if not (event.get('event_key') == 'login_success'
+                        and str(event.get('account') or '').strip().lower() == needle
+                        and str(event.get('source') or '').strip() in own)]
+
+    @staticmethod
+    def _windows_event_lines(text):
+        return [line.strip() for line in (text or '').splitlines() if line.strip()]
+
+    def _parse_windows_events(self, text):
+        """Read "evt|key|time|account|source" lines into event dicts."""
+        events, truncated = [], False
+        for line in self._windows_event_lines(text):
+            parts = line.split('|')
+            if parts[0] == 'trunc':
+                truncated = True
+                continue
+            if parts[0] != 'evt' or len(parts) < 3:
+                continue
+            events.append({
+                'event_key': parts[1],
+                'occurred_at': parts[2],
+                'account': parts[3] if len(parts) > 3 else '',
+                'source': parts[4] if len(parts) > 4 else '',
+            })
+        return events, truncated
+
+    LINUX_EVENT_PATTERNS = (
+        ('failed_logon', re.compile(
+            r'Failed password for (?:invalid user )?(?P<account>\S+) from (?P<source>\S+)')),
+        ('login_success', re.compile(
+            r'Accepted (?:password|publickey) for (?P<account>\S+) from (?P<source>\S+)')),
+        # sudo reports a bad password two ways and neither puts the account
+        # first: pam writes "authentication failure; ... user=bob" and sudo
+        # itself writes "bob : 2 incorrect password attempts". Matching the
+        # leading word instead would have recorded "pam_unix(sudo:auth)" as
+        # the account on every one.
+        ('sudo_failed', re.compile(
+            r'authentication failure;.*?\buser=(?P<account>\S+)')),
+        ('sudo_failed', re.compile(
+            r'^(?P<account>\S+)\s+:\s+\d+\s+incorrect password attempt')),
+    )
+
+    LINUX_EVENT_LINE = re.compile(
+        r'^(?P<ts>\S+)\s+\S+\s+(?P<prog>[\w\-]+)(?:\[\d+\])?:\s+(?P<msg>.*)$')
+
+    def _parse_linux_events(self, text, cap):
+        """Read journal lines into event dicts.
+
+        Parsing here rather than in the shell keeps the remote script to one
+        pipeline, and makes the awkward part -- sshd's several phrasings for a
+        failure -- something that can be tested without a host.
+        """
+        lines = [line for line in (text or '').splitlines() if line.strip()]
+        if lines and lines[0].startswith('unreadable|'):
+            return [], False, lines[0].split('|', 1)[1]
+        events = []
+        for line in lines:
+            match = self.LINUX_EVENT_LINE.match(line.strip())
+            if not match:
+                continue
+            message = match.group('msg')
+            for key, pattern in self.LINUX_EVENT_PATTERNS:
+                found = pattern.search(message)
+                if not found:
+                    continue
+                if key == 'sudo_failed' and match.group('prog') != 'sudo':
+                    continue
+                groups = found.groupdict()
+                events.append({
+                    'event_key': key,
+                    'occurred_at': match.group('ts'),
+                    'account': groups.get('account') or '',
+                    'source': groups.get('source') or '',
+                })
+                break
+        return events, len(lines) >= cap, None
+
+    @classmethod
+    def _aggregate_security_events(cls, events, truncated=False):
+        """One row per event type, not per event.
+
+        A host under a brute-force attack produces one "failed sign-in x 4,812"
+        finding rather than 4,812 rows. That is what an operator wants to read,
+        and it is what stops the burst becoming a second outage in the
+        database and the alert channel.
+        """
+        grouped = {}
+        for event in (events or []):
+            key = event.get('event_key')
+            if not key:
+                continue
+            bucket = grouped.setdefault(key, {
+                'event_key': key,
+                'severity': cls.SECURITY_EVENT_SEVERITY.get(key, 'info'),
+                'count': 0,
+                'first_seen': None,
+                'last_seen': None,
+                'accounts': [],
+                'sources': [],
+                'truncated': truncated,
+            })
+            bucket['count'] += 1
+            when = event.get('occurred_at')
+            if when:
+                if bucket['first_seen'] is None or when < bucket['first_seen']:
+                    bucket['first_seen'] = when
+                if bucket['last_seen'] is None or when > bucket['last_seen']:
+                    bucket['last_seen'] = when
+            for field, value in (('accounts', event.get('account')),
+                                 ('sources', event.get('source'))):
+                value = (value or '').strip()
+                # Five is enough to recognise a pattern; a brute force sweeping
+                # thousands of usernames should not write thousands into a cell.
+                if value and value not in bucket[field] and len(bucket[field]) < 5:
+                    bucket[field].append(value)
+
+        rows = []
+        for bucket in grouped.values():
+            bucket['accounts'] = ', '.join(bucket['accounts']) or None
+            bucket['sources'] = ', '.join(bucket['sources']) or None
+            bucket['detail'] = cls.SECURITY_EVENT_LABELS.get(
+                bucket['event_key'], bucket['event_key'])
+            rows.append(bucket)
+        return sorted(rows, key=lambda row: row['event_key'])
+
+    def _collect_winrm_security_events(self, session, since, own_account=None):
+        # Captured before the query runs, and it becomes the next
+        # watermark: anything written while the query was in flight is
+        # then picked up next time instead of falling into a gap.
+        queried_at = datetime.now()
+        script = (self.WINDOWS_EVENTS_SCRIPT
+                  .replace('__SINCE__', since.strftime('%Y-%m-%dT%H:%M:%S'))
+                  .replace('__CAP__', str(Config.SECURITY_EVENTS_MAX_PER_POLL)))
+        try:
+            response = session.run_ps(script)
+            if response.status_code != 0:
+                stderr = response.std_err.decode('utf-8', errors='replace').strip()
+                return {'events': [], 'error': stderr or 'The event query failed',
+                        'queried_at': queried_at}
+            events, truncated = self._parse_windows_events(
+                response.std_out.decode('utf-8-sig', errors='replace'))
+            events = self._drop_monitor_own_logins(events, own_account)
+            return {'events': self._aggregate_security_events(events, truncated),
+                    'error': None, 'queried_at': queried_at}
+        except Exception as e:
+            return {'events': [], 'error': str(e), 'queried_at': queried_at}
+
+    def _collect_ssh_security_events(self, client, since, own_account=None):
+        queried_at = datetime.now()
+        cap = Config.SECURITY_EVENTS_MAX_PER_POLL
+        script = (self.LINUX_EVENTS_SCRIPT
+                  .replace('__SINCE__', since.strftime('%Y-%m-%d %H:%M:%S'))
+                  .replace('__CAP__', str(cap)))
+        try:
+            _, stdout, stderr = client.exec_command(script)
+            output = stdout.read().decode('utf-8', errors='replace')
+            events, truncated, unreadable = self._parse_linux_events(output, cap)
+            events = self._drop_monitor_own_logins(events, own_account)
+            if unreadable:
+                return {'events': [], 'error': unreadable, 'queried_at': queried_at}
+            return {'events': self._aggregate_security_events(events, truncated),
+                    'error': None, 'queried_at': queried_at}
+        except Exception as e:
+            return {'events': [], 'error': str(e), 'queried_at': queried_at}
+
+    def _alert_on_security_events(self, device, rows):
+        """Alert on what is worth waking somebody for, once per finding.
+
+        Because a burst is already one aggregated row, a host under
+        attack produces one alert rather than one per attempt -- the
+        alert channel is not a second thing for it to knock over.
+        """
+        if not self.alerter:
+            return
+        for row in (rows or []):
+            key = row.get('event_key')
+            count = int(row.get('count') or 0)
+            label = self.SECURITY_EVENT_LABELS.get(key, key)
+            if row.get('severity') == 'critical':
+                message = '%s on this host (%d in the last window).' % (label, count)
+            elif key == 'failed_logon' and count >= Config.SECURITY_EVENTS_FAILED_LOGIN_ALERT:
+                message = '%d failed sign-ins in one collection window.' % count
+            else:
+                continue
+            for field, caption in (('accounts', 'Accounts'), ('sources', 'From')):
+                if row.get(field):
+                    message += '\n%s: %s' % (caption, row[field])
+            if row.get('truncated'):
+                message += '\nThe collection hit its cap, so the real total is higher.'
+            self.alerter.trigger_alert(device, 'security_event_%s' % key, message)
+
     def check_ssh(self, ip_address, username, password, port=22, monitored_services=None,
-                  slow_threshold_ms=None, collect_security=False):
+                  slow_threshold_ms=None, collect_security=False,
+                  collect_events=False, events_since=None):
         """
         Check a Linux device via SSH and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -1384,7 +1783,8 @@ esac
                 'net_in': None, 'net_out': None, 'uptime_seconds': None,
                 'uptime_text': None, 'last_boot_time': None,
                 'disk_details': [], 'service_status': [], 'service_summary': None,
-                'security': None, 'security_elapsed_ms': 0.0
+                'security': None, 'security_elapsed_ms': 0.0,
+                'security_events': None
             }
 
         result = _blank_result()
@@ -1537,6 +1937,12 @@ esac
                     result['security'] = self._check_ssh_security(
                         client, result.get('pending_reboot'))
                     result['security_elapsed_ms'] = (time.monotonic() - security_started) * 1000
+
+                if collect_events and events_since is not None:
+                    events_started = time.monotonic()
+                    result['security_events'] = self._collect_ssh_security_events(
+                        client, events_since, own_account=username)
+                    result['security_elapsed_ms'] += (time.monotonic() - events_started) * 1000
                 
                 return True
             except Exception as e:
@@ -1552,7 +1958,7 @@ esac
                     pass
 
         device_timeout = Config.SSH_DEVICE_TIMEOUT + (
-            Config.SECURITY_CHECK_EXTRA_SECONDS if collect_security else 0)
+            Config.SECURITY_CHECK_EXTRA_SECONDS if (collect_security or collect_events) else 0)
         timer = async_runtime.Timeout(device_timeout)
         try:
             # Paramiko is imported after Eventlet monkey-patching in production,
@@ -1597,7 +2003,8 @@ esac
                     'disk_details': result['disk_details'],
                     'service_status': result['service_status'],
                     'service_summary': result['service_summary'],
-                    'security': result['security']
+                    'security': result['security'],
+                    'security_events': result['security_events']
                 }
             else:
                 return {'status': 'down', 'response_time': None, 'error': last_error or 'SSH connection failed'}
@@ -1841,7 +2248,8 @@ esac
             return result
 
     def check_winrm(self, ip_address, username, password, monitored_services=None,
-                    slow_threshold_ms=None, monitor_type='winrm', collect_security=False):
+                    slow_threshold_ms=None, monitor_type='winrm', collect_security=False,
+                    collect_events=False, events_since=None):
         """
         Check a Windows device via WinRM and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -1857,7 +2265,8 @@ esac
             'net_in': None, 'net_out': None, 'uptime_seconds': None,
             'uptime_text': None, 'last_boot_time': None,
             'disk_details': [], 'service_status': [], 'service_summary': None,
-            'internet': None, 'security': None, 'security_elapsed_ms': 0.0
+            'internet': None, 'security': None, 'security_elapsed_ms': 0.0,
+            'security_events': None
         }
         
         def _winrm_task():
@@ -2059,6 +2468,15 @@ esac
                     security_elapsed = time.monotonic() - security_started
                     result['security_elapsed_ms'] = security_elapsed * 1000
                     print(f"[WinRM] Security sweep on {ip_address}: {security_elapsed:.1f}s")
+
+                if collect_events and events_since is not None:
+                    events_started = time.monotonic()
+                    result['security_events'] = self._collect_winrm_security_events(
+                        session, events_since, own_account=username)
+                    events_elapsed = time.monotonic() - events_started
+                    result['security_elapsed_ms'] += events_elapsed * 1000
+                    if events_elapsed >= Config.WINRM_SLOW_COMMAND_SECONDS:
+                        print(f"[WinRM] Slow event query on {ip_address}: {events_elapsed:.1f}s")
                 
                 return True
             except Exception as e:
@@ -2066,7 +2484,7 @@ esac
                 return False
 
         device_timeout = Config.WINRM_DEVICE_TIMEOUT + (
-            Config.SECURITY_CHECK_EXTRA_SECONDS if collect_security else 0)
+            Config.SECURITY_CHECK_EXTRA_SECONDS if (collect_security or collect_events) else 0)
         timer = async_runtime.Timeout(device_timeout)
         try:
             success = async_runtime.tpool_execute(_winrm_task)
@@ -2101,7 +2519,8 @@ esac
                     'service_status': result['service_status'],
                     'service_summary': result['service_summary'],
                     'internet': result['internet'],
-                    'security': result['security']
+                    'security': result['security'],
+                    'security_events': result['security_events']
                 }
             else:
                 return {'status': 'down', 'response_time': None}
@@ -2299,7 +2718,9 @@ esac
                 device.get('ssh_port', 22),
                 device.get('monitored_services'),
                 device.get('slow_threshold_ms'),
-                collect_security=force_security or self._security_check_due(device)
+                collect_security=force_security or self._security_check_due(device),
+                collect_events=self._security_events_due(device),
+                events_since=self._security_events_since(device)
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -2320,7 +2741,9 @@ esac
                 device.get('monitored_services'),
                 device.get('slow_threshold_ms'),
                 monitor_type,
-                collect_security=force_security or self._security_check_due(device)
+                collect_security=force_security or self._security_check_due(device),
+                collect_events=self._security_events_due(device),
+                events_since=self._security_events_since(device)
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -2493,6 +2916,15 @@ esac
                                 'security_recovery',
                                 f"Security checks are passing again (score {security.get('score')})."
                             )
+                    events = result.get('security_events')
+                    if isinstance(events, dict) and not events.get('error'):
+                        rows = events.get('events') or []
+                        queried_at = events.get('queried_at') or datetime.now()
+                        self.db.record_security_events(
+                            device['id'], rows, watermark=queried_at.isoformat())
+                        self._alert_on_security_events(device, rows)
+                    elif isinstance(events, dict) and events.get('error'):
+                        print(f"[EVENTS] {device['name']}: {events['error']}")
                     self._check_resource_threshold_alerts(device, result)
                     if (
                         self.alerter

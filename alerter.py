@@ -376,6 +376,10 @@ This is an automated message from Network Monitor.
             return
         if event_type in ('security_risk', 'security_recovery') and not alert_on_security:
             return
+        # Each finding keeps its own cooldown key, so a cleared log does
+        # not silence a brute force that starts an hour later.
+        if event_type.startswith('security_event_') and not alert_on_security:
+            return
         
         # Format message with device info
         full_message = f"Device: {device_name}\nIP: {device.get('ip_address', 'N/A')}\n\n{message}"
@@ -402,6 +406,8 @@ This is an automated message from Network Monitor.
             subject = f"⚠️ SSL Expiring: {device_name}"
         elif event_type == 'security_risk':
             subject = f"🛡️ Security check FAILED: {device_name}"
+        elif event_type.startswith('security_event_'):
+            subject = f"\U0001f6e1\ufe0f Security event: {device_name}"
         elif event_type == 'security_recovery':
             subject = f"🛡️ Security checks passing: {device_name}"
         else:

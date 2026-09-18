@@ -349,11 +349,22 @@ def test_no_antivirus_service_at_all_is_a_finding_not_a_shrug():
 
 
 def test_the_antivirus_names_come_from_config(monkeypatch):
+    # The setting names services as Windows registers them, with the version
+    # suffix optional. It is deliberately not a substring match any more:
+    # that is what let 'avp' answer for 'avpsus'.
     monkeypatch.setattr(Config, 'SECURITY_ANTIVIRUS_SERVICES', 'HouseBrandShield')
 
     checks = NetworkMonitor._antivirus_from_services(
-        _monitor(), 'Spooler,HouseBrandShieldSvc')
+        _monitor(), 'Spooler,HouseBrandShield')
     assert checks[0]['state'] == 'pass'
+
+    checks = NetworkMonitor._antivirus_from_services(
+        _monitor(), 'Spooler,HouseBrandShield.2026.1')
+    assert checks[0]['state'] == 'pass', 'a version suffix is still the same product'
+
+    checks = NetworkMonitor._antivirus_from_services(
+        _monitor(), 'Spooler,HouseBrandShieldUpdater')
+    assert checks[0]['state'] == 'fail', 'a different service is a different service'
 
     checks = NetworkMonitor._antivirus_from_services(_monitor(), 'Spooler,WinDefend')
     assert checks[0]['state'] == 'fail'
@@ -457,3 +468,64 @@ def test_both_collectors_honour_the_force_flag():
     # Windows and Linux both, or the button would work on half the estate.
     assert source.count(
         'collect_security=force_security or self._security_check_due(device)') == 2
+
+
+# --- telling an antivirus engine from its updater -------------------------
+
+def test_an_updater_running_alone_is_a_failure_not_a_pass():
+    # Found on a compromised host: Kaspersky's AVP scanning service was
+    # stopped while avpsus kept updating definitions, and the check reported
+    # the host as protected. It was not.
+    checks = NetworkMonitor._antivirus_from_services(
+        _monitor(), 'Spooler,avpsus,klnagent,W32Time')
+    realtime = next(c for c in checks if c['key'] == 'av_realtime')
+
+    assert realtime['state'] == 'fail'
+    assert 'installed but not running' in realtime['detail']
+    assert 'avpsus' in realtime['detail']
+
+
+def test_a_substring_no_longer_answers_for_the_service_it_is_inside():
+    # The root cause: 'avp' is inside 'avpsus', so a substring match let the
+    # updater stand in for the engine.
+    assert 'avp' in 'avpsus'
+    assert NetworkMonitor._service_tokens('avpsus') == {'avpsus'}
+    assert NetworkMonitor._service_tokens('AVP') == {'avp'}
+    assert NetworkMonitor._service_tokens('avpsus') & NetworkMonitor._service_tokens('AVP') == set()
+
+
+def test_a_versioned_service_name_still_matches_its_product():
+    # Kaspersky registers as AVP on one host and AVP.KES.21.19 on another.
+    assert 'avp' in NetworkMonitor._service_tokens('AVP.KES.21.19')
+
+    checks = NetworkMonitor._antivirus_from_services(
+        _monitor(), 'Spooler,AVP.KES.21.19,avpsus.KES.21.19')
+    realtime = next(c for c in checks if c['key'] == 'av_realtime')
+
+    assert realtime['state'] == 'pass'
+    assert 'AVP.KES.21.19' in realtime['detail']
+    # The updater is not offered as evidence of protection.
+    assert 'avpsus' not in realtime['detail']
+
+
+def test_nothing_running_still_reads_as_nothing_installed():
+    checks = NetworkMonitor._antivirus_from_services(
+        _monitor(), 'Spooler,W32Time,LanmanServer')
+    realtime = next(c for c in checks if c['key'] == 'av_realtime')
+
+    assert realtime['state'] == 'fail'
+    assert 'No antivirus found' in realtime['detail']
+
+
+def test_the_two_service_lists_do_not_overlap():
+    # A name in both would make the engine test answer for the updater again.
+    import re as _re
+
+    def names(pattern):
+        return {p.strip().lower() for p in _re.split(r'[|,]', pattern) if p.strip()}
+
+    engines = names(Config.SECURITY_ANTIVIRUS_SERVICES)
+    helpers = names(Config.SECURITY_ANTIVIRUS_HELPER_SERVICES)
+
+    assert engines & helpers == set()
+    assert 'avp' in engines and 'avpsus' in helpers

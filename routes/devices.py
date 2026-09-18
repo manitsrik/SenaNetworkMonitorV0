@@ -8,6 +8,8 @@ import os
 import json
 from datetime import datetime, timezone
 from config import Config
+from security_analysis import analyse as analyse_security
+from security_event_guide import guide_for as event_guide_for
 from security_advice import (
     advice_for, run_context_for, DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES,
 )
@@ -664,6 +666,9 @@ def get_security_advice():
         # platform rather than of the check, so it is sent once instead
         # of repeated on every entry.
         'run_context': run_context_for(language),
+        # What each event is, for the disclosure on each row of the
+        # events card. Same language, same fetch, same cache.
+        'event_guide': event_guide_for(language),
     })
 
 
@@ -1612,6 +1617,45 @@ def check_device_now(device_id):
     result = monitor.check_device(device)
     _get_socketio().emit('status_update', result, namespace='/')
     return jsonify(result)
+
+
+@devices_bp.route('/api/devices/<int:device_id>/security-analysis', methods=['GET'])
+def get_device_security_analysis(device_id):
+    """What this host's checks and events add up to, in one language.
+
+    Deterministic: the same data gives the same words every time, which is
+    what lets an operator quote it in a ticket.
+    """
+    language = request.args.get('lang') or session.get('lang') or DEFAULT_LANGUAGE
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    try:
+        checks = json.loads(device.get('security_checks_json') or '[]')
+    except Exception:
+        checks = []
+    hours = max(1, min(request.args.get('hours', 24, type=int), 24 * 90))
+    events = db.get_security_events(device_id, hours=hours, limit=100)
+    result = analyse_security(checks, events, language)
+    result['success'] = True
+    return jsonify(result)
+
+
+@devices_bp.route('/api/devices/<int:device_id>/security-events', methods=['GET'])
+def get_device_security_events(device_id):
+    """Authentication and account activity collected from one host."""
+    hours = max(1, min(request.args.get('hours', 24, type=int), 24 * 90))
+    events = _get_db().get_security_events(device_id, hours=hours, limit=100)
+    device = _get_db().get_device(device_id) or {}
+    return jsonify({
+        'success': True,
+        'hours': hours,
+        'events': events,
+        # A host nobody has collected from yet and a host with nothing to
+        # report both return an empty list, and they mean opposite things.
+        'collected_at': device.get('security_events_collected_at'),
+    })
 
 
 @devices_bp.route('/api/security-recheck/<int:device_id>', methods=['POST'])

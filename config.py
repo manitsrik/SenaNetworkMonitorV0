@@ -132,18 +132,66 @@ class Config:
     # running" exists. The last resort is to look for the product's own
     # service by name. Add yours here if it runs under a name this misses;
     # the check names what it searched for, so a wrong answer says why.
+    # The service that actually scans. Running one of these is the only
+    # thing that counts as protected.
     SECURITY_ANTIVIRUS_SERVICES = (
         os.environ.get('SECURITY_ANTIVIRUS_SERVICES')
-        or 'WinDefend|Sense|McAfee|masvc|macmnsvc|Symantec|SepMaster|SAVService|'
-           'ekrn|egui|avast|avg|Sophos|TmCCSF|ds_agent|TmListen|Kaspersky|KAVFS|AVP|'
-           'BitDefender|EPSecurity|CrowdStrike|CSFalconService|SentinelAgent|'
-           'CylanceSvc|WRSVC|MBAMService|PandaAgent|FSMA|Seqrite'
+        or 'WinDefend|Sense|AVP|KAVFS|ekrn|SepMaster|SAVService|SophosFS|McShield|'
+           'masvc|TmCCSF|ds_agent|TmListen|EPSecurityService|EPProtectedService|'
+           'CSFalconService|SentinelAgent|CylanceSvc|WRSVC|MBAMService|FSMA|'
+           'PandaAgent|Seqrite|avast|AVGSvc|BDServiceHost'
+    ).replace("'", '')
+    # Updaters, management agents and proxies. These keep running after the
+    # engine has stopped, which is how a host with its antivirus switched
+    # off was reported as protected: Kaspersky's avpsus kept updating
+    # definitions for an AVP service that was not running.
+    SECURITY_ANTIVIRUS_HELPER_SERVICES = (
+        os.environ.get('SECURITY_ANTIVIRUS_HELPER_SERVICES')
+        or 'avpsus|klnagent|ksnproxy|macmnsvc|McAfeeFramework|SepLiveUpdate|'
+           'SAVAdminService|swi_update|ekrnEpfw|TmPfw|AMSP'
     ).replace("'", '')
     # A poll that also sweeps security does more work than the polls
     # around it. Without its own budget on top of the device timeout, a
     # host that normally finishes comfortably would be marked down every
     # few hours for no reason but the sweep.
     SECURITY_CHECK_EXTRA_SECONDS = max(5, int(os.environ.get('SECURITY_CHECK_EXTRA_SECONDS') or 30))
+
+    # --- Security events (Tier 2) ----------------------------------------
+    # Authentication and account activity, read from the Security event log
+    # on Windows and the journal or auth.log on Linux.
+    #
+    # Measured before choosing the numbers below: a time-bounded
+    # Get-WinEvent -FilterHashtable answers in 0.05-0.69s even on an 80 MB,
+    # 153,000-record log, because the filter is pushed down into the event
+    # log service. The expensive part of a WinRM check is the session, not
+    # the query, so collection rides on the session the ordinary poll has
+    # already opened rather than opening its own.
+    SECURITY_EVENTS_ENABLED = (
+        os.environ.get('SECURITY_EVENTS_ENABLED') or 'true').strip().lower() == 'true'
+    SECURITY_EVENTS_INTERVAL_MINUTES = max(
+        1, int(os.environ.get('SECURITY_EVENTS_INTERVAL_MINUTES') or 15))
+    # Windows Security logs here are circular and hold two to three days, so
+    # a gap longer than that loses events permanently. This caps how far back
+    # a first collection or a long outage will reach.
+    SECURITY_EVENTS_MAX_LOOKBACK_HOURS = max(
+        1, int(os.environ.get('SECURITY_EVENTS_MAX_LOOKBACK_HOURS') or 48))
+    # A host under a brute-force attack is exactly when this must not become
+    # expensive. Past the cap the collector reports the burst as one finding
+    # rather than trying to carry every attempt.
+    SECURITY_EVENTS_MAX_PER_POLL = max(
+        50, int(os.environ.get('SECURITY_EVENTS_MAX_PER_POLL') or 500))
+    SECURITY_EVENTS_RETENTION_DAYS = max(
+        1, int(os.environ.get('SECURITY_EVENTS_RETENTION_DAYS') or 90))
+    # Failed sign-ins are normal in small numbers -- a mistyped password is
+    # not an incident. This is how many in one collection window it takes to
+    # become one.
+    SECURITY_EVENTS_FAILED_LOGIN_ALERT = max(
+        1, int(os.environ.get('SECURITY_EVENTS_FAILED_LOGIN_ALERT') or 10))
+    # The monitor signs in to every host every few minutes, so its own
+    # successful sign-ins are the bulk of what there is to record and none
+    # of what there is to read. Its own addresses are detected at runtime;
+    # add any it cannot see itself from -- behind NAT, or a second path.
+    SECURITY_EVENTS_IGNORE_SOURCES = _env_list('SECURITY_EVENTS_IGNORE_SOURCES', '')
     # Password authentication over SSH is a real weakness but a deliberate
     # choice in plenty of estates, so it warns rather than fails. Set this
     # true where key-only access is the standard and a password login is a

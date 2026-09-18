@@ -718,6 +718,212 @@
         }
     }
 
+
+
+    .security-event.is-actionable {
+        display: block;
+        padding: 0;
+    }
+
+    .security-event.is-actionable > details > summary {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        padding: 0.45rem 0.6rem;
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .security-event.is-actionable > details > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .security-event.is-actionable > details > summary::after {
+        content: '\25be';
+        margin-left: auto;
+        padding-left: 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+
+    .security-event.is-actionable > details[open] > summary::after {
+        content: '\25b4';
+    }
+
+    .security-event-guide {
+        padding: 0 0.6rem 0.55rem 1.8rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+    }
+
+    .security-event-guide section {
+        font-size: 0.75rem;
+        line-height: 1.45;
+    }
+
+    /* The explanations are written with a blank line where the thought
+       changes. Without this they arrive as one wall of text, which is the
+       thing the blank lines were there to prevent. */
+    .security-event-guide section > div {
+        white-space: pre-line;
+    }
+
+    .security-event-guide h4 {
+        margin: 0 0 0.1rem 0;
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    /* "What to do" is the line somebody acts on, so it does not sit in the
+       same grey as the three explaining how they got here. */
+    .security-event-guide section.is-fix {
+        padding: 0.4rem 0.55rem;
+        border-left: 3px solid var(--primary);
+        border-radius: 0 4px 4px 0;
+        background: var(--bg-primary);
+    }
+
+    .security-event-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        overflow-y: auto;
+    }
+
+    /* The card already stretches to match its neighbour in the grid row, so
+       the list takes that height instead of scrolling inside a fixed box with
+       empty card underneath it. min-height: 0 is what allows a flex child to
+       shrink far enough to scroll rather than pushing the card taller. */
+    #security-events-card {
+        display: flex;
+        flex-direction: column;
+    }
+
+    #security-events-card .server-detail-body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #security-events-card .security-event-list {
+        flex: 1;
+        min-height: 0;
+    }
+
+    .security-event {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+
+    .security-event i { margin-top: 0.15rem; }
+    .security-event.is-critical i { color: var(--danger); }
+    .security-event.is-warning i { color: var(--warning); }
+    .security-event.is-info i { color: var(--text-muted); }
+    .security-event.is-critical { border-color: var(--danger); }
+
+    .security-event-label {
+        font-weight: 600;
+        font-size: 0.8rem;
+    }
+
+    .security-event-count {
+        margin-left: 0.25rem;
+        padding: 0 0.3rem;
+        border-radius: 4px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 0.7rem;
+    }
+
+    .security-event-detail,
+    .security-event-time {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.35;
+    }
+
+
+
+    .security-lang {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .security-flag {
+        padding: 0;
+        border: 0;
+        background: none;
+        line-height: 1;
+        font-size: 1.05rem;
+        opacity: 0.35;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+
+    .security-flag:hover { opacity: 0.7; }
+    .security-flag.is-active { opacity: 1; cursor: default; }
+    .security-flag .fi { border-radius: 2px; }
+
+    .security-card-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.28rem;
+        padding: 0.18rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 999px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    .security-card-btn:hover:not(:disabled) { color: var(--text-primary); }
+    .security-card-btn:disabled { opacity: 0.6; cursor: progress; }
+    .security-card-btn.is-on {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+
+    .security-analysis {
+        margin: 0 0 0.6rem 0;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid var(--border-color);
+        border-left: 3px solid var(--primary);
+        border-radius: 0 6px 6px 0;
+        background: var(--bg-primary);
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .security-analysis-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+        font-size: 0.76rem;
+        line-height: 1.45;
+    }
+
+    .security-analysis-line i { margin-top: 0.15rem; }
+    .security-analysis-line.is-critical i { color: var(--danger); }
+    .security-analysis-line.is-critical { font-weight: 600; }
+    .security-analysis-line.is-warning i { color: var(--warning); }
+    .security-analysis-line.is-info i { color: var(--text-muted); }
+
     .security-header-actions {
         display: flex;
         align-items: center;
@@ -1315,6 +1521,15 @@
             <div class="server-detail-header">
                 <h3 class="server-detail-title" title="Configuration checks with a right answer of their own: is the firewall on, is real-time antivirus running, how old is the newest patch. A check the monitoring account may not read is reported as unreadable rather than counted as a pass, so the score never flatters a host the monitor cannot see into."><i class="fa-solid fa-shield-halved"></i> Security Posture</h3>
                 <div class="security-header-actions">
+                    <span class="security-lang" data-lang-card="posture"
+                          title="Show this card in English or Thai. Only this card -- the rest of the page is unchanged.">
+                        <button type="button" class="security-flag" data-lang-set="en" title="English"><span class="fi fi-us"></span></button>
+                        <button type="button" class="security-flag" data-lang-set="th" title="ภาษาไทย"><span class="fi fi-th"></span></button>
+                    </span>
+                    <button type="button" class="security-card-btn" data-analyse-card="posture"
+                            title="Read what these checks add up to together, rather than one at a time.">
+                        <i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Analyse
+                    </button>
                     <button type="button" id="security-recheck" class="security-recheck"
                             title="Run the security checks on this host now instead of waiting for the next scheduled sweep. Takes a few seconds to about half a minute.">
                         <i class="fa-solid fa-rotate" aria-hidden="true"></i> Re-check
@@ -1323,6 +1538,24 @@
                 </div>
             </div>
             <div id="security-checks" class="server-detail-body server-empty">Loading...</div>
+        </div>
+        <div class="server-detail-card" id="security-events-card">
+            <div class="server-detail-header">
+                <h3 class="server-detail-title" title="Sign-ins and account activity read from this host's own security log. The host keeps only two to three days of it before overwriting the oldest, so once collected this is the longer record of the two."><i class="fa-solid fa-user-shield"></i> Security Events</h3>
+                <div class="security-header-actions">
+                    <span class="security-lang" data-lang-card="events"
+                          title="Show this card in English or Thai. Only this card -- the rest of the page is unchanged.">
+                        <button type="button" class="security-flag" data-lang-set="en" title="English"><span class="fi fi-us"></span></button>
+                        <button type="button" class="security-flag" data-lang-set="th" title="ภาษาไทย"><span class="fi fi-th"></span></button>
+                    </span>
+                    <button type="button" class="security-card-btn" data-analyse-card="events"
+                            title="Read what this activity adds up to: whether it is sustained, concentrated on one source, and whether anything succeeded.">
+                        <i class="fa-solid fa-lightbulb" aria-hidden="true"></i> Analyse
+                    </button>
+                    <span class="server-pill">last 24h</span>
+                </div>
+            </div>
+            <div id="security-events" class="server-detail-body server-empty">Loading...</div>
         </div>
     </section>
 
@@ -2563,23 +2796,51 @@ const PLATFORM_BY_MONITOR = { winrm: 'windows', wmi: 'windows', ssh: 'linux' };
 // nothing.
 const SECURITY_ADVICE_STATES = ['fail', 'warn'];
 
-let securityAdvice = null;
-let securityRunContext = null;
+// Keyed by language, and nothing outside holds "the current one".
+//
+// There used to be a securityAdvice / securityRunContext / securityEventGuide
+// trio that whichever card loaded last would overwrite. With a card in
+// Thai and a card in English on the same page that is a bug waiting to
+// happen, and it did: switching the events card to Thai left its
+// explanations in English, because the posture card had loaded English
+// into the shared variable and nothing reloaded it.
+const securityAdviceByLang = {};
 
-async function loadSecurityAdvice() {
-    // The content is the same for every host and never changes between polls,
-    // so it is fetched once for the page rather than on every refresh.
-    if (securityAdvice) return securityAdvice;
+async function loadSecurityAdvice(lang) {
+    // The content is the same for every host and never changes between
+    // polls, so each language is fetched once for the page rather than on
+    // every refresh or every time a flag is pressed.
+    const language = lang || readCardLang('posture');
+    if (securityAdviceByLang[language] !== undefined) {
+        return securityAdviceByLang[language];
+    }
     try {
-        const res = await fetch('/api/security-advice');
+        const res = await fetch(`/api/security-advice?lang=${encodeURIComponent(language)}`);
         if (!res.ok) return null;
         const data = await res.json();
-        securityAdvice = data.advice || null;
-        securityRunContext = data.run_context || null;
+        securityAdviceByLang[language] = {
+            advice: data.advice || null,
+            runContext: data.run_context || null,
+            eventGuide: data.event_guide || null,
+        };
     } catch (error) {
-        securityAdvice = null;
+        securityAdviceByLang[language] = null;
     }
-    return securityAdvice;
+    return securityAdviceByLang[language];
+}
+
+// Both cards' languages, in one go. Same language twice is one fetch.
+async function loadSecurityAdviceForCards() {
+    await Promise.all([
+        loadSecurityAdvice(readCardLang('posture')),
+        loadSecurityAdvice(readCardLang('events')),
+    ]);
+}
+
+// Each card reads the language it is set to, rather than whatever was
+// loaded most recently.
+function cachedAdvice(card) {
+    return securityAdviceByLang[readCardLang(card)] || null;
 }
 
 function platformOf(server) {
@@ -2587,16 +2848,18 @@ function platformOf(server) {
 }
 
 function adviceFor(server, check) {
-    if (!securityAdvice) return null;
+    const bundle = cachedAdvice('posture');
+    if (!bundle || !bundle.advice) return null;
     const platform = platformOf(server);
     if (!platform) return null;
-    return (securityAdvice[platform] || {})[check.key] || null;
+    return (bundle.advice[platform] || {})[check.key] || null;
 }
 
 function runContextFor(server) {
+    const bundle = cachedAdvice('posture');
     const platform = platformOf(server);
-    if (!platform || !securityRunContext) return '';
-    return securityRunContext[platform] || '';
+    if (!platform || !bundle || !bundle.runContext) return '';
+    return bundle.runContext[platform] || '';
 }
 
 function renderAdvice(advice, runContext) {
@@ -2663,6 +2926,240 @@ document.addEventListener('click', async event => {
     button.textContent = copied ? 'Copied' : 'Press Ctrl+C';
     setTimeout(() => { button.textContent = button.dataset.label; }, 1600);
 });
+
+// Each card remembers its own language. The rest of the page is not
+// translated, and these two are the ones somebody reads to decide what to do.
+const SECURITY_CARD_LANG = { posture: 'en', events: 'en' };
+
+function readCardLang(card) {
+    try {
+        const stored = localStorage.getItem('securityLang.' + card);
+        if (stored === 'th' || stored === 'en') SECURITY_CARD_LANG[card] = stored;
+    } catch (error) {
+        // Private windows and blocked site data both throw here; the default
+        // language is a perfectly good answer.
+    }
+    return SECURITY_CARD_LANG[card];
+}
+
+function writeCardLang(card, lang) {
+    SECURITY_CARD_LANG[card] = lang;
+    try {
+        localStorage.setItem('securityLang.' + card, lang);
+    } catch (error) {
+        // Not being able to remember the choice is not a reason to refuse it.
+    }
+}
+
+const SECURITY_EVENT_LABELS_TH = {
+    log_cleared: 'มีการล้าง Security log',
+    user_created: 'สร้างบัญชีผู้ใช้',
+    user_deleted: 'ลบบัญชีผู้ใช้',
+    account_lockout: 'บัญชีถูกล็อก',
+    service_installed: 'ติดตั้ง service ใหม่',
+    failed_logon: 'ล็อกอินล้มเหลว',
+    sudo_failed: 'sudo ยืนยันตัวตนไม่ผ่าน',
+    login_success: 'ล็อกอินสำเร็จ',
+};
+
+const SECURITY_EVENT_WORDS = {
+    en: { accounts: 'accounts', from: 'from',
+          capped: 'hit the collection cap, so the real total is higher',
+          nothing: 'Nothing recorded in the last %h hours.',
+          never: 'No collection has run on this host yet.' },
+    th: { accounts: 'บัญชี', from: 'จาก',
+          capped: 'ชนเพดานการเก็บ ตัวเลขจริงสูงกว่านี้',
+          nothing: 'ไม่พบเหตุการณ์ในช่วง %h ชั่วโมงที่ผ่านมา',
+          never: 'ยังไม่เคยเก็บข้อมูลจากเครื่องนี้' },
+};
+
+const ANALYSIS_TONES = {
+    critical: { icon: 'fa-circle-exclamation', css: 'is-critical' },
+    warning: { icon: 'fa-triangle-exclamation', css: 'is-warning' },
+    info: { icon: 'fa-circle-info', css: 'is-info' },
+};
+
+let securityAnalysisOpen = { posture: false, events: false };
+
+function renderAnalysis(card, findings) {
+    const host = document.getElementById(card === 'posture' ? 'security-checks' : 'security-events');
+    if (!host) return;
+    const existing = host.parentNode.querySelector(`[data-analysis="${card}"]`);
+    if (existing) existing.remove();
+    if (!securityAnalysisOpen[card] || !findings || !findings.length) return;
+    const panel = document.createElement('div');
+    panel.className = 'security-analysis';
+    panel.setAttribute('data-analysis', card);
+    panel.innerHTML = findings.map(finding => {
+        const tone = ANALYSIS_TONES[finding.level] || ANALYSIS_TONES.info;
+        return `
+            <div class="security-analysis-line ${tone.css}">
+                <i class="fa-solid ${tone.icon}" aria-hidden="true"></i>
+                <span>${esc(finding.text)}</span>
+            </div>
+        `;
+    }).join('');
+    host.parentNode.insertBefore(panel, host);
+}
+
+async function toggleAnalysis(card, button) {
+    securityAnalysisOpen[card] = !securityAnalysisOpen[card];
+    if (!securityAnalysisOpen[card]) {
+        renderAnalysis(card, null);
+        button.classList.remove('is-on');
+        return;
+    }
+    button.classList.add('is-on');
+    button.disabled = true;
+    try {
+        const lang = readCardLang(card);
+        const res = await fetch(
+            `/api/devices/${deviceId}/security-analysis?lang=${encodeURIComponent(lang)}&_t=${Date.now()}`);
+        const data = await res.json();
+        renderAnalysis(card, data[card] || []);
+    } catch (error) {
+        renderAnalysis(card, [{ level: 'info', text: String(error) }]);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+// Two flags rather than one toggle, the way the sidebar already does it:
+// a single flag has to mean either the language you have or the one you
+// would get, and every reader guesses differently.
+function paintLanguageFlags(card) {
+    const current = readCardLang(card);
+    document.querySelectorAll(`[data-lang-card="${card}"] [data-lang-set]`).forEach(flag => {
+        flag.classList.toggle('is-active', flag.getAttribute('data-lang-set') === current);
+    });
+}
+
+document.addEventListener('click', async event => {
+    const flag = event.target.closest('[data-lang-set]');
+    if (flag) {
+        event.preventDefault();
+        const holder = flag.closest('[data-lang-card]');
+        const card = holder && holder.getAttribute('data-lang-card');
+        const next = flag.getAttribute('data-lang-set');
+        if (!card || readCardLang(card) === next) return;
+        writeCardLang(card, next);
+        paintLanguageFlags(card);
+        // Both cards need the payload for their own language, and the
+        // events card needs it too -- its explanations come from the same
+        // fetch as the posture card's advice.
+        await loadSecurityAdvice(next);
+        if (card === 'posture') {
+            renderSecurityPosture(latestSecurityServer);
+        } else {
+            renderSecurityEvents(latestSecurityEvents);
+        }
+        if (securityAnalysisOpen[card]) {
+            const analyseButton = document.querySelector(`[data-analyse-card="${card}"]`);
+            securityAnalysisOpen[card] = false;
+            if (analyseButton) toggleAnalysis(card, analyseButton);
+        }
+        return;
+    }
+    const analyseButton = event.target.closest('[data-analyse-card]');
+    if (analyseButton && !analyseButton.disabled) {
+        event.preventDefault();
+        toggleAnalysis(analyseButton.getAttribute('data-analyse-card'), analyseButton);
+    }
+});
+
+const SECURITY_EVENT_TONES = {
+    critical: { icon: 'fa-circle-exclamation', css: 'is-critical' },
+    warning: { icon: 'fa-triangle-exclamation', css: 'is-warning' },
+    info: { icon: 'fa-circle-info', css: 'is-info' },
+};
+
+const SECURITY_EVENT_LABELS = {
+    log_cleared: 'Security log cleared',
+    user_created: 'Account created',
+    user_deleted: 'Account deleted',
+    account_lockout: 'Account locked out',
+    service_installed: 'Service installed',
+    failed_logon: 'Failed sign-in',
+    sudo_failed: 'sudo authentication failure',
+    login_success: 'Successful sign-in',
+};
+
+// Where it comes from, how it happens, what it does to the host, and
+// what to do -- always those four, always in that order, so somebody
+// reading their fifth one already knows where their answer will be.
+function renderEventGuide(eventKey) {
+    const bundle = cachedAdvice('events');
+    const guide = bundle && bundle.eventGuide;
+    if (!guide || !guide.events) return '';
+    const entry = guide.events[eventKey];
+    if (!entry) return '';
+    const sections = (guide.sections || [])
+        .filter(section => entry[section.key])
+        .map(section => `
+            <section class="${section.key === 'fix' ? 'is-fix' : ''}">
+                <h4>${esc(section.label)}</h4>
+                <div>${esc(entry[section.key])}</div>
+            </section>
+        `).join('');
+    return sections ? `<div class="security-event-guide">${sections}</div>` : '';
+}
+
+let latestSecurityEvents = null;
+
+function renderSecurityEvents(payload) {
+    latestSecurityEvents = payload || latestSecurityEvents;
+    payload = latestSecurityEvents;
+    const wrap = document.getElementById('security-events');
+    if (!wrap) return;
+    const events = (payload && payload.events) || [];
+    const hours = (payload && payload.hours) || 24;
+    const lang = readCardLang('events');
+    const words = SECURITY_EVENT_WORDS[lang] || SECURITY_EVENT_WORDS.en;
+
+    if (!events.length) {
+        wrap.classList.add('server-empty');
+        // Nothing collected yet and nothing to report are opposite readings,
+        // and both arrive as an empty list.
+        wrap.textContent = (payload && payload.collected_at)
+            ? words.nothing.replace('%h', hours)
+            : words.never;
+        return;
+    }
+
+    wrap.classList.remove('server-empty');
+    const items = events.map(event => {
+        const tone = SECURITY_EVENT_TONES[event.severity] || SECURITY_EVENT_TONES.info;
+        const labels = lang === 'th' ? SECURITY_EVENT_LABELS_TH : SECURITY_EVENT_LABELS;
+        const label = labels[event.event_key] || SECURITY_EVENT_LABELS[event.event_key] || event.event_key;
+        const count = Number(event.event_count) || 1;
+        const facts = [];
+        if (event.accounts) facts.push(`${words.accounts}: ${event.accounts}`);
+        if (event.sources) facts.push(`${words.from}: ${event.sources}`);
+        if (event.truncated) facts.push(words.capped);
+        const head = `
+            <i class="fa-solid ${tone.icon}" aria-hidden="true"></i>
+            <div>
+                <div class="security-event-label">${esc(label)}${
+                    count > 1 ? ` <span class="security-event-count">x${count}</span>` : ''}</div>
+                ${facts.length ? `<div class="security-event-detail">${esc(facts.join(' \u00b7 '))}</div>` : ''}
+                <div class="security-event-time">${esc(event.last_seen || event.collected_at || '')}</div>
+            </div>
+        `;
+        const guide = renderEventGuide(event.event_key);
+        if (!guide) {
+            return `<li class="security-event ${tone.css}">${head}</li>`;
+        }
+        return `
+            <li class="security-event ${tone.css} is-actionable">
+                <details>
+                    <summary>${head}</summary>
+                    ${guide}
+                </details>
+            </li>
+        `;
+    }).join('');
+    wrap.innerHTML = `<ul class="security-event-list">${items}</ul>`;
+}
 
 const SECURITY_CHECK_TONES = {
     pass: { icon: 'fa-circle-check', css: 'is-pass', label: 'Passing' },
@@ -3184,13 +3681,14 @@ async function loadServerList() {
 
 async function loadDashboard() {
     try {
-        const [server, , performanceRes, responseRes, eventsRes, downRes] = await Promise.all([
+        const [server, , performanceRes, responseRes, eventsRes, downRes, securityEventsRes] = await Promise.all([
             loadServerList(),
-            loadSecurityAdvice(),
+            loadSecurityAdviceForCards(),
             fetch(`/api/devices/${deviceId}/performance?minutes=${currentMinutes}&_t=${Date.now()}`),
             fetch(`/api/server-health/response-time?minutes=${currentMinutes}&sample=72&_t=${Date.now()}`),
             fetch(`/api/devices/${deviceId}/events?minutes=${currentMinutes}&limit=30&_t=${Date.now()}`),
-            fetch(`/api/devices/${deviceId}/down-intervals?minutes=${currentMinutes}&_t=${Date.now()}`)
+            fetch(`/api/devices/${deviceId}/down-intervals?minutes=${currentMinutes}&_t=${Date.now()}`),
+            fetch(`/api/devices/${deviceId}/security-events?hours=24&_t=${Date.now()}`)
         ]);
         if (!performanceRes.ok) throw new Error(`Performance HTTP ${performanceRes.status}`);
         if (!responseRes.ok) throw new Error(`Response HTTP ${responseRes.status}`);
@@ -3209,6 +3707,16 @@ async function loadDashboard() {
 
         updateSummary(performance, server);
         renderDetails(performance, server);
+        paintLanguageFlags('posture');
+        paintLanguageFlags('events');
+        // Its own failure must not take the rest of the page with it.
+        try {
+            renderSecurityEvents(securityEventsRes && securityEventsRes.ok
+                ? await securityEventsRes.json()
+                : null);
+        } catch (error) {
+            renderSecurityEvents(null);
+        }
         focusRequestedSection();
         renderEvents(events);
         setCount('cpu-count', (performance.cpu || []).length);

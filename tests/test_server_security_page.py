@@ -204,12 +204,15 @@ def test_the_warning_is_not_allowed_to_read_as_fine_print():
     assert 'class="security-advice-warning"' in template
 
 
-def test_the_advice_is_fetched_once_not_on_every_refresh():
+def test_each_language_of_the_advice_is_fetched_once_not_on_every_refresh():
     template = _template("server_dashboard.html")
     body = _function_body(template, "loadSecurityAdvice")
 
-    assert "if (securityAdvice) return securityAdvice;" in body
-    assert "loadSecurityAdvice()," in template
+    # The content never changes between polls, and pressing the language
+    # toggle twice should not fetch twice.
+    assert "if (securityAdviceByLang[language] !== undefined) {" in body
+    assert "securityAdviceByLang[language] = {" in body
+    assert "loadSecurityAdviceForCards()," in template
 
 
 def test_the_command_block_says_which_shell_it_belongs_in():
@@ -232,7 +235,7 @@ def test_the_run_context_follows_the_host_not_the_check():
     # Windows fixes are elevated PowerShell and Linux fixes are shell over
     # SSH, whichever check produced them.
     assert "const platform = platformOf(server);" in body
-    assert "return securityRunContext[platform] || '';" in body
+    assert "return bundle.runContext[platform] || '';" in body
 
 
 def test_the_card_can_ask_for_a_sweep_now():

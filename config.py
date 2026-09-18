@@ -109,6 +109,48 @@ class Config:
     # monitoring worker open indefinitely. This caps the whole check, retry
     # included.
     SSH_DEVICE_TIMEOUT = max(15, int(os.environ.get('SSH_DEVICE_TIMEOUT') or 45))
+
+    # --- Server security posture (Tier 1) --------------------------------
+    # These read configuration, not activity: firewall state, antivirus,
+    # patch age. What they look at changes over hours and days, so running
+    # them on every poll would spend WinRM/SSH round trips on answers that
+    # cannot have changed, inside a loop that has to finish in time to keep
+    # up/down detection honest. They run on their own, much slower clock.
+    SECURITY_CHECK_ENABLED = (os.environ.get('SECURITY_CHECK_ENABLED') or 'true').strip().lower() == 'true'
+    SECURITY_CHECK_INTERVAL_HOURS = max(1, int(os.environ.get('SECURITY_CHECK_INTERVAL_HOURS') or 6))
+    # Patch age is counted from the newest installed update, not from a
+    # vendor release date: the monitor can only see what the host has done.
+    SECURITY_PATCH_WARN_DAYS = max(1, int(os.environ.get('SECURITY_PATCH_WARN_DAYS') or 45))
+    SECURITY_PATCH_FAIL_DAYS = max(
+        SECURITY_PATCH_WARN_DAYS + 1,
+        int(os.environ.get('SECURITY_PATCH_FAIL_DAYS') or 90),
+    )
+    SECURITY_SIGNATURE_WARN_DAYS = max(1, int(os.environ.get('SECURITY_SIGNATURE_WARN_DAYS') or 7))
+    # Windows Server has no Defender module on 2012 R2, and none installed
+    # by default on 2016, and Security Center is a client-only feature --
+    # so on a server neither of the two obvious ways to ask "is antivirus
+    # running" exists. The last resort is to look for the product's own
+    # service by name. Add yours here if it runs under a name this misses;
+    # the check names what it searched for, so a wrong answer says why.
+    SECURITY_ANTIVIRUS_SERVICES = (
+        os.environ.get('SECURITY_ANTIVIRUS_SERVICES')
+        or 'WinDefend|Sense|McAfee|masvc|macmnsvc|Symantec|SepMaster|SAVService|'
+           'ekrn|egui|avast|avg|Sophos|TmCCSF|ds_agent|TmListen|Kaspersky|KAVFS|AVP|'
+           'BitDefender|EPSecurity|CrowdStrike|CSFalconService|SentinelAgent|'
+           'CylanceSvc|WRSVC|MBAMService|PandaAgent|FSMA|Seqrite'
+    ).replace("'", '')
+    # A poll that also sweeps security does more work than the polls
+    # around it. Without its own budget on top of the device timeout, a
+    # host that normally finishes comfortably would be marked down every
+    # few hours for no reason but the sweep.
+    SECURITY_CHECK_EXTRA_SECONDS = max(5, int(os.environ.get('SECURITY_CHECK_EXTRA_SECONDS') or 30))
+    # Password authentication over SSH is a real weakness but a deliberate
+    # choice in plenty of estates, so it warns rather than fails. Set this
+    # true where key-only access is the standard and a password login is a
+    # finding, not a preference.
+    SECURITY_SSH_PASSWORD_AUTH_IS_FAILURE = (
+        os.environ.get('SECURITY_SSH_PASSWORD_AUTH_IS_FAILURE') or 'false'
+    ).strip().lower() == 'true'
     
     # WebSocket settings
     SOCKETIO_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE') or 'eventlet'

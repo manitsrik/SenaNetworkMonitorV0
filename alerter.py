@@ -364,6 +364,7 @@ This is an automated message from Network Monitor.
         alert_on_recovery = self._get_setting('alert_on_recovery', 'true').lower() == 'true'
         alert_on_ssl = self._get_setting('alert_on_ssl_expiry', 'true').lower() == 'true'
         alert_on_internet = self._get_setting('alert_on_internet', 'true').lower() == 'true'
+        alert_on_security = self._get_setting('alert_on_security', 'true').lower() == 'true'
         
         if event_type == 'down' and not alert_on_down:
             return
@@ -372,6 +373,8 @@ This is an automated message from Network Monitor.
         if event_type == 'ssl_expiry' and not alert_on_ssl:
             return
         if event_type in ('internet_down', 'internet_recovery') and not alert_on_internet:
+            return
+        if event_type in ('security_risk', 'security_recovery') and not alert_on_security:
             return
         
         # Format message with device info
@@ -397,6 +400,10 @@ This is an automated message from Network Monitor.
             subject = f"🟢 Device RECOVERED: {device_name}"
         elif event_type == 'ssl_expiry':
             subject = f"⚠️ SSL Expiring: {device_name}"
+        elif event_type == 'security_risk':
+            subject = f"🛡️ Security check FAILED: {device_name}"
+        elif event_type == 'security_recovery':
+            subject = f"🛡️ Security checks passing: {device_name}"
         else:
             subject = f"Alert: {device_name}"
         

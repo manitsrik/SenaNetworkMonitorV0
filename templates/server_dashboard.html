@@ -248,6 +248,12 @@
         font-size: 1.45rem;
         font-weight: 850;
         line-height: 1;
+        overflow-wrap: anywhere;
+    }
+
+    .server-stat-value.is-long {
+        font-size: 1.02rem;
+        line-height: 1.15;
     }
 
     .server-stat-note {
@@ -255,6 +261,23 @@
         color: var(--text-secondary);
         font-size: 0.68rem;
         line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .server-stat-card.is-warning .server-stat-value {
+        color: var(--warning);
+    }
+
+    .server-stat-card.is-critical .server-stat-value {
+        color: var(--danger);
+    }
+
+    .server-stat-card.is-warning .server-stat-icon {
+        background: rgba(245, 158, 11, 0.14);
+    }
+
+    .server-stat-card.is-critical .server-stat-icon {
+        background: rgba(239, 68, 68, 0.12);
     }
 
     .server-stat-icon {
@@ -309,6 +332,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 0.7rem;
+        min-width: 0;
         padding: 0.62rem 0.75rem;
         border-bottom: 1px solid var(--border-color);
     }
@@ -319,8 +343,22 @@
         align-items: center;
         gap: 0.42rem;
         margin: 0;
+        min-width: 0;
+        overflow: hidden;
         color: var(--text-primary);
         font-size: 0.86rem;
+        white-space: nowrap;
+    }
+
+    /* A volume name can be far longer than the card: it ellipsises instead of
+       wrapping the header onto three lines and pushing the gauge out. */
+    #disk-chart-scope {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .response-header-controls {
+        flex: 0 0 auto;
     }
 
     .server-chart-title i,
@@ -337,6 +375,69 @@
     .server-chart-body canvas {
         width: 100% !important;
         height: 100% !important;
+    }
+
+    .overview-gauge-card {
+        min-height: 310px;
+        padding-bottom: 0.6rem;
+    }
+
+    .gauge-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.3rem;
+        margin: 0 0.75rem;
+    }
+
+    .gauge-stat {
+        min-width: 0;
+        padding: 0.28rem 0.2rem;
+        text-align: center;
+        border: 1px solid var(--server-line);
+        border-radius: 7px;
+        background: rgba(15, 23, 42, 0.03);
+    }
+
+    [data-theme="dark"] .gauge-stat {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .gauge-stat span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.58rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .gauge-stat strong {
+        display: block;
+        margin-top: 0.1rem;
+        overflow: hidden;
+        color: var(--text-primary);
+        font-size: 0.8rem;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .gauge-stat.is-warning strong {
+        color: var(--warning);
+    }
+
+    .gauge-stat.is-critical strong {
+        color: var(--danger);
+    }
+
+    .gauge-caption {
+        margin: 0.35rem 0.75rem 0;
+        overflow: hidden;
+        color: var(--text-muted);
+        font-size: 0.68rem;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .server-empty {
@@ -431,10 +532,223 @@
         color: var(--danger);
     }
 
+    .service-summary-card.is-critical {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.06);
+    }
+
+    .service-summary-card.is-critical .service-summary-value {
+        color: var(--danger);
+    }
+
     .service-summary-icon.is-windows {
         background: rgba(37, 99, 235, 0.1);
         color: #2563eb;
     }
+
+    .security-check-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+    }
+
+    .security-check {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+    }
+
+    .security-check i {
+        margin-top: 0.15rem;
+    }
+
+    .security-check.is-pass i { color: var(--success); }
+    .security-check.is-warn i { color: var(--warning); }
+    .security-check.is-fail i { color: var(--danger); }
+    .security-check.is-unknown i { color: var(--text-muted); }
+    .security-check.is-fail { border-color: var(--danger); }
+
+    .security-check-label {
+        font-weight: 600;
+        font-size: 0.82rem;
+    }
+
+    .security-check-detail {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        line-height: 1.35;
+    }
+
+    .security-check-foot {
+        margin-top: 0.7rem;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+    }
+
+
+    /* Only a check with something to do opens. A passing row with a
+       disclosure arrow that reveals nothing is worse than no arrow. */
+    .security-check.is-actionable {
+        display: block;
+        padding: 0;
+    }
+
+    .security-check.is-actionable > details > summary {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        padding: 0.5rem 0.65rem;
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .security-check.is-actionable > details > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .security-check.is-actionable > details > summary::after {
+        content: '\25be';
+        margin-left: auto;
+        padding-left: 0.4rem;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+    }
+
+    .security-check.is-actionable > details[open] > summary::after {
+        content: '\25b4';
+    }
+
+    .security-advice {
+        padding: 0 0.65rem 0.6rem 1.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .security-advice-fix {
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.45;
+    }
+
+    .security-advice-command {
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+        border-radius: 5px;
+        background: var(--bg-primary);
+    }
+
+    /* Without this line the reader has to work out for themselves that
+       Set-SmbServerConfiguration is not something cmd.exe accepts, and
+       that it belongs on the monitored host rather than on this one. */
+    .security-advice-run {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.25rem 0.35rem 0.25rem 0.6rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-muted);
+        font-size: 0.68rem;
+    }
+
+    .security-advice-command pre {
+        margin: 0;
+        padding: 0.5rem 0.6rem;
+        font-size: 0.72rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .security-copy {
+        flex: none;
+        padding: 0.15rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        cursor: pointer;
+    }
+
+    .security-copy:hover {
+        color: var(--text-primary);
+    }
+
+    /* The caveat is the part that stops somebody locking themselves out of a
+       host, so it is not allowed to read as fine print. */
+    .security-advice-warning {
+        margin: 0;
+        padding: 0.45rem 0.6rem;
+        border-left: 3px solid var(--warning);
+        border-radius: 0 4px 4px 0;
+        background: rgba(245, 158, 11, 0.08);
+        font-size: 0.75rem;
+        line-height: 1.45;
+    }
+
+    .security-advice-warning i {
+        color: var(--warning);
+        margin-right: 0.35rem;
+    }
+
+    /* Arriving from the fleet table lands mid-page, so the card says
+       which one you were sent to rather than leaving you to work it
+       out from the scroll position. */
+    .server-detail-card.is-flashed {
+        animation: security-flash 1.8s ease-out;
+    }
+
+    @keyframes security-flash {
+        0%, 55% { box-shadow: 0 0 0 2px var(--primary); }
+        100% { box-shadow: var(--server-shadow); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .server-detail-card.is-flashed {
+            animation: none;
+            box-shadow: 0 0 0 2px var(--primary);
+        }
+    }
+
+    .security-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .security-recheck {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.18rem 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 999px;
+        background: var(--bg-primary);
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        cursor: pointer;
+    }
+
+    .security-recheck:hover:not(:disabled) {
+        color: var(--text-primary);
+    }
+
+    .security-recheck:disabled {
+        opacity: 0.6;
+        cursor: progress;
+    }
+
+    .security-pill.is-risk { color: var(--danger); }
+    .security-pill.is-warn { color: var(--warning); }
+    .security-pill.is-ok { color: var(--success); }
 
     .server-note {
         margin-top: 0.5rem;
@@ -722,6 +1036,83 @@
         .server-chart-card.full {
             grid-column: 1 / -1;
         }
+
+        .chart-modal-body {
+            height: 46vh;
+        }
+    }
+
+    .server-chart-body[data-expand-chart] {
+        cursor: zoom-in;
+        border-radius: 8px;
+    }
+
+    .server-chart-body[data-expand-chart]:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 3px;
+    }
+
+    .chart-modal-content {
+        max-width: min(1180px, 94vw);
+        padding: 1.1rem 1.25rem 1rem;
+    }
+
+    .chart-modal-header {
+        margin-bottom: 0.7rem;
+        padding-bottom: 0.6rem;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .chart-modal-tools {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+    }
+
+    .chart-modal-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.6rem;
+        min-height: 26px;
+    }
+
+    .chart-modal-stat {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0.35rem;
+        padding: 0.24rem 0.55rem;
+        border: 1px solid var(--server-line);
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.03);
+        font-size: 0.74rem;
+        color: var(--text-primary);
+    }
+
+    [data-theme="dark"] .chart-modal-stat {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .chart-modal-stat span {
+        color: var(--text-muted);
+        font-size: 0.66rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+    }
+
+    .chart-modal-body {
+        position: relative;
+        height: min(58vh, 520px);
+    }
+
+    .chart-modal-hint {
+        margin-top: 0.55rem;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.35;
     }
 </style>
 
@@ -740,34 +1131,34 @@
             </div>
         </div>
 
-        <div class="server-stat-card" style="--stat-color: var(--primary);">
+        <div id="stat-cpu-card" class="server-stat-card" data-base-tone="primary" style="--stat-color: var(--primary);">
             <div class="server-stat-icon"><i class="fa-solid fa-microchip"></i></div>
             <div>
                 <div class="server-stat-label">CPU Load</div>
                 <div id="stat-cpu" class="server-stat-value">-</div>
-                <div id="stat-load" class="server-stat-note">Load -</div>
+                <div id="stat-load" class="server-stat-note" hidden></div>
             </div>
         </div>
-        <div class="server-stat-card" style="--stat-color: var(--info);">
+        <div id="stat-ram-card" class="server-stat-card" data-base-tone="info" style="--stat-color: var(--info);">
             <div class="server-stat-icon"><i class="fa-solid fa-memory"></i></div>
             <div>
                 <div class="server-stat-label">RAM Usage</div>
                 <div id="stat-ram" class="server-stat-value">-</div>
-                <div id="stat-swap" class="server-stat-note">Swap -</div>
+                <div id="stat-swap" class="server-stat-note" hidden></div>
             </div>
         </div>
-        <div class="server-stat-card" style="--stat-color: var(--warning);">
+        <div id="stat-disk-card" class="server-stat-card" data-base-tone="warning" style="--stat-color: var(--warning);">
             <div class="server-stat-icon"><i class="fa-solid fa-hard-drive"></i></div>
             <div>
                 <div class="server-stat-label">Disk Usage</div>
                 <div id="stat-disk" class="server-stat-value">-</div>
-                <div id="stat-inode" class="server-stat-note">Inode -</div>
+                <div id="stat-disk-note" class="server-stat-note" hidden></div>
             </div>
         </div>
-        <div class="server-stat-card" style="--stat-color: var(--success);">
+        <div id="stat-response-card" class="server-stat-card" data-base-tone="success" style="--stat-color: var(--success);">
             <div class="server-stat-icon"><i class="fa-solid fa-clock"></i></div>
             <div>
-                <div class="server-stat-label">Response Time</div>
+                <div id="stat-response-label" class="server-stat-label">Response Time</div>
                 <div id="stat-response" class="server-stat-value">-</div>
                 <div id="stat-response-sub" class="server-stat-note">Current</div>
             </div>
@@ -780,15 +1171,15 @@
                 <div id="stat-internet-sub" class="server-stat-note">Remote check</div>
             </div>
         </div>
-        <div class="server-stat-card" style="--stat-color: var(--danger);">
+        <div id="stat-service-card" class="server-stat-card" data-base-tone="normal" style="--stat-color: var(--danger);">
             <div class="server-stat-icon"><i class="fa-solid fa-wave-square"></i></div>
             <div>
-                <div class="server-stat-label">Services Down</div>
+                <div id="stat-service-label" class="server-stat-label">Services Down</div>
                 <div id="stat-service-down" class="server-stat-value">-</div>
                 <div id="stat-service-sub" class="server-stat-note">Affected services</div>
             </div>
         </div>
-        <div class="server-stat-card" style="--stat-color: var(--warning);">
+        <div id="stat-reboot-card" class="server-stat-card" data-base-tone="normal" style="--stat-color: var(--warning);">
             <div class="server-stat-icon"><i class="fa-solid fa-rotate-left"></i></div>
             <div>
                 <div class="server-stat-label">Reboot Required</div>
@@ -808,7 +1199,7 @@
         </div>
         <div id="response-chart-card" class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header response-chart-header">
-                <h3 class="server-chart-title"><i class="fa-solid fa-gauge-high"></i> Response Time</h3>
+                <h3 class="server-chart-title"><i class="fa-solid fa-gauge-high"></i> <span id="response-chart-title">Response Time</span></h3>
                 <div class="response-header-controls">
                     <div class="server-chart-toggle" role="group" aria-label="Response time chart view">
                         <button type="button" class="server-chart-toggle-btn active" data-response-view="gauge" aria-pressed="true" title="Gauge view">
@@ -821,7 +1212,12 @@
                     <span id="response-count" class="server-pill">0 samples</span>
                 </div>
             </div>
-            <div class="server-chart-body"><canvas id="response-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="response" role="button" tabindex="0" title="Click to expand"><canvas id="response-chart"></canvas></div>
+            <div class="gauge-stats">
+                <div class="gauge-stat"><span>Current</span><strong id="response-current">-</strong></div>
+                <div class="gauge-stat"><span>Avg</span><strong id="response-avg">-</strong></div>
+                <div class="gauge-stat"><span>Max</span><strong id="response-max">-</strong></div>
+            </div>
         </div>
         <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
@@ -834,7 +1230,12 @@
                     <span id="cpu-count" class="server-pill">0 samples</span>
                 </div>
             </div>
-            <div class="server-chart-body"><canvas id="cpu-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="cpu" role="button" tabindex="0" title="Click to expand"><canvas id="cpu-chart"></canvas></div>
+            <div class="gauge-stats">
+                <div class="gauge-stat"><span>Current</span><strong id="cpu-current">-</strong></div>
+                <div class="gauge-stat"><span>Avg</span><strong id="cpu-avg">-</strong></div>
+                <div class="gauge-stat"><span>Max</span><strong id="cpu-max">-</strong></div>
+            </div>
         </div>
         <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
@@ -847,11 +1248,16 @@
                     <span id="ram-count" class="server-pill">0 samples</span>
                 </div>
             </div>
-            <div class="server-chart-body"><canvas id="ram-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="ram" role="button" tabindex="0" title="Click to expand"><canvas id="ram-chart"></canvas></div>
+            <div class="gauge-stats">
+                <div class="gauge-stat"><span>Current</span><strong id="ram-current">-</strong></div>
+                <div class="gauge-stat"><span>Avg</span><strong id="ram-avg">-</strong></div>
+                <div class="gauge-stat"><span>Max</span><strong id="ram-max">-</strong></div>
+            </div>
         </div>
         <div class="server-chart-card quarter overview-gauge-card">
             <div class="server-chart-header">
-                <h3 class="server-chart-title"><i class="fa-solid fa-hard-drive"></i> Disk Usage</h3>
+                <h3 class="server-chart-title"><i class="fa-solid fa-hard-drive"></i> Disk Usage<span id="disk-chart-scope"></span></h3>
                 <div class="response-header-controls">
                     <div class="server-chart-toggle" role="group" aria-label="Disk usage chart view">
                         <button type="button" class="server-chart-toggle-btn active" data-utilization-view="gauge" data-chart-key="disk" aria-pressed="true"><i class="fa-solid fa-gauge-high"></i> Gauge</button>
@@ -860,28 +1266,34 @@
                     <span id="disk-count" class="server-pill">0 samples</span>
                 </div>
             </div>
-            <div class="server-chart-body"><canvas id="disk-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="disk" role="button" tabindex="0" title="Click to expand"><canvas id="disk-chart"></canvas></div>
+            <div class="gauge-stats">
+                <div class="gauge-stat"><span>Current</span><strong id="disk-current">-</strong></div>
+                <div class="gauge-stat"><span>Avg</span><strong id="disk-avg">-</strong></div>
+                <div class="gauge-stat"><span>Max</span><strong id="disk-max">-</strong></div>
+            </div>
+            <div id="disk-capacity" class="gauge-caption" hidden></div>
         </div>
         <div class="server-chart-card half">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-network-wired"></i> Network Traffic</h3>
                 <span id="network-count" class="server-pill">0 samples</span>
             </div>
-            <div class="server-chart-body"><canvas id="network-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="network" role="button" tabindex="0" title="Click to expand"><canvas id="network-chart"></canvas></div>
         </div>
         <div class="server-chart-card half">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-globe"></i> Internet Connectivity</h3>
                 <span id="internet-count" class="server-pill">0 samples</span>
             </div>
-            <div class="server-chart-body"><canvas id="internet-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="internet" role="button" tabindex="0" title="Click to expand"><canvas id="internet-chart"></canvas></div>
         </div>
         <div id="load-chart-card" class="server-chart-card full" style="display: none;">
             <div class="server-chart-header">
                 <h3 class="server-chart-title"><i class="fa-solid fa-gauge"></i> Load Average</h3>
                 <span id="load-count" class="server-pill">0 samples</span>
             </div>
-            <div class="server-chart-body"><canvas id="load-chart"></canvas></div>
+            <div class="server-chart-body" data-expand-chart="load" role="button" tabindex="0" title="Click to expand"><canvas id="load-chart"></canvas></div>
         </div>
     </section>
 
@@ -899,13 +1311,56 @@
             </div>
             <div id="service-details" class="server-detail-body server-empty">Loading...</div>
         </div>
+        <div class="server-detail-card" id="security-posture">
+            <div class="server-detail-header">
+                <h3 class="server-detail-title" title="Configuration checks with a right answer of their own: is the firewall on, is real-time antivirus running, how old is the newest patch. A check the monitoring account may not read is reported as unreadable rather than counted as a pass, so the score never flatters a host the monitor cannot see into."><i class="fa-solid fa-shield-halved"></i> Security Posture</h3>
+                <div class="security-header-actions">
+                    <button type="button" id="security-recheck" class="security-recheck"
+                            title="Run the security checks on this host now instead of waiting for the next scheduled sweep. Takes a few seconds to about half a minute.">
+                        <i class="fa-solid fa-rotate" aria-hidden="true"></i> Re-check
+                    </button>
+                    <span id="security-score-pill" class="server-pill">Not checked</span>
+                </div>
+            </div>
+            <div id="security-checks" class="server-detail-body server-empty">Loading...</div>
+        </div>
     </section>
+
+    <div id="chart-modal" class="modal chart-modal" role="dialog" aria-modal="true" aria-labelledby="chart-modal-title">
+        <div class="modal-content chart-modal-content">
+            <div class="modal-header chart-modal-header">
+                <h3 id="chart-modal-title">Chart</h3>
+                <div class="chart-modal-tools">
+                    <div class="server-range-group" id="chart-modal-ranges" aria-label="Expanded chart time range">
+                        <button type="button" class="server-range-btn" data-modal-minutes="5">5m</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="15">15m</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="60">1h</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="360">6h</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="720">12h</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="1440">24h</button>
+                        <button type="button" class="server-range-btn" data-modal-minutes="10080">7d</button>
+                    </div>
+                    <button type="button" id="chart-modal-reset" class="btn btn-xs btn-secondary" disabled>
+                        <i class="fa-solid fa-arrows-left-right-to-line"></i> Reset zoom
+                    </button>
+                    <button type="button" id="chart-modal-close" class="modal-close" aria-label="Close expanded chart">&times;</button>
+                </div>
+            </div>
+            <div id="chart-modal-stats" class="chart-modal-stats"></div>
+            <div class="chart-modal-body"><canvas id="chart-modal-canvas"></canvas></div>
+            <div class="chart-modal-hint">
+                Scroll to zoom &middot; drag to pan &middot; Shift+drag to zoom into a range &middot; double-click or Reset zoom to go back.
+                Keeps updating every 30s, and a zoomed view holds its range across refreshes.
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 <script>
 const deviceId = Number('{{ device_id }}');
 let currentMinutes = 15;
@@ -918,8 +1373,30 @@ const utilizationChartModes = { cpu: 'gauge', ram: 'gauge', disk: 'gauge' };
 const partitionCharts = [];
 let downIntervals = [];
 let downPoints = [];
+const DEFAULT_THRESHOLDS = { cpu: 85, ram: 90, disk: 90, swap: 80 };
+let latestThresholds = { ...DEFAULT_THRESHOLDS };
+let responseMetricLabel = 'Response Time';
+const UTILIZATION_CHARTS = {
+    cpu: { canvasId: 'cpu-chart', label: 'CPU Usage', color: '#0f766e' },
+    ram: { canvasId: 'ram-chart', label: 'RAM Usage', color: '#2563eb' },
+    disk: { canvasId: 'disk-chart', label: 'Disk Usage', color: '#d97706' }
+};
+// The expanded chart is a second Chart instance over the same series, so the
+// card keeps its own small rendering while the modal can carry zoom, its own
+// time range and a heavier axis.
+let modalChartKey = null;
+let modalMinutes = null;
+let modalPerformance = null;
+let modalResponse = null;
+let modalDown = { intervals: [], points: [] };
+let modalLastFocus = null;
 const RESPONSE_WARNING_MS = 10000;
 const RESPONSE_CRITICAL_MS = 30000;
+
+function timeUnitFor(minutes) {
+    const span = Number(minutes) || currentMinutes;
+    return span <= 60 ? 'minute' : (span <= 1440 ? 'hour' : 'day');
+}
 
 function parseChartDate(value) {
     const text = String(value || '');
@@ -931,7 +1408,12 @@ function parseChartDate(value) {
 const downIntervalPlugin = {
     id: 'singleServerDownMarkers',
     beforeDatasetsDraw(chart) {
-        if (!downIntervals.length || chart.options?.plugins?.downIntervals?.enabled === false) return;
+        const config = chart.options?.plugins?.downIntervals;
+        if (config?.enabled === false) return;
+        // An expanded chart can be showing a different time range than the
+        // card, so it carries its own outage list rather than the page's.
+        const intervals = config?.intervals || downIntervals;
+        if (!intervals.length) return;
         const { ctx, chartArea, scales } = chart;
         const xScale = scales.x;
         const yScale = scales.y;
@@ -939,7 +1421,7 @@ const downIntervalPlugin = {
         const y = Math.min(chartArea.bottom - 1, Math.max(chartArea.top, yScale.getPixelForValue(0)));
 
         ctx.save();
-        downIntervals.forEach(interval => {
+        intervals.forEach(interval => {
             const start = parseChartDate(interval.start);
             const end = parseChartDate(interval.end);
             if (!start || !end) return;
@@ -957,7 +1439,11 @@ const downIntervalPlugin = {
         ctx.restore();
     },
     afterDatasetsDraw(chart) {
-        if (!downPoints.length || chart.options?.plugins?.downIntervals?.enabled === false) return;
+        const config = chart.options?.plugins?.downIntervals;
+        if (config?.enabled === false) return;
+        const points = config?.points || downPoints;
+        const intervals = config?.intervals || downIntervals;
+        if (!points.length && !intervals.length) return;
         const { ctx, chartArea, scales } = chart;
         const xScale = scales.x;
         const yScale = scales.y;
@@ -968,7 +1454,7 @@ const downIntervalPlugin = {
         ctx.fillStyle = '#ef4444';
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 1.5;
-        downPoints.forEach(point => {
+        points.forEach(point => {
             const date = parseChartDate(point);
             if (!date) return;
             const x = xScale.getPixelForValue(date);
@@ -978,7 +1464,7 @@ const downIntervalPlugin = {
             ctx.fill();
             ctx.stroke();
         });
-        downIntervals.forEach(interval => {
+        intervals.forEach(interval => {
             const start = parseChartDate(interval.start);
             const end = parseChartDate(interval.end);
             if (!start || !end) return;
@@ -1004,7 +1490,14 @@ function esc(value) {
     }[ch]));
 }
 
+// Number(null) is 0, so a metric the collector never reported would otherwise
+// render as a confident "0.0%".  Missing has to stay visibly missing.
+function isMissing(value) {
+    return value === null || value === undefined || value === '';
+}
+
 function pct(value) {
+    if (isMissing(value)) return '-';
     const num = Number(value);
     return Number.isFinite(num) ? `${num.toFixed(1)}%` : '-';
 }
@@ -1022,6 +1515,7 @@ function formatBps(value) {
 }
 
 function formatMs(value) {
+    if (isMissing(value)) return '-';
     const num = Number(value);
     return Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-';
 }
@@ -1100,6 +1594,63 @@ function chartColors() {
     };
 }
 
+// A note that has nothing to say is hidden rather than left as a bare dash:
+// Windows never reports load average, swap or inode.
+// A long reading ("Unknown", "1094 ms") would run past the edge of a narrow
+// hero card, so it steps down a size instead of being clipped or wrapped.
+function setStatValue(id, text) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const value = String(text ?? '-');
+    element.textContent = value;
+    element.classList.toggle('is-long', value.length > 6);
+}
+
+function setNote(id, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
+}
+
+const STAT_TONES = {
+    normal: 'var(--success)',
+    info: 'var(--info)',
+    primary: 'var(--primary)',
+    warning: 'var(--warning)',
+    critical: 'var(--danger)',
+    muted: 'var(--text-muted)'
+};
+
+function setStatTone(cardId, tone) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    const resolved = tone === 'normal' ? (card.dataset.baseTone || 'normal') : tone;
+    card.style.setProperty('--stat-color', STAT_TONES[resolved] || STAT_TONES.primary);
+    card.classList.toggle('is-critical', tone === 'critical');
+    card.classList.toggle('is-warning', tone === 'warning');
+}
+
+function thresholdFor(key) {
+    const value = Number(latestThresholds?.[key]);
+    return Number.isFinite(value) && value > 0 ? value : (DEFAULT_THRESHOLDS[key] ?? 90);
+}
+
+// Warn before the alerting threshold is actually crossed, so a card turns
+// amber while there is still time to do something about it.
+function warningFor(key) {
+    return Math.max(1, thresholdFor(key) * 0.9);
+}
+
+function usageTone(value, key) {
+    if (isMissing(value)) return 'muted';
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 'muted';
+    if (num >= thresholdFor(key)) return 'critical';
+    if (num >= warningFor(key)) return 'warning';
+    return 'normal';
+}
+
 function setCount(id, count) {
     const el = document.getElementById(id);
     if (el) el.textContent = `${count || 0} samples`;
@@ -1113,17 +1664,83 @@ function responseSeverityClass(value) {
     return '';
 }
 
-function setPillValue(id, label, value) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.classList.remove('is-warning', 'is-critical');
-    el.classList.add(...responseSeverityClass(value).split(' ').filter(Boolean));
-    el.textContent = `${label} ${formatMs(value)}`;
+function setStatText(id, text, tone) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.textContent = text;
+    const cell = element.parentElement;
+    if (!cell) return;
+    cell.classList.toggle('is-warning', tone === 'warning');
+    cell.classList.toggle('is-critical', tone === 'critical');
 }
 
-function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tickCallback = value => `${value}%`) {
+function responseTone(value) {
+    const severity = responseSeverityClass(value);
+    return severity === 'is-critical' ? 'critical' : (severity === 'is-warning' ? 'warning' : 'normal');
+}
+
+// Current / Avg / Max for the selected range, so a needle sitting at 3% says
+// whether that is the normal state or the tail of a spike.
+function renderUtilizationStats(key, rows, current) {
+    const stats = summarize((rows || []).map(row => row.value));
+    const offline = String(current.status || '').toLowerCase() === 'down';
+    const live = offline
+        ? null
+        : (isMissing(current[key]) ? (stats ? stats.last : null) : current[key]);
+    setStatText(`${key}-current`, pct(live), usageTone(live, key));
+    setStatText(`${key}-avg`, stats ? pct(stats.avg) : '-', 'normal');
+    setStatText(`${key}-max`, stats ? pct(stats.max) : '-', stats ? usageTone(stats.max, key) : 'normal');
+    if (key === 'disk') renderDiskCapacity(current);
+}
+
+function renderDiskCapacity(current) {
+    const scope = diskScopeInfo(current);
+    const details = Array.isArray(current.disk_details) ? current.disk_details : [];
+    const detail = details.find(item => partitionLabel(item) === scope.scope);
+    const capacity = formatDiskCapacityFromDetail(detail);
+    setNote('disk-capacity', capacity ? `${capacity} used${scope.scope ? ` on ${scope.scope}` : ''}` : '');
+}
+
+// Draws this device's warning and alert thresholds onto a utilization trend,
+// so a line is read against the level that actually raises an alert.
+const usageThresholdPlugin = {
+    id: 'singleServerUsageThresholds',
+    afterDatasetsDraw(chart) {
+        const config = chart.options?.plugins?.usageThresholds;
+        const yScale = chart.scales?.y;
+        const area = chart.chartArea;
+        if (!config || !yScale || !area) return;
+
+        const { ctx } = chart;
+        [
+            { value: Number(config.warning), color: '#f59e0b', label: `Warning ${Math.round(config.warning)}%` },
+            { value: Number(config.critical), color: '#ef4444', label: `Alert ${Math.round(config.critical)}%` }
+        ].forEach(item => {
+            if (!Number.isFinite(item.value)) return;
+            const y = yScale.getPixelForValue(item.value);
+            if (y < area.top || y > area.bottom) return;
+            ctx.save();
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 4]);
+            ctx.beginPath();
+            ctx.moveTo(area.left, y);
+            ctx.lineTo(area.right, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = item.color;
+            ctx.font = '700 10px Inter, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(item.label, area.right - 4, y - 5);
+            ctx.restore();
+        });
+    }
+};
+
+function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tickCallback = value => `${value}%`, thresholds = null, view = {}) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+    const rangeMinutes = view.minutes || currentMinutes;
     if (charts[key]?.config?.type !== 'line') {
         charts[key]?.destroy();
         delete charts[key];
@@ -1138,7 +1755,7 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                time: { unit: timeUnitFor(rangeMinutes) },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1151,6 +1768,7 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
         },
         plugins: {
             legend: { display: false },
+            usageThresholds: thresholds,
             tooltip: {
                 callbacks: {
                     label: context => `${label}: ${tickCallback(context.parsed.y)}`
@@ -1172,17 +1790,26 @@ function renderLineChart(key, canvasId, label, rows, color, maxValue = 100, tick
             fill: true
         }]
     };
+    decorateChartView(options, data, view);
     if (charts[key]) {
         charts[key].data = data;
         charts[key].options = options;
         charts[key].update('none');
     } else {
-        charts[key] = new Chart(canvas.getContext('2d'), { type: 'line', data, options });
+        charts[key] = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data,
+            options,
+            plugins: [usageThresholdPlugin]
+        });
     }
 }
 
-function renderNetworkChart(data) {
-    const canvas = document.getElementById('network-chart');
+function renderNetworkChart(data, view = {}) {
+    const canvasId = view.canvasId || 'network-chart';
+    const chartKey = view.key || 'network';
+    const rangeMinutes = view.minutes || currentMinutes;
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const colors = chartColors();
     const inPoints = insertTimeGaps((data.network_in || []).map(timestampPoint).filter(Boolean));
@@ -1198,7 +1825,7 @@ function renderNetworkChart(data) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                time: { unit: timeUnitFor(rangeMinutes) },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1226,17 +1853,21 @@ function renderNetworkChart(data) {
             { label: 'Outgoing', data: outPoints, borderColor: '#be123c', backgroundColor: 'rgba(190,18,60,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.18, spanGaps: false }
         ]
     };
-    if (charts.network) {
-        charts.network.data = chartData;
-        charts.network.options = options;
-        charts.network.update('none');
+    decorateChartView(options, chartData, view);
+    if (charts[chartKey]) {
+        charts[chartKey].data = chartData;
+        charts[chartKey].options = options;
+        charts[chartKey].update('none');
     } else {
-        charts.network = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
+        charts[chartKey] = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
     }
 }
 
-function renderInternetChart(rows) {
-    const canvas = document.getElementById('internet-chart');
+function renderInternetChart(rows, view = {}) {
+    const canvasId = view.canvasId || 'internet-chart';
+    const chartKey = view.key || 'internet';
+    const rangeMinutes = view.minutes || currentMinutes;
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const colors = chartColors();
     const checks = (rows || []).map(row => {
@@ -1272,7 +1903,7 @@ function renderInternetChart(rows) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                time: { unit: timeUnitFor(rangeMinutes) },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1307,30 +1938,37 @@ function renderInternetChart(rows) {
         { label: 'HTTPS latency', data: online, borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.12)', borderWidth: 2, pointRadius: 2, pointHoverRadius: 4, fill: true, tension: 0.18, spanGaps: false },
         { label: 'Offline / failed check', data: failures, yAxisID: 'status', showLine: false, pointStyle: 'triangle', pointRotation: 180, pointRadius: 7, pointHoverRadius: 9, pointBackgroundColor: '#ef4444', pointBorderColor: '#b91c1c', pointBorderWidth: 1.5, clip: false }
     ] };
-    if (charts.internet) {
-        charts.internet.data = data;
-        charts.internet.options = options;
-        charts.internet.update('none');
+    decorateChartView(options, data, view);
+    if (charts[chartKey]) {
+        charts[chartKey].data = data;
+        charts[chartKey].options = options;
+        charts[chartKey].update('none');
     } else {
-        charts.internet = new Chart(canvas.getContext('2d'), { type: 'line', data, options });
+        charts[chartKey] = new Chart(canvas.getContext('2d'), { type: 'line', data, options });
     }
 }
 
-function renderLoadChart(data) {
+function renderLoadChart(data, view = {}) {
+    const isCard = !view.canvasId;
+    const canvasId = view.canvasId || 'load-chart';
+    const chartKey = view.key || 'load';
+    const rangeMinutes = view.minutes || currentMinutes;
     const card = document.getElementById('load-chart-card');
-    const canvas = document.getElementById('load-chart');
-    if (!card || !canvas) return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || (isCard && !card)) return;
 
     const load1 = insertTimeGaps((data.load1 || []).map(timestampPoint).filter(Boolean));
     const load5 = insertTimeGaps((data.load5 || []).map(timestampPoint).filter(Boolean));
     const load15 = insertTimeGaps((data.load15 || []).map(timestampPoint).filter(Boolean));
     const hasData = load1.length || load5.length || load15.length;
-    card.style.display = hasData ? '' : 'none';
-    setCount('load-count', Math.max(load1.length, load5.length, load15.length));
+    if (isCard) {
+        card.style.display = hasData ? '' : 'none';
+        setCount('load-count', Math.max(load1.length, load5.length, load15.length));
+    }
     if (!hasData) {
-        if (charts.load) {
-            charts.load.destroy();
-            delete charts.load;
+        if (charts[chartKey]) {
+            charts[chartKey].destroy();
+            delete charts[chartKey];
         }
         return;
     }
@@ -1346,7 +1984,7 @@ function renderLoadChart(data) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                time: { unit: timeUnitFor(rangeMinutes) },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1376,12 +2014,13 @@ function renderLoadChart(data) {
         ]
     };
 
-    if (charts.load) {
-        charts.load.data = chartData;
-        charts.load.options = options;
-        charts.load.update('none');
+    decorateChartView(options, chartData, view);
+    if (charts[chartKey]) {
+        charts[chartKey].data = chartData;
+        charts[chartKey].options = options;
+        charts[chartKey].update('none');
     } else {
-        charts.load = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
+        charts[chartKey] = new Chart(canvas.getContext('2d'), { type: 'line', data: chartData, options });
     }
 }
 
@@ -1452,29 +2091,37 @@ const responseGaugePlugin = {
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = gauge.mutedColor;
-        ctx.font = '700 9px Inter, sans-serif';
         (gauge.ticks || []).forEach(tick => {
             const tickAngle = Math.PI + ((tick.value / gauge.max) * Math.PI);
-            const labelRadius = Math.max(12, arc.innerRadius - 14);
+            // Marks are short and labels sit well inside them: a long mark
+            // reached right down into the numbers.
+            const labelRadius = Math.max(12, arc.innerRadius - 18);
             const tickX = centerX + (Math.cos(tickAngle) * labelRadius);
             const tickY = centerY + (Math.sin(tickAngle) * labelRadius);
-            ctx.fillText(tick.label, tickX, tickY);
+            if (tick.label) {
+                ctx.fillStyle = tick.color || gauge.mutedColor;
+                ctx.font = tick.emphasis ? '800 10px Inter, sans-serif' : '700 9px Inter, sans-serif';
+                ctx.fillText(tick.label, tickX, tickY);
+            }
 
+            const markLength = tick.emphasis ? 6 : 4;
             ctx.beginPath();
             ctx.moveTo(
                 centerX + (Math.cos(tickAngle) * arc.innerRadius),
                 centerY + (Math.sin(tickAngle) * arc.innerRadius)
             );
             ctx.lineTo(
-                centerX + (Math.cos(tickAngle) * (arc.innerRadius - 5)),
-                centerY + (Math.sin(tickAngle) * (arc.innerRadius - 5))
+                centerX + (Math.cos(tickAngle) * (arc.innerRadius - markLength)),
+                centerY + (Math.sin(tickAngle) * (arc.innerRadius - markLength))
             );
-            ctx.strokeStyle = gauge.tickColor;
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = tick.color || gauge.tickColor;
+            ctx.lineWidth = tick.emphasis ? 2 : 1.25;
             ctx.stroke();
         });
         ctx.restore();
+
+        const statusY = chart.height - 11;
+        const valueY = statusY - 20;
 
         if (gauge.hasData === false) {
             ctx.save();
@@ -1482,10 +2129,10 @@ const responseGaugePlugin = {
             ctx.textBaseline = 'middle';
             ctx.fillStyle = gauge.mutedColor;
             ctx.font = '800 18px Inter, sans-serif';
-            ctx.fillText(gauge.formattedValue, centerX, centerY + 25);
+            ctx.fillText(gauge.formattedValue, centerX, valueY);
             ctx.fillStyle = gauge.statusColor;
-            ctx.font = '800 9px Inter, sans-serif';
-            ctx.fillText(gauge.status, centerX, centerY + 43);
+            ctx.font = '800 10px Inter, sans-serif';
+            ctx.fillText(gauge.status, centerX, statusY);
             ctx.restore();
             return;
         }
@@ -1517,13 +2164,29 @@ const responseGaugePlugin = {
         ctx.textBaseline = 'middle';
         ctx.fillStyle = gauge.textColor;
         ctx.font = '850 23px Inter, sans-serif';
-        ctx.fillText(gauge.formattedValue, centerX, centerY + 25);
+        ctx.fillText(gauge.formattedValue, centerX, valueY);
         ctx.fillStyle = gauge.statusColor;
-        ctx.font = '800 9px Inter, sans-serif';
-        ctx.fillText(gauge.status, centerX, centerY + 43);
+        ctx.font = '800 10px Inter, sans-serif';
+        ctx.fillText(gauge.status, centerX, statusY);
         ctx.restore();
     }
 };
+
+// A plain 0-100 scale to read the needle against, plus the alert line.  Every
+// mark carries a number: the warning line is left to the green-to-amber colour
+// change, which falls on exactly the same spot, because its figure sits at 90%
+// of the alert figure and the two would print on top of each other.  0 and 100
+// anchor the scale and always stay; a middle number too near the alert figure
+// gives way to it.
+function gaugeTicks(criticalAt) {
+    const alert = { value: criticalAt, label: criticalAt.toFixed(0), color: '#dc2626', emphasis: true };
+    const scale = [0, 100]
+        .concat([25, 50, 75].filter(value => Math.abs(value - alert.value) >= 12))
+        .filter(value => Math.abs(value - alert.value) >= 3)
+        .sort((first, second) => first - second)
+        .map(value => ({ value, label: String(value) }));
+    return [...scale, alert];
+}
 
 function renderUtilizationGauge(key, canvasId, label, rows, currentValue, currentStatus) {
     const canvas = document.getElementById(canvasId);
@@ -1543,19 +2206,27 @@ function renderUtilizationGauge(key, canvasId, label, rows, currentValue, curren
         ? (Number.isFinite(numericCurrent) ? numericCurrent : historyValues[historyValues.length - 1])
         : 0;
     const value = Math.max(0, Math.min(100, rawValue));
+    // Zones come from this device's own alert thresholds, so the gauge turns
+    // red exactly when the alerter would fire - not at a fixed 75%.
+    const criticalAt = thresholdFor(key);
+    const warningAt = warningFor(key);
     const status = hasData
-        ? (value >= 85 ? 'CRITICAL' : (value >= 70 ? 'WARNING' : 'NORMAL'))
+        ? (value >= criticalAt ? 'CRITICAL' : (value >= warningAt ? 'WARNING' : 'NORMAL'))
         : (normalizedStatus === 'down' ? 'SERVER DOWN' : '0 SAMPLES');
     const statusColor = hasData
-        ? (value >= 85 ? '#dc2626' : (value >= 70 ? '#d97706' : '#059669'))
+        ? (value >= criticalAt ? '#dc2626' : (value >= warningAt ? '#d97706' : '#059669'))
         : (normalizedStatus === 'down' ? '#dc2626' : colors.muted);
     const gaugeData = {
-        labels: ['Low (0-25%)', 'Normal (25-50%)', 'High (50-75%)', 'Critical (75-100%)'],
+        labels: [
+            `Normal (0-${warningAt.toFixed(0)}%)`,
+            `Warning (${warningAt.toFixed(0)}-${criticalAt.toFixed(0)}%)`,
+            `Critical (${criticalAt.toFixed(0)}%+)`
+        ],
         datasets: [{
-            data: [25, 25, 25, 25],
+            data: [warningAt, Math.max(criticalAt - warningAt, 0), Math.max(100 - criticalAt, 0)],
             backgroundColor: hasData
-                ? ['#10b981', '#f59e0b', '#fb923c', '#ef4444']
-                : [colors.grid, colors.grid, colors.grid, colors.grid],
+                ? ['#10b981', '#f59e0b', '#ef4444']
+                : [colors.grid, colors.grid, colors.grid],
             borderWidth: 0,
             hoverOffset: 0
         }]
@@ -1567,7 +2238,7 @@ function renderUtilizationGauge(key, canvasId, label, rows, currentValue, curren
         rotation: -90,
         circumference: 180,
         cutout: '80%',
-        layout: { padding: { top: 14, right: 10, bottom: 36, left: 10 } },
+        layout: { padding: { top: 14, right: 10, bottom: 46, left: 10 } },
         plugins: {
             legend: { display: false },
             tooltip: { enabled: false },
@@ -1583,13 +2254,7 @@ function renderUtilizationGauge(key, canvasId, label, rows, currentValue, curren
                 textColor: colors.strong,
                 mutedColor: colors.muted,
                 tickColor: colors.grid,
-                ticks: [
-                    { value: 0, label: '0' },
-                    { value: 25, label: '25' },
-                    { value: 50, label: '50' },
-                    { value: 75, label: '75' },
-                    { value: 100, label: '100' }
-                ]
+                ticks: gaugeTicks(criticalAt)
             }
         }
     };
@@ -1597,7 +2262,7 @@ function renderUtilizationGauge(key, canvasId, label, rows, currentValue, curren
     canvas.setAttribute(
         'aria-label',
         hasData
-            ? `${label} gauge: ${value.toFixed(1)}% (${status.toLowerCase()})`
+            ? `${label} gauge: ${value.toFixed(1)}% (${status.toLowerCase()}, alert threshold ${criticalAt.toFixed(0)}%)`
             : `${label} gauge: no data (${status.toLowerCase()})`
     );
     if (charts[key]?.config?.type !== 'doughnut') {
@@ -1629,18 +2294,17 @@ function syncUtilizationViewButtons(key) {
 function renderUtilizationMetric(key) {
     const performance = latestPerformancePayload;
     if (!performance) return;
-    const configs = {
-        cpu: { canvasId: 'cpu-chart', label: 'CPU Usage', color: '#0f766e' },
-        ram: { canvasId: 'ram-chart', label: 'RAM Usage', color: '#2563eb' },
-        disk: { canvasId: 'disk-chart', label: 'Disk Usage', color: '#d97706' }
-    };
-    const config = configs[key];
+    const config = UTILIZATION_CHARTS[key];
     if (!config) return;
     const rows = performance[key] || [];
     syncUtilizationViewButtons(key);
+    renderUtilizationStats(key, rows, performance.current || {});
 
     if (utilizationChartModes[key] === 'trend') {
-        renderLineChart(key, config.canvasId, config.label, rows, config.color);
+        renderLineChart(key, config.canvasId, config.label, rows, config.color, 100, value => `${value}%`, {
+            warning: warningFor(key),
+            critical: thresholdFor(key)
+        });
         document.getElementById(config.canvasId)?.setAttribute('aria-label', `${config.label} trend chart`);
         return;
     }
@@ -1662,12 +2326,19 @@ function syncResponseViewButtons() {
     });
 }
 
-function renderResponseChart(serverHealthResponse, server) {
-    const canvas = document.getElementById('response-chart');
+function renderResponseChart(serverHealthResponse, server, view = {}) {
+    const isCard = !view.canvasId;
+    const canvasId = view.canvasId || 'response-chart';
+    const chartKey = view.key || 'response';
+    const chartMode = view.mode || responseChartMode;
+    const rangeMinutes = view.minutes || currentMinutes;
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    latestResponsePayload = serverHealthResponse;
-    latestResponseServer = server;
-    syncResponseViewButtons();
+    if (isCard) {
+        latestResponsePayload = serverHealthResponse;
+        latestResponseServer = server;
+        syncResponseViewButtons();
+    }
     const colors = chartColors();
     const series = (serverHealthResponse.series || []).find(item => Number(item.device_id) === deviceId);
     const labels = serverHealthResponse.labels || [];
@@ -1688,10 +2359,12 @@ function renderResponseChart(serverHealthResponse, server) {
     const maxValue = values.length ? Math.max(...values) : null;
     const responseColor = maxValue > RESPONSE_CRITICAL_MS ? '#dc2626' : (maxValue > RESPONSE_WARNING_MS ? '#d97706' : '#0f766e');
 
-    setPillValue('response-current', 'Current', lastValue);
-    setPillValue('response-avg', 'Avg', avgValue);
-    setPillValue('response-max', 'Max', maxValue);
-    setCount('response-count', values.length);
+    if (isCard) {
+        setStatText('response-current', formatMs(lastValue), responseTone(lastValue));
+        setStatText('response-avg', formatMs(avgValue), responseTone(avgValue));
+        setStatText('response-max', formatMs(maxValue), responseTone(maxValue));
+        setCount('response-count', values.length);
+    }
 
     const suggestedMax = Math.max(
         RESPONSE_WARNING_MS,
@@ -1705,7 +2378,7 @@ function renderResponseChart(serverHealthResponse, server) {
         scales: {
             x: {
                 type: 'time',
-                time: { unit: currentMinutes <= 60 ? 'minute' : (currentMinutes <= 1440 ? 'hour' : 'day') },
+                time: { unit: timeUnitFor(rangeMinutes) },
                 grid: { color: colors.grid },
                 ticks: { color: colors.text, font: { size: 10 } }
             },
@@ -1719,13 +2392,13 @@ function renderResponseChart(serverHealthResponse, server) {
         plugins: {
             legend: { display: false },
             tooltip: {
-                callbacks: { label: context => `Response Time: ${formatMs(context.parsed.y)}` }
+                callbacks: { label: context => `${responseMetricLabel}: ${formatMs(context.parsed.y)}` }
             }
         }
     };
     const chartData = {
         datasets: [{
-            label: 'Response Time',
+            label: responseMetricLabel,
             data: points,
             borderColor: responseColor,
             backgroundColor: `${responseColor}1f`,
@@ -1738,7 +2411,7 @@ function renderResponseChart(serverHealthResponse, server) {
         }]
     };
 
-    if (responseChartMode === 'gauge') {
+    if (chartMode === 'gauge') {
         const gaugeValue = Number.isFinite(lastValue) ? Math.max(0, lastValue) : 0;
         const gaugeMax = Math.max(
             40000,
@@ -1771,7 +2444,7 @@ function renderResponseChart(serverHealthResponse, server) {
             rotation: -90,
             circumference: 180,
             cutout: '80%',
-            layout: { padding: { top: 14, right: 10, bottom: 36, left: 10 } },
+            layout: { padding: { top: 14, right: 10, bottom: 46, left: 10 } },
             plugins: {
                 legend: { display: false },
                 tooltip: { enabled: false },
@@ -1797,17 +2470,17 @@ function renderResponseChart(serverHealthResponse, server) {
             }
         };
 
-        canvas.setAttribute('aria-label', `Response time gauge: ${formatMs(lastValue)} (${gaugeStatus.toLowerCase()})`);
-        if (charts.response?.config?.type !== 'doughnut') {
-            charts.response?.destroy();
-            delete charts.response;
+        canvas.setAttribute('aria-label', `${responseMetricLabel} gauge: ${formatMs(lastValue)} (${gaugeStatus.toLowerCase()})`);
+        if (charts[chartKey]?.config?.type !== 'doughnut') {
+            charts[chartKey]?.destroy();
+            delete charts[chartKey];
         }
-        if (charts.response) {
-            charts.response.data = gaugeData;
-            charts.response.options = gaugeOptions;
-            charts.response.update('none');
+        if (charts[chartKey]) {
+            charts[chartKey].data = gaugeData;
+            charts[chartKey].options = gaugeOptions;
+            charts[chartKey].update('none');
         } else {
-            charts.response = new Chart(canvas.getContext('2d'), {
+            charts[chartKey] = new Chart(canvas.getContext('2d'), {
                 type: 'doughnut',
                 data: gaugeData,
                 options: gaugeOptions,
@@ -1817,17 +2490,18 @@ function renderResponseChart(serverHealthResponse, server) {
         return;
     }
 
-    canvas.setAttribute('aria-label', 'Response time trend chart');
-    if (charts.response?.config?.type !== 'line') {
-        charts.response?.destroy();
-        delete charts.response;
+    canvas.setAttribute('aria-label', `${responseMetricLabel} trend chart`);
+    if (charts[chartKey]?.config?.type !== 'line') {
+        charts[chartKey]?.destroy();
+        delete charts[chartKey];
     }
-    if (charts.response) {
-        charts.response.data = chartData;
-        charts.response.options = options;
-        charts.response.update('none');
+    decorateChartView(options, chartData, view);
+    if (charts[chartKey]) {
+        charts[chartKey].data = chartData;
+        charts[chartKey].options = options;
+        charts[chartKey].update('none');
     } else {
-        charts.response = new Chart(canvas.getContext('2d'), {
+        charts[chartKey] = new Chart(canvas.getContext('2d'), {
             type: 'line',
             data: chartData,
             options,
@@ -1882,7 +2556,254 @@ function renderPartitionCharts(partitions, diskDetails = []) {
     }).join('');
 }
 
+const PLATFORM_BY_MONITOR = { winrm: 'windows', wmi: 'windows', ssh: 'linux' };
+
+// Only these two states get a fix. "unknown" means the monitor could not read
+// the check, and its detail already says what access it needs; "pass" needs
+// nothing.
+const SECURITY_ADVICE_STATES = ['fail', 'warn'];
+
+let securityAdvice = null;
+let securityRunContext = null;
+
+async function loadSecurityAdvice() {
+    // The content is the same for every host and never changes between polls,
+    // so it is fetched once for the page rather than on every refresh.
+    if (securityAdvice) return securityAdvice;
+    try {
+        const res = await fetch('/api/security-advice');
+        if (!res.ok) return null;
+        const data = await res.json();
+        securityAdvice = data.advice || null;
+        securityRunContext = data.run_context || null;
+    } catch (error) {
+        securityAdvice = null;
+    }
+    return securityAdvice;
+}
+
+function platformOf(server) {
+    return PLATFORM_BY_MONITOR[String((server && server.monitor_type) || '').toLowerCase()] || null;
+}
+
+function adviceFor(server, check) {
+    if (!securityAdvice) return null;
+    const platform = platformOf(server);
+    if (!platform) return null;
+    return (securityAdvice[platform] || {})[check.key] || null;
+}
+
+function runContextFor(server) {
+    const platform = platformOf(server);
+    if (!platform || !securityRunContext) return '';
+    return securityRunContext[platform] || '';
+}
+
+function renderAdvice(advice, runContext) {
+    const parts = [];
+    if (advice.fix) {
+        parts.push(`<p class="security-advice-fix">${esc(advice.fix)}</p>`);
+    }
+    if (advice.command) {
+        parts.push(`
+            <div class="security-advice-command">
+                <div class="security-advice-run">
+                    <span>${esc(runContext || '')}</span>
+                    <button type="button" class="security-copy" data-copy="${esc(advice.command)}">Copy</button>
+                </div>
+                <pre>${esc(advice.command)}</pre>
+            </div>
+        `);
+    }
+    if (advice.warning) {
+        parts.push(`
+            <p class="security-advice-warning">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${esc(advice.warning)}
+            </p>
+        `);
+    }
+    return `<div class="security-advice">${parts.join('')}</div>`;
+}
+
+// This app is served over plain HTTP on the LAN, where navigator.clipboard is
+// undefined -- it needs a secure context. Without the fallback the button
+// would look like it worked and copy nothing.
+async function copyText(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (error) {
+        // fall through to the legacy path
+    }
+    try {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(area);
+        return copied;
+    } catch (error) {
+        return false;
+    }
+}
+
+document.addEventListener('click', async event => {
+    const button = event.target.closest('.security-copy');
+    if (!button) return;
+    event.preventDefault();
+    const copied = await copyText(button.getAttribute('data-copy') || '');
+    const original = button.dataset.label || button.textContent;
+    button.dataset.label = original;
+    button.textContent = copied ? 'Copied' : 'Press Ctrl+C';
+    setTimeout(() => { button.textContent = button.dataset.label; }, 1600);
+});
+
+const SECURITY_CHECK_TONES = {
+    pass: { icon: 'fa-circle-check', css: 'is-pass', label: 'Passing' },
+    warn: { icon: 'fa-triangle-exclamation', css: 'is-warn', label: 'Worth reviewing' },
+    fail: { icon: 'fa-circle-xmark', css: 'is-fail', label: 'Failing' },
+    unknown: { icon: 'fa-circle-question', css: 'is-unknown', label: 'Could not be read' },
+};
+
+// Worst first. A list that opens with six passes buries the one line
+// somebody has to act on.
+const SECURITY_CHECK_ORDER = { fail: 0, warn: 1, unknown: 2, pass: 3 };
+
+// The card renders from this, and a re-check folds its fresh verdict
+// into it so the card updates without waiting for the next poll.
+let latestSecurityServer = null;
+
+async function recheckSecurity(button) {
+    const server = latestSecurityServer;
+    if (!server || !server.id) return;
+    const original = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Checking...';
+    try {
+        const res = await fetch(`/api/security-recheck/${encodeURIComponent(server.id)}`, {
+            method: 'POST',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.success === false) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        Object.assign(server, {
+            security_state: data.security_state,
+            security_score: data.security_score,
+            security_pass_count: data.security_pass_count,
+            security_warn_count: data.security_warn_count,
+            security_fail_count: data.security_fail_count,
+            security_checks: data.security_checks,
+            security_checked_at: data.security_checked_at,
+            security_error: data.security_error,
+        });
+        renderSecurityPosture(server);
+        button.innerHTML = original;
+    } catch (error) {
+        // Say which host refused and why, rather than silently going
+        // back to normal and leaving the stale verdict on screen.
+        button.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Failed';
+        button.title = String(error && error.message ? error.message : error);
+        setTimeout(() => { button.innerHTML = original; }, 4000);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+document.addEventListener('click', event => {
+    const button = event.target.closest('#security-recheck');
+    if (!button || button.disabled) return;
+    event.preventDefault();
+    recheckSecurity(button);
+});
+
+// Only on the first load. The page refreshes every thirty seconds, and
+// yanking the scroll position back every time would make the page
+// unusable for anyone reading something else on it.
+let hasFocusedRequestedSection = false;
+
+function focusRequestedSection() {
+    if (hasFocusedRequestedSection) return;
+    if (window.location.hash !== '#security-posture') return;
+    const card = document.getElementById('security-posture');
+    if (!card) return;
+    hasFocusedRequestedSection = true;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('is-flashed');
+    setTimeout(() => card.classList.remove('is-flashed'), 2000);
+}
+
+function renderSecurityPosture(server) {
+    latestSecurityServer = server || null;
+    const wrap = document.getElementById('security-checks');
+    const pill = document.getElementById('security-score-pill');
+    if (!wrap) return;
+    const checks = Array.isArray(server && server.security_checks) ? server.security_checks : [];
+    const state = String((server && server.security_state) || '').toLowerCase();
+    const score = Number(server && server.security_score);
+
+    if (pill) {
+        pill.textContent = Number.isFinite(score) ? `Score ${Math.round(score)}%` : 'Not checked';
+        pill.className = `server-pill security-pill is-${state || 'unchecked'}`;
+    }
+
+    if (!checks.length) {
+        wrap.classList.add('server-empty');
+        wrap.textContent = (server && server.security_error)
+            ? `The last sweep could not complete: ${server.security_error}`
+            : 'No security sweep has run on this host yet.';
+        return;
+    }
+
+    wrap.classList.remove('server-empty');
+    const sorted = [...checks].sort((a, b) => {
+        const left = SECURITY_CHECK_ORDER[a.state];
+        const right = SECURITY_CHECK_ORDER[b.state];
+        return (left === undefined ? 9 : left) - (right === undefined ? 9 : right);
+    });
+    const items = sorted.map(check => {
+        const tone = SECURITY_CHECK_TONES[check.state] || SECURITY_CHECK_TONES.unknown;
+        const advice = adviceFor(server, check);
+        // The translated label wins where there is one; the detail stays
+        // as the host reported it, because it is mostly evidence -- a KB
+        // number, a day count, a service name -- rather than prose.
+        const label = (advice && advice.label) || check.label || check.key;
+        const head = `
+            <i class="fa-solid ${tone.icon}" aria-hidden="true"></i>
+            <div>
+                <div class="security-check-label">${esc(label)}</div>
+                <div class="security-check-detail">${esc(check.detail || tone.label)}</div>
+            </div>
+        `;
+        if (!advice || !SECURITY_ADVICE_STATES.includes(check.state)) {
+            return `<li class="security-check ${tone.css}">${head}</li>`;
+        }
+        return `
+            <li class="security-check ${tone.css} is-actionable">
+                <details>
+                    <summary>${head}</summary>
+                    ${renderAdvice(advice, runContextFor(server))}
+                </details>
+            </li>
+        `;
+    }).join('');
+    const swept = (server && server.security_checked_at)
+        ? `Last swept ${server.security_checked_at}`
+        : '';
+    wrap.innerHTML = `
+        <ul class="security-check-list">${items}</ul>
+        ${swept ? `<div class="security-check-foot">${esc(swept)}</div>` : ''}
+    `;
+}
+
 function renderDetails(data, server) {
+    renderSecurityPosture(server);
     const current = data.current || {};
     const services = current.service_status || [];
     const summary = current.service_summary || {};
@@ -1931,6 +2852,7 @@ function renderDetails(data, server) {
             const running = Number(summary.running ?? 0);
             const stopped = Number(summary.stopped ?? 0);
             const autoStopped = Number(summary.auto_stopped ?? 0);
+            const hasAutoStopped = summary.auto_stopped !== null && summary.auto_stopped !== undefined;
             serviceWrap.innerHTML = `
                 <div class="service-summary-grid">
                     <div class="service-summary-card">
@@ -1954,17 +2876,27 @@ function renderDetails(data, server) {
                             <div class="service-summary-value">${esc(stopped || '-')}</div>
                         </div>
                     </div>
+                    ${hasAutoStopped ? `
+                    <div class="service-summary-card${autoStopped ? ' is-critical' : ''}">
+                        <div class="service-summary-icon ${autoStopped ? 'is-stopped' : 'is-running'}"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div>
+                            <div class="service-summary-label">Auto-Start Stopped</div>
+                            <div class="service-summary-value">${esc(autoStopped)}</div>
+                        </div>
+                    </div>` : `
                     <div class="service-summary-card">
                         <div class="service-summary-icon is-windows"><i class="fa-brands fa-windows"></i></div>
                         <div>
-                            <div class="service-summary-label">Windows Services</div>
-                            <div class="service-summary-value">${summary.source === 'windows' ? 'Yes' : esc(summary.source || 'Summary')}</div>
+                            <div class="service-summary-label">Source</div>
+                            <div class="service-summary-value">${esc(summary.source || 'Summary')}</div>
                         </div>
-                    </div>
+                    </div>`}
                 </div>
-                ${autoStopped ? `<div class="server-row"><span>Auto stopped services</span><strong>${esc(autoStopped)}</strong></div>` : ''}
                 <div class="server-note">
-                    This is a Windows service summary. To show exact stopped service names here, add monitored service names in the device configuration.
+                    ${hasAutoStopped
+                        ? `Windows keeps most of those ${esc(stopped)} stopped services Manual or Disabled by design, so only the ${esc(autoStopped)} auto-start service(s) that are not running need attention.`
+                        : 'This is a Windows service summary.'}
+                    To show exact service names here, add monitored service names in the device configuration.
                 </div>
             `;
         } else {
@@ -2088,53 +3020,152 @@ function inferPlatform(current, server) {
     return monitorType ? monitorType.toUpperCase() : 'Unknown protocol';
 }
 
-function serviceDownCount(current) {
+function serviceDownState(current) {
     const services = current.service_status || [];
-    if (services.length) return services.filter(service => !service.ok).length;
+    if (services.length) {
+        const down = services.filter(service => !service.ok).length;
+        return {
+            count: down,
+            label: 'Services Down',
+            note: `${down} of ${services.length} monitored`
+        };
+    }
+
     const summary = current.service_summary || {};
+    const autoStopped = Number(summary.auto_stopped);
     const stopped = Number(summary.stopped);
-    return Number.isFinite(stopped) ? stopped : 0;
+    const total = Number(summary.total ?? summary.monitored);
+    if (Number.isFinite(autoStopped)) {
+        // Windows keeps hundreds of Manual/Disabled services stopped by design,
+        // so the raw stopped count says nothing.  Only an auto-start service
+        // that is not running is something to act on.
+        const context = [];
+        if (Number.isFinite(stopped)) context.push(`${stopped} stopped`);
+        if (Number.isFinite(total)) context.push(`${total} total`);
+        return {
+            count: autoStopped,
+            label: 'Auto-Start Stopped',
+            note: context.length ? context.join(' · ') : 'Windows summary'
+        };
+    }
+
+    return {
+        count: Number.isFinite(stopped) ? stopped : 0,
+        label: 'Services Down',
+        note: Number.isFinite(total) ? `${total} total` : 'No service data'
+    };
+}
+
+function loadNote(current) {
+    const parts = [current.load1, current.load5, current.load15]
+        .filter(value => !isMissing(value))
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value))
+        .map(value => value.toFixed(2));
+    return parts.length ? `Load ${parts.join(' / ')}` : '';
+}
+
+// The disk figure is the system drive, so name it and call out any partition
+// that is fuller - otherwise a nearly full data drive is invisible here.
+function partitionLabel(detail) {
+    return String(detail?.mount || detail?.name || '').trim();
+}
+
+function diskScopeInfo(current) {
+    const details = Array.isArray(current.disk_details) ? current.disk_details : [];
+    const value = isMissing(current.disk) ? NaN : Number(current.disk);
+    const partitions = details
+        .map(detail => ({
+            name: partitionLabel(detail),
+            usage: Number(detail.use_percent)
+        }))
+        .filter(item => item.name && Number.isFinite(item.usage));
+    const scope = partitions.find(item => Math.abs(item.usage - value) < 0.05) || null;
+    const busiest = partitions.reduce((worst, item) => (!worst || item.usage > worst.usage ? item : worst), null);
+
+    const parts = [];
+    if (scope) parts.push(scope.name);
+    if (busiest && busiest.name !== scope?.name && busiest.usage > (Number.isFinite(value) ? value : -1)) {
+        parts.push(`highest ${busiest.name} ${busiest.usage.toFixed(1)}%`);
+    }
+    if (!isMissing(current.inode)) parts.push(`Inode ${pct(current.inode)}`);
+    return { scope: scope ? scope.name : '', note: parts.join(' · ') };
+}
+
+// WinRM/SSH "response time" is the time to open the session and collect every
+// metric in one poll, not the latency of the server, so it gets its own name.
+function isCollectionMonitor(current, server) {
+    const monitorType = String(current.monitor_type || server?.monitor_type || '').toLowerCase();
+    return ['winrm', 'wmi', 'ssh'].includes(monitorType);
 }
 
 function updateSummary(data, server) {
     const current = data.current || {};
+    latestThresholds = { ...DEFAULT_THRESHOLDS, ...(data.thresholds || {}) };
     document.getElementById('server-name').textContent = server?.name || `Server ${deviceId}`;
     const status = document.getElementById('server-status');
     const statusText = current.status || server?.status || 'unknown';
-    const responseValue = Number(current.response_time ?? server?.response_time);
-    const serviceDown = serviceDownCount(current);
+    const responseValue = current.response_time ?? server?.response_time;
+    const serviceState = serviceDownState(current);
     const pendingReboot = !!current.pending_reboot;
     const internetStatus = String(current.internet_status || 'unknown').toLowerCase();
-    const internetLatency = Number(current.internet_latency_ms);
     status.textContent = statusText;
     status.className = `status-badge status-${esc(statusText)}`;
-    document.getElementById('stat-cpu').textContent = pct(current.cpu);
-    document.getElementById('stat-ram').textContent = pct(current.ram);
-    document.getElementById('stat-disk').textContent = pct(current.disk);
-    document.getElementById('stat-load').textContent = current.load1 !== null && current.load1 !== undefined
-        ? `Load ${Number(current.load1).toFixed(2)} / ${Number(current.load5 || 0).toFixed(2)} / ${Number(current.load15 || 0).toFixed(2)}`
-        : 'Load -';
-    document.getElementById('stat-swap').textContent = `Swap ${pct(current.swap)}`;
-    document.getElementById('stat-inode').textContent = `Inode ${pct(current.inode)}`;
-    document.getElementById('stat-response').textContent = formatMs(responseValue);
-    document.getElementById('stat-response-sub').textContent = responseSeverityClass(responseValue) === 'is-critical'
-        ? 'Critical'
-        : (responseSeverityClass(responseValue) === 'is-warning' ? 'Warning' : 'Current');
-    document.getElementById('stat-internet').textContent = internetStatus === 'online'
+
+    setStatValue('stat-cpu', pct(current.cpu));
+    setStatTone('stat-cpu-card', usageTone(current.cpu, 'cpu'));
+    setNote('stat-load', loadNote(current));
+
+    setStatValue('stat-ram', pct(current.ram));
+    setStatTone('stat-ram-card', usageTone(current.ram, 'ram'));
+    setNote('stat-swap', isMissing(current.swap) ? '' : `Swap ${pct(current.swap)}`);
+
+    const diskScope = diskScopeInfo(current);
+    setStatValue('stat-disk', pct(current.disk));
+    setStatTone('stat-disk-card', usageTone(current.disk, 'disk'));
+    setNote('stat-disk-note', diskScope.note);
+    const diskScopeLabel = document.getElementById('disk-chart-scope');
+    if (diskScopeLabel) diskScopeLabel.textContent = diskScope.scope ? ` · ${diskScope.scope}` : '';
+
+    const collectionBased = isCollectionMonitor(current, server);
+    responseMetricLabel = collectionBased ? 'Collection Time' : 'Response Time';
+    document.getElementById('stat-response-label').textContent = responseMetricLabel;
+    const responseChartTitle = document.getElementById('response-chart-title');
+    if (responseChartTitle) responseChartTitle.textContent = responseMetricLabel;
+    const responseCard = document.getElementById('stat-response-card');
+    responseCard.title = collectionBased
+        ? 'Time to open the remote session and collect every metric in one poll, not the latency of the server itself.'
+        : 'Round-trip time of the last reachability check.';
+    setStatValue('stat-response', formatMs(responseValue));
+    const responseSeverity = responseSeverityClass(responseValue);
+    const responseTone = responseSeverity === 'is-critical'
+        ? 'critical'
+        : (responseSeverity === 'is-warning' ? 'warning' : 'normal');
+    setStatTone('stat-response-card', responseTone);
+    setNote('stat-response-sub', [
+        responseTone === 'critical' ? 'Critical' : (responseTone === 'warning' ? 'Warning' : ''),
+        collectionBased ? 'Full metric collection' : 'Current'
+    ].filter(Boolean).join(' · '));
+
+    setStatValue('stat-internet', internetStatus === 'online'
         ? 'Online'
-        : (internetStatus === 'unknown' ? 'Unknown' : 'Offline');
-    document.getElementById('stat-internet-sub').textContent = internetStatus === 'online'
-        ? formatMs(internetLatency)
-        : internetStatus.replaceAll('_', ' ');
+        : (internetStatus === 'unknown' ? 'Unknown' : 'Offline'));
+    setNote('stat-internet-sub', internetStatus === 'online'
+        ? formatMs(current.internet_latency_ms)
+        : internetStatus.replaceAll('_', ' '));
     const internetCard = document.getElementById('stat-internet-card');
     internetCard.style.setProperty('--stat-color', internetStatus === 'online' ? 'var(--success)' : (internetStatus === 'unknown' ? 'var(--text-muted)' : 'var(--danger)'));
+    internetCard.classList.toggle('is-critical', internetStatus !== 'online' && internetStatus !== 'unknown');
     internetCard.title = current.internet_error || current.internet_target || 'Remote Internet check';
-    document.getElementById('stat-service-down').textContent = serviceDown;
-    document.getElementById('stat-service-sub').textContent = current.service_status?.length
-        ? `${current.service_status.length} monitored`
-        : 'Windows summary';
-    document.getElementById('stat-reboot').textContent = pendingReboot ? 'Yes' : 'No';
-    document.getElementById('stat-reboot-sub').textContent = pendingReboot ? 'Restart required' : 'No pending reboot';
+
+    document.getElementById('stat-service-label').textContent = serviceState.label;
+    setStatValue('stat-service-down', serviceState.count);
+    setNote('stat-service-sub', serviceState.note);
+    setStatTone('stat-service-card', serviceState.count > 0 ? 'critical' : 'normal');
+
+    setStatValue('stat-reboot', pendingReboot ? 'Yes' : 'No');
+    setNote('stat-reboot-sub', pendingReboot ? 'Restart required' : 'No pending reboot');
+    setStatTone('stat-reboot-card', pendingReboot ? 'warning' : 'normal');
 }
 
 async function loadServerList() {
@@ -2153,8 +3184,9 @@ async function loadServerList() {
 
 async function loadDashboard() {
     try {
-        const [server, performanceRes, responseRes, eventsRes, downRes] = await Promise.all([
+        const [server, , performanceRes, responseRes, eventsRes, downRes] = await Promise.all([
             loadServerList(),
+            loadSecurityAdvice(),
             fetch(`/api/devices/${deviceId}/performance?minutes=${currentMinutes}&_t=${Date.now()}`),
             fetch(`/api/server-health/response-time?minutes=${currentMinutes}&sample=72&_t=${Date.now()}`),
             fetch(`/api/devices/${deviceId}/events?minutes=${currentMinutes}&limit=30&_t=${Date.now()}`),
@@ -2177,6 +3209,7 @@ async function loadDashboard() {
 
         updateSummary(performance, server);
         renderDetails(performance, server);
+        focusRequestedSection();
         renderEvents(events);
         setCount('cpu-count', (performance.cpu || []).length);
         setCount('ram-count', (performance.ram || []).length);
@@ -2191,13 +3224,366 @@ async function loadDashboard() {
         renderLoadChart(performance);
         renderResponseChart(response, server);
         renderPartitionCharts(performance.disk_partitions || [], performance.current?.disk_details || []);
+        if (modalChartKey) {
+            loadModalData();
+        }
     } catch (error) {
         document.getElementById('server-name').textContent = 'Unable to load server';
         document.getElementById('server-meta').innerHTML = `<span class="server-pill">${esc(error.message)}</span>`;
     }
 }
 
+// ---------------------------------------------------------------------------
+// Expanded chart
+// ---------------------------------------------------------------------------
+// The zoom plugin registers globally but stays inert: it only does anything on
+// a chart that declares options.plugins.zoom, which is the expanded chart only.
+if (window.ChartZoom) {
+    Chart.register(window.ChartZoom);
+}
+
+const EXPANDABLE_CHARTS = {
+    cpu: { kind: 'utilization' },
+    ram: { kind: 'utilization' },
+    disk: { kind: 'utilization' },
+    response: { kind: 'response' },
+    network: { kind: 'network', title: 'Network Traffic' },
+    internet: { kind: 'internet', title: 'Internet Connectivity' },
+    load: { kind: 'load', title: 'Load Average' }
+};
+
+// Turns a card's chart options into the expanded version: zoom and pan, a
+// legend, visible sample points and the outage markers for the range the
+// expanded chart is actually showing.
+function decorateChartView(options, data, view) {
+    if (!view?.expanded) return;
+    const colors = chartColors();
+    options.plugins = options.plugins || {};
+    options.plugins.legend = {
+        ...(options.plugins.legend || {}),
+        display: true,
+        position: 'bottom',
+        labels: { color: colors.text, boxWidth: 10, boxHeight: 10, font: { size: 11 } }
+    };
+    options.plugins.zoom = {
+        limits: { x: { minRange: 60 * 1000 } },
+        pan: { enabled: true, mode: 'x', onPanComplete: syncModalZoomState },
+        zoom: {
+            mode: 'x',
+            wheel: { enabled: true, speed: 0.08 },
+            pinch: { enabled: true },
+            drag: {
+                enabled: true,
+                modifierKey: 'shift',
+                backgroundColor: 'rgba(37, 99, 235, 0.12)',
+                borderColor: 'rgba(37, 99, 235, 0.6)',
+                borderWidth: 1
+            },
+            onZoomComplete: syncModalZoomState
+        }
+    };
+    if (view.down) {
+        options.plugins.downIntervals = {
+            intervals: view.down.intervals || [],
+            points: view.down.points || []
+        };
+    }
+    if (options.scales?.x?.ticks) {
+        options.scales.x.ticks = { ...options.scales.x.ticks, maxTicksLimit: 14, font: { size: 11 } };
+    }
+    if (options.scales?.y?.ticks) {
+        options.scales.y.ticks = { ...options.scales.y.ticks, font: { size: 11 } };
+    }
+    (data?.datasets || []).forEach(dataset => {
+        if (dataset.showLine === false) return;
+        dataset.borderWidth = Math.max(Number(dataset.borderWidth) || 0, 2.5);
+        dataset.pointRadius = Math.max(Number(dataset.pointRadius) || 0, 2);
+        dataset.pointHoverRadius = Math.max(Number(dataset.pointHoverRadius) || 0, 5);
+    });
+}
+
+function summarize(values) {
+    const numbers = (values || [])
+        .filter(value => !isMissing(value))
+        .map(Number)
+        .filter(Number.isFinite);
+    if (!numbers.length) return null;
+    return {
+        min: Math.min(...numbers),
+        max: Math.max(...numbers),
+        avg: numbers.reduce((total, value) => total + value, 0) / numbers.length,
+        last: numbers[numbers.length - 1],
+        count: numbers.length
+    };
+}
+
+function setModalStats(items) {
+    const target = document.getElementById('chart-modal-stats');
+    if (!target) return;
+    target.innerHTML = (items || [])
+        .map(item => `<span class="chart-modal-stat"><span>${esc(item.label)}</span>${esc(item.value)}</span>`)
+        .join('');
+}
+
+function modalChartTitle() {
+    if (modalChartKey === 'response') return responseMetricLabel;
+    if (UTILIZATION_CHARTS[modalChartKey]) {
+        const scope = modalChartKey === 'disk'
+            ? (document.getElementById('disk-chart-scope')?.textContent || '')
+            : '';
+        return `${UTILIZATION_CHARTS[modalChartKey].label}${scope}`;
+    }
+    return EXPANDABLE_CHARTS[modalChartKey]?.title || 'Chart';
+}
+
+function syncModalZoomState() {
+    const button = document.getElementById('chart-modal-reset');
+    if (!button) return;
+    const chart = charts.modal;
+    button.disabled = !(chart && typeof chart.isZoomedOrPanned === 'function' && chart.isZoomedOrPanned());
+}
+
+function syncModalRangeButtons() {
+    document.querySelectorAll('#chart-modal-ranges .server-range-btn').forEach(button => {
+        button.classList.toggle('active', Number(button.dataset.modalMinutes) === modalMinutes);
+    });
+}
+
+function destroyModalChart() {
+    if (charts.modal) {
+        charts.modal.destroy();
+        delete charts.modal;
+    }
+}
+
+function renderModalChart() {
+    const config = EXPANDABLE_CHARTS[modalChartKey];
+    if (!config) return;
+    const titleEl = document.getElementById('chart-modal-title');
+    if (titleEl) titleEl.textContent = modalChartTitle();
+
+    // A refresh rebuilds the chart options, which would throw away a zoom the
+    // reader set, so the current window is captured and put back afterwards.
+    const previous = charts.modal;
+    const keepRange = previous && typeof previous.isZoomedOrPanned === 'function' && previous.isZoomedOrPanned()
+        ? { min: previous.scales.x.min, max: previous.scales.x.max }
+        : null;
+
+    const view = {
+        canvasId: 'chart-modal-canvas',
+        key: 'modal',
+        minutes: modalMinutes,
+        mode: 'trend',
+        expanded: true,
+        down: modalDown
+    };
+    const performance = modalPerformance || {};
+
+    if (config.kind === 'utilization') {
+        const utilization = UTILIZATION_CHARTS[modalChartKey];
+        const rows = performance[modalChartKey] || [];
+        renderLineChart('modal', view.canvasId, utilization.label, rows, utilization.color, 100, value => `${value}%`, {
+            warning: warningFor(modalChartKey),
+            critical: thresholdFor(modalChartKey)
+        }, view);
+        const stats = summarize(rows.map(row => row.value));
+        setModalStats(stats ? [
+            { label: 'Current', value: pct(stats.last) },
+            { label: 'Avg', value: pct(stats.avg) },
+            { label: 'Min', value: pct(stats.min) },
+            { label: 'Max', value: pct(stats.max) },
+            { label: 'Alert at', value: pct(thresholdFor(modalChartKey)) },
+            { label: 'Samples', value: stats.count }
+        ] : []);
+    } else if (config.kind === 'response') {
+        renderResponseChart(modalResponse || { labels: [], series: [] }, latestResponseServer, view);
+        const series = (modalResponse?.series || []).find(item => Number(item.device_id) === deviceId);
+        const stats = summarize(series?.values || []);
+        setModalStats(stats ? [
+            { label: 'Current', value: formatMs(stats.last) },
+            { label: 'Avg', value: formatMs(stats.avg) },
+            { label: 'Min', value: formatMs(stats.min) },
+            { label: 'Max', value: formatMs(stats.max) },
+            { label: 'Samples', value: stats.count }
+        ] : []);
+    } else if (config.kind === 'network') {
+        renderNetworkChart(performance, view);
+        const incoming = summarize((performance.network_in || []).map(row => row.value));
+        const outgoing = summarize((performance.network_out || []).map(row => row.value));
+        setModalStats([
+            incoming ? { label: 'In avg', value: formatBps(incoming.avg) } : null,
+            incoming ? { label: 'In peak', value: formatBps(incoming.max) } : null,
+            outgoing ? { label: 'Out avg', value: formatBps(outgoing.avg) } : null,
+            outgoing ? { label: 'Out peak', value: formatBps(outgoing.max) } : null,
+            incoming || outgoing ? { label: 'Samples', value: Math.max(incoming?.count || 0, outgoing?.count || 0) } : null
+        ].filter(Boolean));
+    } else if (config.kind === 'internet') {
+        const rows = performance.internet || [];
+        renderInternetChart(rows, view);
+        const online = rows.filter(row => String(row.status || '').toLowerCase() === 'online');
+        const stats = summarize(online.map(row => row.latency_ms));
+        const failures = rows.length - online.length;
+        setModalStats([
+            stats ? { label: 'Latency avg', value: formatMs(stats.avg) } : null,
+            stats ? { label: 'Latency max', value: formatMs(stats.max) } : null,
+            { label: 'Checks', value: rows.length },
+            { label: 'Failed', value: failures }
+        ].filter(Boolean));
+    } else if (config.kind === 'load') {
+        renderLoadChart(performance, view);
+        const stats = summarize((performance.load1 || []).map(row => row.value));
+        setModalStats(stats ? [
+            { label: 'Load 1m', value: stats.last.toFixed(2) },
+            { label: 'Avg', value: stats.avg.toFixed(2) },
+            { label: 'Max', value: stats.max.toFixed(2) },
+            { label: 'Samples', value: stats.count }
+        ] : []);
+    }
+
+    const chart = charts.modal;
+    if (!chart) {
+        setModalStats([{ label: 'No data', value: 'for this range' }]);
+    } else if (keepRange && typeof chart.zoomScale === 'function') {
+        chart.zoomScale('x', keepRange, 'none');
+    }
+    syncModalZoomState();
+}
+
+async function loadModalData() {
+    if (!modalChartKey) return;
+    if (modalMinutes === currentMinutes) {
+        modalPerformance = latestPerformancePayload;
+        modalResponse = latestResponsePayload;
+        modalDown = { intervals: downIntervals, points: downPoints };
+        renderModalChart();
+        return;
+    }
+
+    const wantsResponse = EXPANDABLE_CHARTS[modalChartKey]?.kind === 'response';
+    const requestedKey = modalChartKey;
+    const requestedMinutes = modalMinutes;
+    try {
+        const urls = [
+            `/api/devices/${deviceId}/performance?minutes=${requestedMinutes}&_t=${Date.now()}`,
+            `/api/devices/${deviceId}/down-intervals?minutes=${requestedMinutes}&_t=${Date.now()}`
+        ];
+        if (wantsResponse) {
+            urls.push(`/api/server-health/response-time?minutes=${requestedMinutes}&sample=144&_t=${Date.now()}`);
+        }
+        const responses = await Promise.all(urls.map(url => fetch(url)));
+        const failed = responses.find(response => !response.ok);
+        if (failed) throw new Error(`HTTP ${failed.status}`);
+        const [performance, down, response] = await Promise.all(responses.map(item => item.json()));
+        // The reader may have closed the modal or moved on while this was in
+        // flight; a late answer must not paint over the newer one.
+        if (modalChartKey !== requestedKey || modalMinutes !== requestedMinutes) return;
+        modalPerformance = performance;
+        modalDown = { intervals: down?.intervals || [], points: down?.points || [] };
+        if (wantsResponse) modalResponse = response;
+        renderModalChart();
+    } catch (error) {
+        if (modalChartKey !== requestedKey) return;
+        setModalStats([{ label: 'Unable to load', value: error.message }]);
+    }
+}
+
+function openChartModal(key) {
+    const modal = document.getElementById('chart-modal');
+    if (!modal || !EXPANDABLE_CHARTS[key] || !latestPerformancePayload) return;
+    destroyModalChart();
+    modalChartKey = key;
+    modalMinutes = currentMinutes;
+    modalLastFocus = document.activeElement;
+    modalPerformance = latestPerformancePayload;
+    modalResponse = latestResponsePayload;
+    modalDown = { intervals: downIntervals, points: downPoints };
+    syncModalRangeButtons();
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    document.getElementById('chart-modal-close')?.focus();
+    renderModalChart();
+}
+
+function closeChartModal() {
+    const modal = document.getElementById('chart-modal');
+    if (!modal || !modalChartKey) return;
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+    destroyModalChart();
+    modalChartKey = null;
+    modalMinutes = null;
+    modalPerformance = null;
+    modalResponse = null;
+    modalDown = { intervals: [], points: [] };
+    setModalStats([]);
+    if (modalLastFocus && typeof modalLastFocus.focus === 'function') modalLastFocus.focus();
+    modalLastFocus = null;
+}
+
+function bindChartModal() {
+    document.querySelectorAll('[data-expand-chart]').forEach(element => {
+        element.addEventListener('click', () => openChartModal(element.dataset.expandChart));
+        element.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            openChartModal(element.dataset.expandChart);
+        });
+    });
+
+    const modal = document.getElementById('chart-modal');
+    modal?.addEventListener('click', event => {
+        if (event.target === modal) closeChartModal();
+    });
+    document.getElementById('chart-modal-close')?.addEventListener('click', closeChartModal);
+    document.getElementById('chart-modal-reset')?.addEventListener('click', () => {
+        charts.modal?.resetZoom?.();
+        syncModalZoomState();
+    });
+    document.getElementById('chart-modal-canvas')?.addEventListener('dblclick', () => {
+        charts.modal?.resetZoom?.();
+        syncModalZoomState();
+    });
+    document.querySelectorAll('#chart-modal-ranges .server-range-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const minutes = Number(button.dataset.modalMinutes);
+            if (!Number.isFinite(minutes) || minutes === modalMinutes) return;
+            modalMinutes = minutes;
+            syncModalRangeButtons();
+            // A new range is a new picture, so the old zoom window is dropped.
+            charts.modal?.resetZoom?.('none');
+            loadModalData();
+        });
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') closeChartModal();
+    });
+}
+
+// Chart.js paints theme colours onto the canvas at draw time: needles, gauge
+// readouts, axis ticks and legend labels keep whatever theme was active when
+// they were drawn.  Without this the page sits with white-on-white text (or
+// the reverse) until the next 30s refresh redraws it.
+function repaintChartsForTheme() {
+    const performance = latestPerformancePayload;
+    if (performance) {
+        renderUtilizationMetric('cpu');
+        renderUtilizationMetric('ram');
+        renderUtilizationMetric('disk');
+        renderNetworkChart(performance);
+        renderInternetChart(performance.internet || []);
+        renderLoadChart(performance);
+    }
+    if (latestResponsePayload) {
+        renderResponseChart(latestResponsePayload, latestResponseServer);
+    }
+    if (modalChartKey) {
+        renderModalChart();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('themechange', repaintChartsForTheme);
+    bindChartModal();
     document.querySelectorAll('[data-utilization-view]').forEach(button => {
         button.addEventListener('click', () => {
             const key = button.dataset.chartKey;

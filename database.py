@@ -366,6 +366,18 @@ class Database:
             ('internet_target', 'TEXT'),
             ('internet_error', 'TEXT'),
             ('internet_checked_at', 'TIMESTAMP'),
+            # Security posture (Tier 1). Only the latest verdict is kept on the
+            # device row: these are configuration states, and a history of
+            # "the firewall was still on" every six hours would grow without
+            # telling anyone anything. Changes are reported as alerts instead.
+            ('security_state', 'TEXT'),
+            ('security_score', 'REAL'),
+            ('security_pass_count', 'INTEGER'),
+            ('security_warn_count', 'INTEGER'),
+            ('security_fail_count', 'INTEGER'),
+            ('security_checks_json', 'TEXT'),
+            ('security_checked_at', 'TIMESTAMP'),
+            ('security_error', 'TEXT'),
             # SNMP metric collection runs alongside the device's own monitor_type,
             # so a branch router can stay on ping for up/down while SNMP supplies
             # interface counters. Without this the two were mutually exclusive.
@@ -2072,6 +2084,40 @@ class Database:
         except Exception as e:
             self._safe_rollback(conn)
             print(f"[DB ERROR] update_internet_check: {e}")
+            return False
+        finally:
+            self.release_connection(conn)
+
+    def update_security_posture(self, device_id, state, score=None, pass_count=None,
+                                warn_count=None, fail_count=None, checks=None, error=None):
+        """Persist the latest security posture verdict for a server.
+
+        Only the current verdict is stored. The per-check detail rides along
+        as JSON so the dashboard can list what actually failed instead of
+        showing a bare score nobody can act on.
+        """
+        conn = self.get_connection()
+        try:
+            cursor = self._cursor(conn)
+            ph = self._ph()
+            checked_at = datetime.now().isoformat()
+            cursor.execute(f'''
+                UPDATE devices
+                SET security_state = {ph}, security_score = {ph},
+                    security_pass_count = {ph}, security_warn_count = {ph},
+                    security_fail_count = {ph}, security_checks_json = {ph},
+                    security_error = {ph}, security_checked_at = {ph}
+                WHERE id = {ph}
+            ''', (
+                state, score, pass_count, warn_count, fail_count,
+                json.dumps(checks or [], ensure_ascii=False),
+                (str(error)[:1000] if error else None), checked_at, device_id,
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            self._safe_rollback(conn)
+            print(f"[DB ERROR] update_security_posture: {e}")
             return False
         finally:
             self.release_connection(conn)

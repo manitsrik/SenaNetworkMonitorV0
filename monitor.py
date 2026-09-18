@@ -17,6 +17,7 @@ import threading
 import sys
 import ssl
 import json
+import re
 
 
 class _SSLContextAdapter(HTTPAdapter):
@@ -866,8 +867,507 @@ class NetworkMonitor:
         busy = 100.0 * (total_delta - spare_delta) / total_delta
         return round(min(100.0, max(0.0, busy)), 2)
 
+    # ------------------------------------------------------------------
+    # Security posture (Tier 1)
+    #
+    # Every check below answers a question that has a right answer on its
+    # own: is the firewall on, is real-time antivirus running, how old is
+    # the newest patch. Nothing here needs a per-host baseline or a tuned
+    # threshold to be worth reading, which is what makes a verdict useful
+    # the first time a server reports it. Drift detection -- "this host
+    # looks different from last week" -- is deliberately out of scope: it
+    # needs a baseline somebody has accepted, and that is its own feature.
+    #
+    # A check that cannot be read reports 'unknown', never 'fail'. Most of
+    # these states are readable only with real privilege, and a monitoring
+    # account that is refused the answer must not be able to raise an alarm
+    # that looks exactly like a firewall somebody switched off. 'unknown'
+    # is left out of the score rather than counted as a pass, so a host the
+    # monitor cannot see into does not score as a healthy one.
+    # ------------------------------------------------------------------
+
+    SECURITY_COUNTED_STATES = ('pass', 'warn', 'fail')
+
+    @staticmethod
+    def _security_check(key, label, state, detail=None):
+        return {'key': key, 'label': label, 'state': state, 'detail': detail}
+
+    def _security_check_due(self, device):
+        """True when this device is due for a security sweep.
+
+        The sweep runs on its own slow clock rather than on every poll: it
+        reads configuration that changes over days, so repeating it every
+        cycle would spend round trips on answers that cannot have moved.
+        """
+        if not Config.SECURITY_CHECK_ENABLED:
+            return False
+        last = self._parse_metric_timestamp(device.get('security_checked_at'))
+        if last is None:
+            return True
+        elapsed = (datetime.now() - last).total_seconds()
+        return elapsed >= Config.SECURITY_CHECK_INTERVAL_HOURS * 3600
+
+    def _reboot_security_check(self, pending_reboot):
+        """Reuse the reboot flag the metric pass already collected.
+
+        A patch that is installed but not yet in effect is a security
+        finding, and the collectors know it already, so it costs nothing.
+        """
+        label = 'No restart pending for applied patches'
+        if pending_reboot is None:
+            return self._security_check(
+                'pending_reboot', label, 'unknown', 'The host did not report a reboot state')
+        if pending_reboot:
+            return self._security_check(
+                'pending_reboot', label, 'warn',
+                'An update is installed but does not take effect until the host restarts')
+        return self._security_check('pending_reboot', label, 'pass', 'No restart is pending')
+
+    @classmethod
+    def _score_security_checks(cls, checks, error=None):
+        """Turn a list of checks into the verdict stored on the device row.
+
+        A warn is worth half a pass, and any outright failure makes the
+        host 'risk' whatever the arithmetic says: five passes do not
+        cancel out a disabled firewall.
+        """
+        checks = list(checks or [])
+        counted = [c for c in checks if c.get('state') in cls.SECURITY_COUNTED_STATES]
+        passed = sum(1 for c in counted if c['state'] == 'pass')
+        warned = sum(1 for c in counted if c['state'] == 'warn')
+        failed = sum(1 for c in counted if c['state'] == 'fail')
+        if not counted:
+            return {
+                'state': 'unknown', 'score': None, 'pass_count': 0, 'warn_count': 0,
+                'fail_count': 0, 'unknown_count': len(checks), 'checks': checks,
+                'error': error or ('No security check could be read' if checks else None),
+            }
+        state = 'risk' if failed else ('warn' if warned else 'ok')
+        score = round(100.0 * (passed + 0.5 * warned) / len(counted), 1)
+        if error and not failed:
+            # The sweep did not finish. What it did see still counts --
+            # a check that failed is a finding either way -- but an
+            # absence of findings is not evidence when most of the
+            # checks never ran.
+            state = 'unknown'
+            score = None
+        return {
+            'state': state,
+            'score': score,
+            'pass_count': passed,
+            'warn_count': warned,
+            'fail_count': failed,
+            'unknown_count': len(checks) - len(counted),
+            'checks': checks,
+            'error': error,
+        }
+
+    # WinRM sends a script as `powershell -EncodedCommand <base64 UTF-16LE>`,
+    # which roughly triples its length against a command line Windows caps at
+    # about 8000 characters. One script holding every check went over that and
+    # came back "The command line is too long" -- so the checks are sent as
+    # small fragments instead. The sweep is better off for it: a fragment that
+    # fails now costs only its own checks rather than all of them.
+    #
+    # Each fragment prints "key|state|detail" lines, the same wire format the
+    # Linux sweep uses, so both platforms share one parser.
+    WINDOWS_SECURITY_FRAGMENTS = (
+        (('firewall',), r"""
+try {
+  $p = @(Get-NetFirewallProfile -ErrorAction Stop)
+  if ($p.Count -eq 0) { throw 'no profiles returned' }
+  $off = @($p | Where-Object { -not $_.Enabled })
+  if ($off.Count -eq 0) { "firewall|pass|All $($p.Count) profiles are enabled" }
+  else { "firewall|fail|Disabled profiles: $(($off | ForEach-Object { $_.Name }) -join ', ')" }
+} catch { "firewall|unknown|The firewall state could not be read" }
+"""),
+        (('av_realtime', 'av_signature'), r"""
+try {
+  $mp = Get-MpComputerStatus -ErrorAction Stop
+  if ($mp.RealTimeProtectionEnabled) { "av_realtime|pass|Microsoft Defender real-time protection is on" }
+  else { "av_realtime|fail|Microsoft Defender real-time protection is off" }
+  $age = [int]$mp.AntivirusSignatureAge
+  if ($age -gt __SIGNATURE_WARN_DAYS__) { "av_signature|warn|Defender signatures are $age days old" }
+  else { "av_signature|pass|Defender signatures are $age days old" }
+} catch {
+  $named = $false
+  try {
+    $av = @(Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassName AntiVirusProduct -ErrorAction Stop)
+    if ($av.Count -gt 0) {
+      $names = ($av | ForEach-Object { $_.displayName }) -join ', '
+      $live = @($av | Where-Object { @('10','11') -contains ('{0:X6}' -f $_.productState).Substring(2,2) })
+      if ($live.Count -gt 0) { "av_realtime|pass|$names reports real-time protection on" }
+      else { "av_realtime|fail|$names is installed but reports real-time protection off" }
+      $stale = @($av | Where-Object { ('{0:X6}' -f $_.productState).Substring(4,2) -ne '00' })
+      if ($stale.Count -gt 0) { "av_signature|warn|$names reports its definitions are out of date" }
+      else { "av_signature|pass|$names reports its definitions are current" }
+      $named = $true
+    }
+  } catch { }
+  if (-not $named) {
+    "av_services|ok|$((Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Running' } | ForEach-Object { $_.Name }) -join ',')"
+  }
+}
+"""),
+        (('patch_age',), r"""
+try {
+  $h = Get-HotFix -ErrorAction Stop | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 1
+  if (-not $h) { throw 'no dated updates' }
+  $d = [int]((Get-Date) - $h.InstalledOn).TotalDays
+  $t = "Newest update $($h.HotFixID) installed $d days ago"
+  if ($d -ge __PATCH_FAIL_DAYS__) { "patch_age|fail|$t" }
+  elseif ($d -ge __PATCH_WARN_DAYS__) { "patch_age|warn|$t" }
+  else { "patch_age|pass|$t" }
+} catch { "patch_age|unknown|The update history could not be read" }
+"""),
+        (('smb1',), r"""
+try {
+  if ((Get-SmbServerConfiguration -ErrorAction Stop).EnableSMB1Protocol) { "smb1|fail|The SMBv1 server protocol is enabled" }
+  else { "smb1|pass|The SMBv1 server protocol is disabled" }
+} catch {
+  $r = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters' -Name SMB1 -ErrorAction SilentlyContinue
+  if ($r -and $r.SMB1 -eq 0) { "smb1|pass|SMBv1 is disabled in the registry" }
+  else { "smb1|unknown|The SMBv1 state could not be read" }
+}
+"""),
+        (('rdp_nla',), r"""
+try {
+  $deny = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -ErrorAction Stop).fDenyTSConnections
+  if ($deny -eq 1) { "rdp_nla|pass|RDP is disabled on this host" }
+  else {
+    $nla = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name UserAuthentication -ErrorAction SilentlyContinue).UserAuthentication
+    if ($nla -eq 1) { "rdp_nla|pass|RDP is enabled and NLA is required" }
+    elseif ($null -eq $nla) { "rdp_nla|unknown|RDP is enabled but the NLA setting could not be read" }
+    else { "rdp_nla|fail|RDP is enabled without NLA" }
+  }
+} catch { "rdp_nla|unknown|The RDP configuration could not be read" }
+"""),
+        (('guest_account',), r"""
+try {
+  $g = Get-WmiObject Win32_UserAccount -Filter "LocalAccount=True AND SID LIKE 'S-1-5-21-%-501'" -ErrorAction Stop
+  if (-not $g) { "guest_account|unknown|No built-in Guest account was found" }
+  elseif ($g.Disabled) { "guest_account|pass|$($g.Name) is disabled" }
+  else { "guest_account|fail|$($g.Name) is enabled" }
+} catch { "guest_account|unknown|Local accounts could not be read" }
+"""),
+    )
+
+    WINDOWS_SECURITY_LABELS = {
+        'firewall': 'Windows Firewall enabled',
+        'av_realtime': 'Antivirus real-time protection on',
+        'av_signature': 'Antivirus signatures current',
+        'patch_age': 'Operating system patched recently',
+        'smb1': 'SMBv1 disabled',
+        'rdp_nla': 'RDP requires Network Level Authentication',
+        'guest_account': 'Built-in Guest account disabled',
+    }
+
+    # One shell round trip, one "key|state|detail" line per check. Each block
+    # separates "the answer is no" from "this account may not ask", because
+    # most of these files and tools are root-only and a permission error must
+    # not read as a finding.
+    LINUX_SECURITY_SCRIPT = r"""
+emit() { printf '%s|%s|%s\n' "$1" "$2" "$3"; }
+
+# sudo -n never prompts: where the account is not allowed it fails at once
+# and the command runs unprivileged instead, which is how these checks end
+# up reporting "unreadable" rather than hanging on a password prompt.
+run_priv() {
+  if [ "$(id -u)" = "0" ]; then
+    "$@" 2>&1
+  elif sudo -n true 2>/dev/null; then
+    sudo -n "$@" 2>&1
+  else
+    "$@" 2>&1
+  fi
+}
+
+if command -v ufw >/dev/null 2>&1; then
+  out=$(run_priv ufw status)
+  case "$out" in
+    *"Status: active"*) emit firewall pass "ufw is active" ;;
+    *"Status: inactive"*) emit firewall fail "ufw is installed but inactive" ;;
+    *) emit firewall unknown "ufw status needs root; allow this account 'sudo -n /usr/sbin/ufw status'" ;;
+  esac
+elif command -v firewall-cmd >/dev/null 2>&1; then
+  out=$(run_priv firewall-cmd --state)
+  case "$out" in
+    *"not running"*) emit firewall fail "firewalld is installed but not running" ;;
+    *running*) emit firewall pass "firewalld is running" ;;
+    *) emit firewall unknown "the firewalld state could not be read" ;;
+  esac
+elif command -v nft >/dev/null 2>&1; then
+  out=$(run_priv nft list ruleset)
+  case "$out" in
+    *"not permitted"*|*"denied"*|*"Permission"*) emit firewall unknown "the nftables ruleset needs root; allow this account 'sudo -n /usr/sbin/nft list ruleset'" ;;
+    "") emit firewall fail "the nftables ruleset is empty" ;;
+    *) emit firewall pass "an nftables ruleset is loaded" ;;
+  esac
+elif command -v iptables >/dev/null 2>&1; then
+  out=$(run_priv iptables -S)
+  case "$out" in
+    *"Permission denied"*|*"must be root"*|*"not permitted"*) emit firewall unknown "iptables needs root; allow this account 'sudo -n /usr/sbin/iptables -S'" ;;
+    *)
+      n=$(printf '%s\n' "$out" | grep -c '^-A')
+      if [ "${n:-0}" -gt 0 ]; then
+        emit firewall pass "iptables has $n rules"
+      else
+        emit firewall fail "iptables has no rules loaded"
+      fi
+      ;;
+  esac
+else
+  emit firewall unknown "no firewall tool was found on this host"
+fi
+
+# sshd -T prints the configuration sshd actually runs with, Include files and
+# all. Without root, fall back to reading the files in the order sshd reads
+# them: the drop-in directory is included from the top of the main file on
+# current distributions, and sshd keeps the FIRST value it sees.
+SSHCFG=$(sshd -T 2>/dev/null || /usr/sbin/sshd -T 2>/dev/null)
+if [ -z "$SSHCFG" ]; then
+  SSHCFG=$( (cat /etc/ssh/sshd_config.d/*.conf 2>/dev/null; cat /etc/ssh/sshd_config 2>/dev/null) )
+fi
+cfgval() { printf '%s\n' "$SSHCFG" | grep -Ei "^[[:space:]]*$1[[:space:]]+" | head -1 | awk '{print tolower($2)}'; }
+
+if [ -z "$SSHCFG" ]; then
+  emit ssh_root_login unknown "the sshd configuration is not readable by this account"
+  emit ssh_password_auth unknown "the sshd configuration is not readable by this account"
+else
+  rootlogin=$(cfgval PermitRootLogin)
+  case "$rootlogin" in
+    no|prohibit-password|without-password|forced-commands-only) emit ssh_root_login pass "PermitRootLogin $rootlogin" ;;
+    yes) emit ssh_root_login fail "PermitRootLogin yes" ;;
+    "") emit ssh_root_login warn "PermitRootLogin is not set; the distribution default applies" ;;
+    *) emit ssh_root_login warn "PermitRootLogin $rootlogin" ;;
+  esac
+  pwauth=$(cfgval PasswordAuthentication)
+  case "$pwauth" in
+    no) emit ssh_password_auth pass "PasswordAuthentication no" ;;
+    yes) emit ssh_password_auth __SSH_PASSWORD_STATE__ "PasswordAuthentication yes" ;;
+    "") emit ssh_password_auth warn "PasswordAuthentication is not set; the distribution default applies" ;;
+    *) emit ssh_password_auth warn "PasswordAuthentication $pwauth" ;;
+  esac
+fi
+
+if command -v apt-get >/dev/null 2>&1; then
+  out=$(apt-get -s -o Debug::NoLocking=true upgrade 2>/dev/null)
+  if [ -z "$out" ]; then
+    emit patch_updates unknown "apt could not simulate an upgrade"
+  else
+    total=$(printf '%s\n' "$out" | grep -c '^Inst ')
+    sec=$(printf '%s\n' "$out" | grep '^Inst ' | grep -ci 'security')
+    if [ "${sec:-0}" -gt 0 ]; then
+      emit patch_updates fail "$sec security updates are pending (of $total in total)"
+    elif [ "${total:-0}" -gt 0 ]; then
+      emit patch_updates warn "$total updates are pending, none flagged security"
+    else
+      emit patch_updates pass "no updates are pending"
+    fi
+  fi
+elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+  mgr=dnf
+  command -v dnf >/dev/null 2>&1 || mgr=yum
+  out=$($mgr -q --security check-update 2>/dev/null)
+  rc=$?
+  if [ "$rc" -eq 100 ]; then
+    n=$(printf '%s\n' "$out" | grep -c '^[a-zA-Z0-9]')
+    emit patch_updates fail "$n security updates are pending"
+  elif [ "$rc" -eq 0 ]; then
+    emit patch_updates pass "no security updates are pending"
+  else
+    emit patch_updates unknown "$mgr could not check for updates"
+  fi
+else
+  emit patch_updates unknown "no supported package manager was found"
+fi
+
+if [ -r /etc/passwd ]; then
+  extra=$(awk -F: '$3==0 && $1!="root" {print $1}' /etc/passwd | tr '\n' ',' | sed 's/,$//')
+  if [ -n "$extra" ]; then
+    emit root_equivalent_accounts fail "UID 0 is also used by: $extra"
+  else
+    emit root_equivalent_accounts pass "root is the only UID 0 account"
+  fi
+else
+  emit root_equivalent_accounts unknown "/etc/passwd is not readable"
+fi
+
+# The awk runs on the host, so only account names ever cross the wire --
+# never a password hash. The END marker is what tells "no account has an
+# empty password" apart from "awk could not open the file at all", which
+# otherwise produce identical, empty output.
+shadow=$(run_priv awk -F: '($2==""){print "EMPTY:"$1} END{print "READ_OK"}' /etc/shadow)
+case "$shadow" in
+  *READ_OK*)
+    empty=$(printf '%s\n' "$shadow" | sed -n 's/^EMPTY://p' | tr '\n' ',' | sed 's/,$//')
+    if [ -n "$empty" ]; then
+      emit empty_passwords fail "accounts with no password: $empty"
+    else
+      emit empty_passwords pass "no account has an empty password"
+    fi
+    ;;
+  *)
+    emit empty_passwords unknown "/etc/shadow needs root; granting sudo to awk would hand this account full root, so this check is better left unread"
+    ;;
+esac
+"""
+
+    # The scripts emit keys, not prose: the wording belongs with the rest of
+    # the interface text rather than inside a script quoted three times over.
+    LINUX_SECURITY_LABELS = {
+        'firewall': 'Host firewall active',
+        'ssh_root_login': 'SSH root login restricted',
+        'ssh_password_auth': 'SSH password authentication disabled',
+        'patch_updates': 'No pending security updates',
+        'root_equivalent_accounts': 'root is the only UID 0 account',
+        'empty_passwords': 'No account has an empty password',
+    }
+
+    LINUX_SECURITY_KEYS = (
+        'firewall', 'ssh_root_login', 'ssh_password_auth', 'patch_updates',
+        'root_equivalent_accounts', 'empty_passwords',
+    )
+
+    def _apply_security_thresholds(self, script):
+        return (script
+                .replace('__SIGNATURE_WARN_DAYS__', str(Config.SECURITY_SIGNATURE_WARN_DAYS))
+                .replace('__PATCH_WARN_DAYS__', str(Config.SECURITY_PATCH_WARN_DAYS))
+                .replace('__PATCH_FAIL_DAYS__', str(Config.SECURITY_PATCH_FAIL_DAYS)))
+
+    def _linux_security_script(self):
+        password_state = 'fail' if Config.SECURITY_SSH_PASSWORD_AUTH_IS_FAILURE else 'warn'
+        return self.LINUX_SECURITY_SCRIPT.replace('__SSH_PASSWORD_STATE__', password_state)
+
+    @staticmethod
+    def _parse_security_lines(text):
+        """Read "key|state|detail" lines into {key: (state, detail)}."""
+        found = {}
+        for line in (text or '').splitlines():
+            parts = line.strip().split('|', 2)
+            if len(parts) < 2 or not parts[0]:
+                continue
+            found[parts[0]] = (parts[1].strip().lower(),
+                               parts[2].strip() if len(parts) > 2 else None)
+        return found
+
+    def _collect_security_checks(self, keys, found, labels, fallback):
+        """Turn one fragment's output into checks, naming anything missing.
+
+        A key the fragment was supposed to report but did not is recorded as
+        unreadable rather than quietly dropped, so the card always lists the
+        same checks and a silent failure cannot look like a shorter, cleaner
+        report.
+        """
+        checks = []
+        for key in keys:
+            state, detail = found.get(key, ('unknown', fallback))
+            checks.append(self._security_check(
+                key, labels.get(key, key), state, detail))
+        return checks
+
+    def _antivirus_from_services(self, running_names):
+        """Decide the antivirus checks from the host's running services.
+
+        Windows Server 2012 R2 has no Defender at all, Server 2016 does
+        not install it by default, and Security Center is a client-only
+        feature -- so on a server neither direct question can be asked.
+        What is left is the product's own service.
+
+        The matching happens here rather than inside the PowerShell so
+        the script stays a fixed size whatever a site adds to the list.
+        An earlier version pasted the pattern into the script and grew
+        back towards the command-line limit that had already broken the
+        whole sweep once.
+        """
+        wanted = [part.strip().lower()
+                  for part in re.split(r'[|,]', Config.SECURITY_ANTIVIRUS_SERVICES or '')
+                  if part.strip()]
+        running = [name.strip() for name in (running_names or '').split(',') if name.strip()]
+        hits = sorted({name for name in running
+                       if any(needle in name.lower() for needle in wanted)})
+        signature = self._security_check(
+            'av_signature', self.WINDOWS_SECURITY_LABELS['av_signature'], 'unknown',
+            'This product does not report a signature age to the monitor'
+            if hits else 'No antivirus product was found to report a signature age')
+        if hits:
+            shown = ', '.join(hits[:4]) + ('...' if len(hits) > 4 else '')
+            return [
+                self._security_check(
+                    'av_realtime', self.WINDOWS_SECURITY_LABELS['av_realtime'], 'pass',
+                    '%s is running' % shown),
+                signature,
+            ]
+        # Saying which names were looked for is what makes a wrong
+        # answer here self-correcting: a site whose product runs under
+        # another name can see that and add it to the setting.
+        return [
+            self._security_check(
+                'av_realtime', self.WINDOWS_SECURITY_LABELS['av_realtime'], 'fail',
+                'No antivirus found: no Defender, no Security Center entry, and none of '
+                'the %d known antivirus service names is running among %d running services'
+                % (len(wanted), len(running))),
+            signature,
+        ]
+
+    def _check_winrm_security(self, session, pending_reboot=None):
+        """Run the Windows posture checks over an established WinRM session."""
+        checks = [self._reboot_security_check(pending_reboot)]
+        failures = []
+        for keys, fragment in self.WINDOWS_SECURITY_FRAGMENTS:
+            found = {}
+            fallback = 'This check did not report a result'
+            try:
+                response = session.run_ps(self._apply_security_thresholds(fragment))
+                if response.status_code != 0:
+                    raise RuntimeError(
+                        response.std_err.decode('utf-8', errors='replace').strip()
+                        or 'the command failed')
+                found = self._parse_security_lines(
+                    response.std_out.decode('utf-8-sig', errors='replace'))
+            except Exception as e:
+                message = str(e) or 'the command failed'
+                failures.append(message)
+                fallback = 'The check could not run: %s' % message
+            if 'av_services' in found:
+                # The host could not answer directly and sent its running
+                # service names instead. setdefault so a real Defender or
+                # Security Center answer always wins over the inference.
+                for check in self._antivirus_from_services(found['av_services'][1]):
+                    found.setdefault(check['key'], (check['state'], check['detail']))
+            checks.extend(self._collect_security_checks(
+                keys, found, self.WINDOWS_SECURITY_LABELS, fallback))
+        error = None
+        if len(failures) == len(self.WINDOWS_SECURITY_FRAGMENTS):
+            error = failures[0]
+        return self._score_security_checks(checks, error=error)
+
+    def _check_ssh_security(self, client, pending_reboot=None):
+        """Run the Linux posture checks over an established SSH session."""
+        checks = [self._reboot_security_check(pending_reboot)]
+        try:
+            _, stdout, stderr = client.exec_command(self._linux_security_script())
+            output = stdout.read().decode('utf-8', errors='replace')
+            found = self._parse_security_lines(output)
+            if not found:
+                message = stderr.read().decode('utf-8', errors='replace').strip()
+                error = message or 'The security check returned no data'
+                checks.extend(self._collect_security_checks(
+                    self.LINUX_SECURITY_KEYS, {}, self.LINUX_SECURITY_LABELS,
+                    'The check could not run: %s' % error))
+                return self._score_security_checks(checks, error=error)
+            checks.extend(self._collect_security_checks(
+                self.LINUX_SECURITY_KEYS, found, self.LINUX_SECURITY_LABELS,
+                'This check did not report a result'))
+            return self._score_security_checks(checks)
+        except Exception as e:
+            checks.extend(self._collect_security_checks(
+                self.LINUX_SECURITY_KEYS, {}, self.LINUX_SECURITY_LABELS,
+                'The check could not run: %s' % e))
+            return self._score_security_checks(checks, error=str(e))
+
     def check_ssh(self, ip_address, username, password, port=22, monitored_services=None,
-                  slow_threshold_ms=None):
+                  slow_threshold_ms=None, collect_security=False):
         """
         Check a Linux device via SSH and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -883,7 +1383,8 @@ class NetworkMonitor:
                 'load1': None, 'load5': None, 'load15': None, 'pending_reboot': None,
                 'net_in': None, 'net_out': None, 'uptime_seconds': None,
                 'uptime_text': None, 'last_boot_time': None,
-                'disk_details': [], 'service_status': [], 'service_summary': None
+                'disk_details': [], 'service_status': [], 'service_summary': None,
+                'security': None, 'security_elapsed_ms': 0.0
             }
 
         result = _blank_result()
@@ -1030,6 +1531,12 @@ class NetworkMonitor:
                     'stopped': sum(1 for s in result['service_status'] if not s.get('ok')),
                     'source': 'selected'
                 }
+
+                if collect_security:
+                    security_started = time.monotonic()
+                    result['security'] = self._check_ssh_security(
+                        client, result.get('pending_reboot'))
+                    result['security_elapsed_ms'] = (time.monotonic() - security_started) * 1000
                 
                 return True
             except Exception as e:
@@ -1044,7 +1551,9 @@ class NetworkMonitor:
                 except Exception:
                     pass
 
-        timer = async_runtime.Timeout(Config.SSH_DEVICE_TIMEOUT)
+        device_timeout = Config.SSH_DEVICE_TIMEOUT + (
+            Config.SECURITY_CHECK_EXTRA_SECONDS if collect_security else 0)
+        timer = async_runtime.Timeout(device_timeout)
         try:
             # Paramiko is imported after Eventlet monkey-patching in production,
             # so its sockets are cooperative already. Running those green sockets
@@ -1061,7 +1570,9 @@ class NetworkMonitor:
                 result.clear()
                 result.update(_blank_result())
                 success = _ssh_task()
-            response_time = (time.time() - start_time) * 1000
+            response_time = (time.time() - start_time) * 1000 - (
+                result.get('security_elapsed_ms') or 0)
+            response_time = max(0.0, response_time)
             
             if success:
                 threshold = self._slow_threshold('ssh', slow_threshold_ms)
@@ -1085,14 +1596,15 @@ class NetworkMonitor:
                     'last_boot_time': result['last_boot_time'],
                     'disk_details': result['disk_details'],
                     'service_status': result['service_status'],
-                    'service_summary': result['service_summary']
+                    'service_summary': result['service_summary'],
+                    'security': result['security']
                 }
             else:
                 return {'status': 'down', 'response_time': None, 'error': last_error or 'SSH connection failed'}
         except async_runtime.TimeoutError:
             # The session runs in this greenlet, so the timeout really does
             # abandon it instead of leaving work behind like the WinRM path.
-            timeout_message = f'SSH check exceeded {Config.SSH_DEVICE_TIMEOUT}s'
+            timeout_message = f'SSH check exceeded {device_timeout}s'
             print(f"[SSH] Timed out {ip_address}: {timeout_message}")
             return {'status': 'down', 'response_time': None, 'error': timeout_message}
         except Exception as e:
@@ -1329,7 +1841,7 @@ class NetworkMonitor:
             return result
 
     def check_winrm(self, ip_address, username, password, monitored_services=None,
-                    slow_threshold_ms=None, monitor_type='winrm'):
+                    slow_threshold_ms=None, monitor_type='winrm', collect_security=False):
         """
         Check a Windows device via WinRM and return status and system metrics
         Returns: dict with 'status', 'response_time', 'cpu', 'ram', 'disk'
@@ -1345,7 +1857,7 @@ class NetworkMonitor:
             'net_in': None, 'net_out': None, 'uptime_seconds': None,
             'uptime_text': None, 'last_boot_time': None,
             'disk_details': [], 'service_status': [], 'service_summary': None,
-            'internet': None
+            'internet': None, 'security': None, 'security_elapsed_ms': 0.0
         }
         
         def _winrm_task():
@@ -1538,16 +2050,32 @@ class NetworkMonitor:
                 internet_elapsed = time.monotonic() - internet_started
                 if internet_elapsed >= Config.WINRM_SLOW_COMMAND_SECONDS:
                     print(f"[WinRM] Slow command internet on {ip_address}: {internet_elapsed:.1f}s")
+
+                # Last, so a failure here cannot cost the metrics above it.
+                if collect_security:
+                    security_started = time.monotonic()
+                    result['security'] = self._check_winrm_security(
+                        session, result.get('pending_reboot'))
+                    security_elapsed = time.monotonic() - security_started
+                    result['security_elapsed_ms'] = security_elapsed * 1000
+                    print(f"[WinRM] Security sweep on {ip_address}: {security_elapsed:.1f}s")
                 
                 return True
             except Exception as e:
                 print(f"[WinRM] Error connecting to {ip_address}: {e}")
                 return False
 
-        timer = async_runtime.Timeout(Config.WINRM_DEVICE_TIMEOUT)
+        device_timeout = Config.WINRM_DEVICE_TIMEOUT + (
+            Config.SECURITY_CHECK_EXTRA_SECONDS if collect_security else 0)
+        timer = async_runtime.Timeout(device_timeout)
         try:
             success = async_runtime.tpool_execute(_winrm_task)
-            response_time = (time.time() - start_time) * 1000
+            # The security sweep is work this poll did and the next one
+            # will not, so it is taken back out before the figure is
+            # judged or charted. Otherwise every host would appear to
+            # slow down on exactly the poll that swept it.
+            response_time = max(0.0, (time.time() - start_time) * 1000 - (
+                result.get('security_elapsed_ms') or 0))
             
             if success:
                 threshold = self._slow_threshold(monitor_type, slow_threshold_ms)
@@ -1572,12 +2100,13 @@ class NetworkMonitor:
                     'disk_details': result['disk_details'],
                     'service_status': result['service_status'],
                     'service_summary': result['service_summary'],
-                    'internet': result['internet']
+                    'internet': result['internet'],
+                    'security': result['security']
                 }
             else:
                 return {'status': 'down', 'response_time': None}
         except async_runtime.TimeoutError:
-            timeout_message = f'WinRM check exceeded {Config.WINRM_DEVICE_TIMEOUT}s'
+            timeout_message = f'WinRM check exceeded {device_timeout}s'
             print(f"[WinRM] Timed out {ip_address}: {timeout_message}")
             return {'status': 'down', 'response_time': None, 'error': timeout_message}
         except Exception as e:
@@ -1718,7 +2247,14 @@ class NetworkMonitor:
                     message
                 )
     
-    def check_device(self, device):
+    def check_device(self, device, force_security=False):
+        """Run one device's checks.
+
+        force_security skips the interval and sweeps now. The moment
+        somebody most wants a security verdict is right after they have
+        fixed something, and waiting up to six hours to find out whether
+        the fix took is no use to them.
+        """
         """
         Check a single device using its configured monitor type.
         Returns a dictionary with the check results.
@@ -1762,7 +2298,8 @@ class NetworkMonitor:
                 device.get('ssh_password'),
                 device.get('ssh_port', 22),
                 device.get('monitored_services'),
-                device.get('slow_threshold_ms')
+                device.get('slow_threshold_ms'),
+                collect_security=force_security or self._security_check_due(device)
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1782,7 +2319,8 @@ class NetworkMonitor:
                 device.get('wmi_password'),
                 device.get('monitored_services'),
                 device.get('slow_threshold_ms'),
-                monitor_type
+                monitor_type,
+                collect_security=force_security or self._security_check_due(device)
             )
             # Verify Expected Ports
             if result.get('status') in ('up', 'slow') and device.get('expected_ports'):
@@ -1915,6 +2453,45 @@ class NetworkMonitor:
                                 device,
                                 'internet_recovery',
                                 f"Remote Internet connectivity recovered. Latency: {internet.get('latency_ms')} ms"
+                            )
+                    security = result.get('security')
+                    if isinstance(security, dict):
+                        self.db.update_security_posture(
+                            device['id'],
+                            security.get('state') or 'unknown',
+                            score=security.get('score'),
+                            pass_count=security.get('pass_count'),
+                            warn_count=security.get('warn_count'),
+                            fail_count=security.get('fail_count'),
+                            checks=security.get('checks'),
+                            error=security.get('error'),
+                        )
+                        # Alert on the crossing, not on the state. These
+                        # checks run every few hours and a host left
+                        # unfixed would otherwise resend the same finding
+                        # until it stopped being read.
+                        previous_security = str(device.get('security_state') or '').lower()
+                        current_security = str(security.get('state') or 'unknown').lower()
+                        if self.alerter and current_security == 'risk' and previous_security != 'risk':
+                            failed = [
+                                str(check.get('label') or check.get('key'))
+                                for check in (security.get('checks') or [])
+                                if check.get('state') == 'fail'
+                            ]
+                            self.alerter.trigger_alert(
+                                device,
+                                'security_risk',
+                                'Security checks failed on this host:\n- ' + '\n- '.join(failed)
+                            )
+                        elif (
+                            self.alerter
+                            and previous_security == 'risk'
+                            and current_security in ('ok', 'warn')
+                        ):
+                            self.alerter.trigger_alert(
+                                device,
+                                'security_recovery',
+                                f"Security checks are passing again (score {security.get('score')})."
                             )
                     self._check_resource_threshold_alerts(device, result)
                     if (

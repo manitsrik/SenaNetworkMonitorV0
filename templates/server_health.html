@@ -71,7 +71,9 @@
 
     .health-overview {
         display: grid;
-        grid-template-columns: 1.15fr repeat(5, minmax(132px, 1fr));
+        /* One column per summary card, plus the hero. Adding a card without
+           raising this count drops it onto a second row on its own. */
+        grid-template-columns: 1.15fr repeat(6, minmax(132px, 1fr));
         gap: 0.45rem;
         align-items: stretch;
     }
@@ -330,7 +332,8 @@
         --summary-bg: rgba(45, 106, 79, 0.1);
     }
 
-    .health-summary-card.is-down {
+    .health-summary-card.is-down,
+    .health-summary-card.is-security {
         --summary-color: var(--danger);
         --summary-bg: rgba(239, 68, 68, 0.1);
     }
@@ -614,8 +617,7 @@
         min-width: 132px;
     }
 
-    .traffic-pair,
-    .response-pair {
+    .traffic-pair {
         display: grid;
         gap: 0.18rem;
         color: var(--text-primary);
@@ -624,8 +626,7 @@
         line-height: 1.2;
     }
 
-    .traffic-pair span,
-    .response-pair span {
+    .traffic-pair span {
         display: inline-flex;
         align-items: center;
         gap: 0.28rem;
@@ -638,26 +639,6 @@
 
     .traffic-out {
         color: var(--info);
-    }
-
-    .response-cell {
-        min-width: 118px;
-    }
-
-    .response-good {
-        color: var(--success);
-    }
-
-    .response-warning {
-        color: var(--warning);
-    }
-
-    .response-critical {
-        color: var(--danger);
-    }
-
-    .response-unknown {
-        color: var(--text-muted);
     }
 
     .metric-cell-top {
@@ -1316,6 +1297,54 @@
         display: none;
     }
 
+    /* Nor has security, until a sweep has actually run somewhere. */
+    .server-health-table.hide-security .col-security {
+        display: none;
+    }
+
+    .security-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        line-height: 1.25;
+    }
+
+    .security-cell .security-headline {
+        font-weight: 600;
+    }
+
+    .security-cell small {
+        color: var(--text-muted);
+        font-size: 0.72rem;
+    }
+
+    .col-security {
+        min-width: 104px;
+    }
+
+    /* The cell that reports the problem is the obvious thing to press
+       to go and read about it, so it is the link -- rather than making
+       people cross the row to the Dashboard button. */
+    .security-cell-link {
+        display: block;
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .security-cell-link:hover .security-headline {
+        text-decoration: underline;
+    }
+
+    /* One colour meaning per cell. The headline carries the state, and
+       everything under it is supporting detail in the same muted tone --
+       an earlier version coloured the percentage, the wording and the
+       coverage fraction differently and put three meanings in one cell. */
+    .security-cell.is-risk .security-headline { color: var(--danger); }
+    .security-cell.is-warn .security-headline { color: var(--warning); }
+    .security-cell.is-ok .security-headline { color: var(--success); }
+    .security-cell.is-unknown .security-headline,
+    .security-cell.is-unchecked .security-headline { color: var(--text-muted); }
+
     /* Metrics are dimmed on a stale row; uptime and boot time are just as old. */
     .uptime-cell.is-stale {
         opacity: 0.45;
@@ -1407,6 +1436,21 @@
 
     .status-cell .server-meta {
         margin-top: 0.16rem;
+    }
+
+    /* The Windows auto-start figure is a weaker claim than a named
+       check -- "something set to start at boot is not running", not
+       "the thing this host exists to run has stopped" -- so it does
+       not get the status badge that a named check earns. */
+    .service-auto {
+        color: var(--text-secondary);
+        font-size: 0.68rem;
+        white-space: nowrap;
+    }
+
+    .service-auto.is-stopped {
+        color: var(--warning);
+        font-weight: 600;
     }
 
     /* --- Service checks: "0 stopped" vs "never configured" --- */
@@ -1579,6 +1623,17 @@
             </div>
             <div class="health-summary-note" id="sum-reboot-note">Waiting for a restart</div>
         </div>
+
+        <div class="health-summary-card is-security">
+            <div class="health-summary-header">
+                <div>
+                    <div class="health-summary-label">Security At Risk</div>
+                    <div id="sum-security" class="health-summary-value">-</div>
+                    <div class="health-summary-delta" id="delta-security"></div>
+                </div>
+            </div>
+            <div class="health-summary-note" id="sum-security-note">Hosts failing a security check</div>
+        </div>
     </section>
 
     <section class="topcards" id="topcards">
@@ -1637,12 +1692,13 @@
                         <th><button type="button" class="server-sort-button" data-sort-key="traffic">Traffic <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                                                 <th><button type="button" class="server-sort-button" data-sort-key="internet">Internet <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                     <th><button type="button" class="server-sort-button" data-sort-key="uptime">Uptime <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
+                        <th class="col-security"><button type="button" class="server-sort-button" data-sort-key="security">Security <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th class="col-services"><button type="button" class="server-sort-button" data-sort-key="services">Services <i class="fa-solid fa-sort server-sort-icon" aria-hidden="true"></i></button></th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody id="server-table-body">
-                    <tr><td colspan="10" class="health-loading">Loading...</td></tr>
+                    <tr><td colspan="11" class="health-loading">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -1696,7 +1752,7 @@ let staleAfterSeconds = 300;
 const FOCUS_DEFS = {
     all: { label: 'All servers', match: () => true },
     down: { label: 'Down', match: server => String(server.status || '').toLowerCase() === 'down' },
-    service: { label: 'Service down', match: server => (server.service_status || []).some(item => !item.ok) },
+    service: { label: 'Service down', match: server => (serviceState(server).count || 0) > 0 },
     reboot: { label: 'Pending reboot', match: server => !!server.pending_reboot },
     stale: { label: 'Stale data', match: server => !!server.is_stale },
     internet: {
@@ -1704,7 +1760,57 @@ const FOCUS_DEFS = {
         match: server => !!server.internet_status
             && String(server.internet_status).toLowerCase() !== 'online',
     },
+    security: {
+        label: 'Security at risk',
+        match: server => String(server.security_state || '').toLowerCase() === 'risk',
+    },
 };
+
+// The three states that carry a verdict. 'unknown' is left out of the
+// score entirely, which is what makes the denominator move between
+// hosts -- and why the column has to show it.
+const SECURITY_COUNTED_STATES = ['pass', 'warn', 'fail'];
+
+function securityCoverage(server) {
+    const checks = Array.isArray(server.security_checks) ? server.security_checks : [];
+    return {
+        counted: checks.filter(check => SECURITY_COUNTED_STATES.includes(check.state)).length,
+        total: checks.length,
+    };
+}
+
+const SECURITY_STATE_META = {
+    risk: { label: 'At risk', css: 'is-risk' },
+    warn: { label: 'Review', css: 'is-warn' },
+    ok: { label: 'Passing', css: 'is-ok' },
+    unknown: { label: 'Unreadable', css: 'is-unknown' },
+};
+
+// A host the sweep has never visited and a host it visited but could
+// not read are different situations, and neither is a pass. Keeping
+// them apart here is what stops the column reading as reassurance.
+function securityState(server) {
+    const state = String(server.security_state || '').trim().toLowerCase();
+    if (!state) {
+        return {
+            key: 'unchecked', label: 'Not checked', css: 'is-unchecked',
+            detail: 'not swept yet',
+        };
+    }
+    const meta = SECURITY_STATE_META[state] || SECURITY_STATE_META.unknown;
+    const fail = Number(server.security_fail_count) || 0;
+    const warn = Number(server.security_warn_count) || 0;
+    const pass = Number(server.security_pass_count);
+    // Every line leads with a count, so the passing one does too: it keeps the
+    // column scannable down a single edge, and says how much was actually
+    // checked rather than just that nothing went wrong.
+    let detail;
+    if (fail) detail = `${fail} failing`;
+    else if (warn) detail = `${warn} to review`;
+    else if (state === 'ok') detail = Number.isFinite(pass) ? `${pass} passed` : 'passed';
+    else detail = 'none readable';
+    return { key: state, label: meta.label, css: meta.css, detail };
+}
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -1967,8 +2073,33 @@ function topRows(rows, key, limit = 10) {
         .slice(0, limit);
 }
 
+// What this host can say about its services, and how strongly.
+//
+// A named check is a statement about what this host is *for*: if the
+// database service is named and stopped, that is an outage. The Windows
+// auto-start count only says something set to start at boot is not
+// running, which is worth seeing but routinely has innocent causes -- a
+// delayed-start service that has not got there yet, an updater that
+// stops itself when it is done. Both are reported; they are never
+// reported as the same thing.
+function serviceState(server) {
+    if (server.services_configured) {
+        const services = server.service_status || [];
+        return {
+            source: 'named',
+            count: services.filter(item => !item.ok).length,
+            total: services.length,
+            awaiting: !services.length,
+        };
+    }
+    const summary = server.service_summary;
+    const auto = summary ? Number(summary.auto_stopped) : NaN;
+    if (Number.isFinite(auto)) return { source: 'auto', count: auto };
+    return { source: 'none', count: null };
+}
+
 function serviceStoppedCount(server) {
-    return (server.service_status || []).filter(item => !item.ok).length;
+    return serviceState(server).count;
 }
 
 function sortValue(server, key) {
@@ -1991,10 +2122,6 @@ function sortValue(server, key) {
             return Number(server.disk);
         case 'traffic':
             return Number(server.network_total_bps);
-        case 'response':
-            return server.response_time === null || server.response_time === undefined || server.response_time === ''
-                ? null
-                : Number(server.response_time);
         case 'internet': {
             // Worst first: failing, then slow, then fast, then never checked.
             const status = String(server.internet_status || '').trim().toLowerCase();
@@ -2002,6 +2129,18 @@ function sortValue(server, key) {
             if (status !== 'online') return -1;
             const latency = Number(server.internet_latency_ms);
             return Number.isFinite(latency) ? 1 / (latency + 1) : 0;
+        }
+        case 'security': {
+            // Sort by what the column leads with. Three failing checks
+            // rank above one whatever the two percentages say, and any
+            // failure ranks above every host with none; the score only
+            // breaks ties inside a group.
+            const state = String(server.security_state || '').trim().toLowerCase();
+            if (!state || state === 'unknown') return null;
+            const score = Number(server.security_score);
+            const base = Number.isFinite(score) ? score : 100;
+            const failing = Number(server.security_fail_count) || 0;
+            return failing ? -(failing * 100) - (100 - base) : base;
         }
         case 'uptime':
             return Number(server.uptime_seconds);
@@ -2259,6 +2398,48 @@ function renderInternetCell(server) {
     `;
 }
 
+function renderSecurityCell(server) {
+    const state = securityState(server);
+    const score = Number(server.security_score);
+    const scoreText = state.key === 'unchecked' || !Number.isFinite(score)
+        ? '-'
+        : `${Math.round(score)}%`;
+    // The denominator moves. A host the monitor can read five checks on
+    // is scored out of five, and that percentage is not comparable with
+    // one scored out of eight -- 50% of five answered questions is a
+    // weaker statement than 50% of eight. Anyone scanning this column
+    // would read them as equal unless the column says otherwise, so the
+    // fraction goes here rather than in the tooltip.
+    const { counted, total } = securityCoverage(server);
+    const partial = total > 0 && counted < total;
+    const coverageNote = total
+        ? (partial
+            ? ` Scored on ${counted} of ${total} checks; ${total - counted} could not be read.`
+            : ` Scored on all ${total} checks.`)
+        : '';
+    const swept = server.security_checked_at
+        ? `Last swept ${server.security_checked_at}`
+        : 'Never swept';
+    // What the host needs doing leads; the score supports it. A
+    // percentage is a proportion of the checks that could be read, and
+    // hosts are read to different depths, so it does not compare between
+    // rows -- while "2 failing" means the same thing on every row. Led
+    // by the percentage, this column invited the reading that 88% was
+    // safer than 60%, when the 88% host was the one with a real failure.
+    const sub = [scoreText, partial ? `${counted}/${total}` : '']
+        .filter(Boolean).map(esc).join(' &middot; ');
+    const href = `/server-dashboard/${encodeURIComponent(server.id)}#security-posture`;
+    return `
+        <a class="security-cell-link" href="${href}"
+           title="${esc(state.label)}: ${esc(state.detail)}.${esc(coverageNote)} ${esc(swept)} Open this host's security checks.">
+            <div class="security-cell ${state.css}">
+                <span class="security-headline">${esc(state.detail)}</span>
+                <small>${sub}</small>
+            </div>
+        </a>
+    `;
+}
+
 function renderTrafficCell(server) {
     return `
         <div class="traffic-cell">
@@ -2270,42 +2451,14 @@ function renderTrafficCell(server) {
     `;
 }
 
-function responseClass(value, server = null) {
-    if (value === null || value === undefined || value === '') return 'response-unknown';
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 'response-unknown';
-    const { warn, critical } = responseThresholds(server);
-    if (num > critical) return 'response-critical';
-    if (num > warn) return 'response-warning';
-    return 'response-good';
-}
-
-function renderResponseCell(server) {
-    const rawValue = server.response_time;
-    const hasValue = rawValue !== null && rawValue !== undefined && rawValue !== '';
-    const value = hasValue ? Number(rawValue) : NaN;
-    const label = Number.isFinite(value) ? formatMs(value) : '-';
-    const cssClass = responseClass(rawValue, server);
-    const { warn } = responseThresholds(server);
-    const state = cssClass === 'response-critical'
-        ? 'Critical'
-        : (cssClass === 'response-warning' ? 'Warning' : (cssClass === 'response-good' ? 'Normal' : 'No response'));
-    return `
-        <div class="response-cell" title="Slow threshold for ${esc(String(server.monitor_type || 'this method').toUpperCase())}: ${esc(formatThreshold(warn))}">
-            <div class="response-pair">
-                <span class="${cssClass}"><i class="fa-solid fa-wave-square"></i>${label}</span>
-                <span class="text-muted">${state}</span>
-            </div>
-        </div>
-    `;
-}
-
 function renderServers(servers, totalServers = servers.length) {
     const body = document.getElementById('server-table-body');
     const countLabel = document.getElementById('server-count-label');
     const table = body?.closest('.server-health-table');
     if (table) {
-        table.classList.toggle('hide-services', !servers.some(server => server.services_configured));
+        table.classList.toggle('hide-services',
+            !servers.some(server => serviceState(server).source !== 'none'));
+        table.classList.toggle('hide-security', !servers.some(server => server.security_state));
     }
     if (countLabel) {
         countLabel.textContent = servers.length === totalServers
@@ -2318,21 +2471,27 @@ function renderServers(servers, totalServers = servers.length) {
         const message = healthFocus === 'all'
             ? 'No SSH/WinRM/WMI servers yet.'
             : `No server matches "${FOCUS_DEFS[healthFocus].label}".`;
-        body.innerHTML = `<tr><td colspan="10" class="health-empty">${esc(message)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="11" class="health-empty">${esc(message)}</td></tr>`;
         return;
     }
 
     body.innerHTML = sortedServers(servers).map(server => {
-        const services = server.service_status || [];
-        const stopped = services.filter(item => !item.ok);
+        const service = serviceState(server);
         let serviceText;
-        if (!server.services_configured) {
-            // An empty cell used to read as "all good". It never was.
-            serviceText = '<span class="service-unset" title="No services selected for this device yet">Not configured</span>';
-        } else if (!services.length) {
-            serviceText = '<span class="service-unset" title="Service checks are configured but have not reported yet">Awaiting check</span>';
+        if (service.source === 'named') {
+            if (service.awaiting) {
+                serviceText = '<span class="service-unset" title="Service checks are configured but have not reported yet">Awaiting check</span>';
+            } else {
+                const running = service.total - service.count;
+                serviceText = `<span class="status-badge ${service.count ? 'status-down' : 'status-up'}" title="${running} of ${service.total} running">${running}/${service.total}</span>`;
+            }
+        } else if (service.source === 'auto') {
+            serviceText = service.count
+                ? `<span class="service-auto is-stopped" title="No services are named for this host. Windows reports ${service.count} service${service.count === 1 ? '' : 's'} set to start automatically that ${service.count === 1 ? 'is' : 'are'} not running. Worth a look, but weaker than a named check: name the services this host exists to run to get a precise answer.">${service.count} auto-stopped</span>`
+                : '<span class="service-auto" title="No services are named for this host. Every Windows service set to start automatically is running.">Auto-start all up</span>';
         } else {
-            serviceText = `<span class="status-badge ${stopped.length ? 'status-down' : 'status-up'}" title="${services.length - stopped.length} of ${services.length} running">${services.length - stopped.length}/${services.length}</span>`;
+            // An empty cell used to read as "all good". It never was.
+            serviceText = '<span class="service-unset" title="No services selected for this device yet, and this host reports no service summary of its own">Not configured</span>';
         }
         const reboot = server.pending_reboot ? '<span class="status-badge status-slow">reboot</span>' : '';
         const loadText = server.load1 !== null && server.load1 !== undefined ? `load ${Number(server.load1).toFixed(2)}` : '';
@@ -2366,6 +2525,7 @@ function renderServers(servers, totalServers = servers.length) {
                 <td>${renderTrafficCell(server)}</td>
                 <td>${renderInternetCell(server)}</td>
                 <td class="uptime-cell${stale ? ' is-stale' : ''}">${esc(server.uptime_text || '-')}<br><small class="text-muted">${server.last_boot_time ? `since ${esc(server.last_boot_time)}` : ''}</small></td>
+                <td class="col-security">${renderSecurityCell(server)}</td>
                 <td class="service-cell col-services">${serviceText}</td>
                 <td class="server-action-cell">
                     <a class="server-dashboard-link" href="/server-dashboard/${encodeURIComponent(server.id)}" title="Open server dashboard">
@@ -2417,28 +2577,46 @@ function setSummary(summary) {
         'sum-reboot-note',
         reboot ? 'Waiting for a restart' : 'Nothing waiting',
         reboot
-            ? `${reboot} Windows/Linux host${reboot === 1 ? '' : 's'} flagged a pending reboot.`
+            ? `${reboot} host${reboot === 1 ? '' : 's'} flagged a pending reboot.`
             : 'No host is flagging a pending reboot.'
     );
 
     // "Service Down: 0" is only good news when something is actually watched.
     const monitored = Number(summary.service_monitored_servers || 0);
+    const autoServers = Number(summary.service_auto_stopped_servers || 0);
+    const autoStopped = Number(summary.service_auto_stopped || 0);
     const serviceValue = document.getElementById('sum-service');
-    if (!monitored) {
-        serviceValue.textContent = 'Not set up';
-        serviceValue.classList.add('is-empty');
-        setNote(
-            'sum-service-note',
-            'No checks configured',
-            'No device has service checks configured, so this is not a health signal yet.'
-        );
-    } else {
+    if (monitored) {
         serviceValue.textContent = summary.service_down ?? 0;
         serviceValue.classList.remove('is-empty');
+        setText('delta-service', '');
         setNote(
             'sum-service-note',
             `Across ${monitored} checked host${monitored === 1 ? '' : 's'}`,
             `Stopped services across the ${monitored} server${monitored === 1 ? '' : 's'} that have service checks configured.`
+        );
+    } else if (autoServers) {
+        // Nobody has named the services that matter here, but Windows
+        // already says which of its own auto-start services are not
+        // running. Showing that beats an empty card -- provided the card
+        // says which question it is answering, which is what the label
+        // under the figure is for.
+        serviceValue.textContent = autoStopped;
+        serviceValue.classList.remove('is-empty');
+        setText('delta-service', 'auto-start');
+        setNote(
+            'sum-service-note',
+            `Auto-start, ${autoServers} Windows host${autoServers === 1 ? '' : 's'}`,
+            `No device names the services it needs, so this counts Windows services set to start automatically that are not running, across ${autoServers} host${autoServers === 1 ? '' : 's'}. Name the services a host exists to run to check that host precisely.`
+        );
+    } else {
+        serviceValue.textContent = 'Not set up';
+        serviceValue.classList.add('is-empty');
+        setText('delta-service', '');
+        setNote(
+            'sum-service-note',
+            'No checks configured',
+            'No device has service checks configured, and no host reports a service summary of its own, so this is not a health signal yet.'
         );
     }
 
@@ -2464,6 +2642,31 @@ function setSummary(summary) {
         : '');
     dropEmptyFocus('internet', internetProblem);
 
+    const securityRisk = Number(summary.security_risk || 0);
+    const securityWarn = Number(summary.security_warn || 0);
+    const securityOk = Number(summary.security_ok || 0);
+    const securityValue = document.getElementById('sum-security');
+    if (securityValue) {
+        // Zero failing checks is only good news once something has been
+        // checked, so an unswept estate says so instead of showing 0.
+        if (!securityRisk && !securityWarn && !securityOk) {
+            securityValue.textContent = 'Not checked';
+            securityValue.classList.add('is-empty');
+        } else {
+            securityValue.textContent = securityRisk;
+            securityValue.classList.remove('is-empty');
+        }
+    }
+    setNote('sum-security-note',
+        securityRisk
+            ? 'Hosts failing a security check'
+            : `${securityOk} host${securityOk === 1 ? '' : 's'} passing every check`,
+        securityRisk
+            ? `${securityRisk} host${securityRisk === 1 ? '' : 's'} failed at least one security check.`
+            : `No host is failing a security check. ${summary.security_unchecked || 0} have not been swept yet.`);
+    setText('delta-security', securityWarn ? `${securityWarn} to review` : '');
+    dropEmptyFocus('security', securityRisk);
+
     const stale = Number(summary.stale || 0);
     const staleChip = document.getElementById('sum-stale-chip');
     const staleValue = document.getElementById('sum-stale');
@@ -2471,7 +2674,7 @@ function setSummary(summary) {
     if (staleChip) staleChip.hidden = stale === 0;
 
     dropEmptyFocus('down', summary.down || 0);
-    dropEmptyFocus('service', monitored ? (summary.service_down || 0) : 0);
+    dropEmptyFocus('service', monitored ? (summary.service_down || 0) : autoStopped);
     dropEmptyFocus('reboot', summary.pending_reboot || 0);
     dropEmptyFocus('stale', stale);
 }
@@ -2483,7 +2686,7 @@ function setLastUpdated() {
 }
 
 function renderError(message) {
-    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="10" class="health-error">${esc(message)}</td></tr>`;
+    document.getElementById('server-table-body').innerHTML = `<tr><td colspan="11" class="health-error">${esc(message)}</td></tr>`;
 }
 
 function renderServerHealthData(data) {

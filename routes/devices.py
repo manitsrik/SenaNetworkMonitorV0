@@ -8,6 +8,9 @@ import os
 import json
 from datetime import datetime, timezone
 from config import Config
+from security_advice import (
+    advice_for, run_context_for, DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES,
+)
 from .auth import login_required, operator_required
 from .audit import log_audit
 
@@ -641,6 +644,29 @@ def _slow_threshold_ms(device):
     )
 
 
+@devices_bp.route('/api/security-advice', methods=['GET'])
+def get_security_advice():
+    """Remediation notes for each security check, in the session language.
+
+    Deliberately not folded into /api/server-health: every open fleet page
+    polls that endpoint every thirty seconds, and this content is the same
+    on every poll and the same for every host. The dashboard fetches it
+    once.
+    """
+    language = request.args.get('lang') or session.get('lang') or DEFAULT_LANGUAGE
+    if language not in SUPPORTED_LANGUAGES:
+        language = DEFAULT_LANGUAGE
+    return jsonify({
+        'success': True,
+        'language': language,
+        'advice': advice_for(language),
+        # Which shell, and with what privilege. A property of the
+        # platform rather than of the check, so it is sent once instead
+        # of repeated on every entry.
+        'run_context': run_context_for(language),
+    })
+
+
 @devices_bp.route('/api/server-health', methods=['GET'])
 def get_server_health():
     """Get server-focused health summary for SSH/WinRM monitored devices."""
@@ -720,6 +746,14 @@ def get_server_health():
             'cpu_threshold': device.get('cpu_threshold'),
             'ram_threshold': device.get('ram_threshold'),
             'disk_threshold': device.get('disk_threshold'),
+            'security_state': device.get('security_state'),
+            'security_score': device.get('security_score'),
+            'security_pass_count': device.get('security_pass_count'),
+            'security_warn_count': device.get('security_warn_count'),
+            'security_fail_count': device.get('security_fail_count'),
+            'security_checks': _json_field(device, 'security_checks_json', []),
+            'security_checked_at': device.get('security_checked_at'),
+            'security_error': device.get('security_error'),
         }
         servers.append(server)
         if server['pending_reboot']:
@@ -743,6 +777,29 @@ def get_server_health():
                 'is_stale': server['is_stale'],
                 'metrics_age_seconds': server['metrics_age_seconds'],
             })
+
+    def _unnamed_auto_stopped(server):
+        """Windows services set to start at boot that are not running.
+
+        Only for hosts where nobody has named the services that matter.
+        Where someone has, that named check is a stronger statement and
+        this is not counted alongside it. Linux hosts report no such
+        figure -- the SSH collector only knows the names it was given --
+        so they fall out here on their own.
+        """
+        if server.get('services_configured'):
+            return None
+        summary = server.get('service_summary')
+        if not isinstance(summary, dict):
+            return None
+        try:
+            value = summary.get('auto_stopped')
+            return None if value is None else int(value)
+        except (TypeError, ValueError):
+            return None
+
+    auto_stopped = [value for value in (_unnamed_auto_stopped(s) for s in servers)
+                    if value is not None]
 
     hidden_stale = {}
 
@@ -769,6 +826,12 @@ def get_server_health():
             'pending_reboot': len(pending_reboot),
             'service_down': len(service_down),
             'service_monitored_servers': sum(1 for s in servers if s.get('services_configured')),
+            # Kept apart from service_down on purpose: that figure means
+            # "a service somebody named is not running", and the daily
+            # report counts it that way too. This is the weaker fallback
+            # for hosts nobody has configured.
+            'service_auto_stopped': sum(auto_stopped),
+            'service_auto_stopped_servers': len(auto_stopped),
             'stale': sum(1 for s in servers if s.get('is_stale')),
             'internet_online': sum(1 for s in servers
                                    if str(s.get('internet_status') or '').lower() == 'online'),
@@ -776,6 +839,19 @@ def get_server_health():
                                     if s.get('internet_status')
                                     and str(s.get('internet_status')).lower() != 'online'),
             'internet_unchecked': sum(1 for s in servers if not s.get('internet_status')),
+            # 'unknown' means the sweep ran but could read nothing, and
+            # a missing state means it has not run yet. Neither is a
+            # pass, and neither is a finding, so they are counted apart
+            # from both.
+            'security_risk': sum(1 for s in servers
+                                 if str(s.get('security_state') or '').lower() == 'risk'),
+            'security_warn': sum(1 for s in servers
+                                 if str(s.get('security_state') or '').lower() == 'warn'),
+            'security_ok': sum(1 for s in servers
+                               if str(s.get('security_state') or '').lower() == 'ok'),
+            'security_unchecked': sum(1 for s in servers
+                                      if str(s.get('security_state') or '').lower()
+                                      not in ('risk', 'warn', 'ok')),
             'network_in_bps': sum(s.get('network_in_bps') or 0 for s in servers),
             'network_out_bps': sum(s.get('network_out_bps') or 0 for s in servers),
             'network_total_bps': sum(s.get('network_total_bps') or 0 for s in servers),
@@ -791,6 +867,8 @@ def get_server_health():
         'pending_reboot': pending_reboot,
         'thresholds': {
             'stale_after_seconds': SERVER_HEALTH_STALE_AFTER_SECONDS,
+            'security_interval_hours': Config.SECURITY_CHECK_INTERVAL_HOURS,
+            'security_enabled': Config.SECURITY_CHECK_ENABLED,
             'internet_slow_latency_ms': Config.INTERNET_SLOW_LATENCY_MS,
             'critical_multiplier': SERVER_HEALTH_CRITICAL_MULTIPLIER,
             'slow_ms': {
@@ -1534,6 +1612,49 @@ def check_device_now(device_id):
     result = monitor.check_device(device)
     _get_socketio().emit('status_update', result, namespace='/')
     return jsonify(result)
+
+
+@devices_bp.route('/api/security-recheck/<int:device_id>', methods=['POST'])
+@operator_required
+def recheck_device_security(device_id):
+    """Sweep one host's security checks now, ignoring the interval.
+
+    Every few hours is the right cadence for a background job and the wrong
+    one for the single moment somebody actually wants an answer: just after
+    they have changed something and want to know whether it took. Without
+    this there was no way to ask -- restarting the monitor does not help,
+    because the interval is measured from a timestamp in the database.
+    """
+    db = _get_db()
+    device = db.get_device(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+    if device.get('monitor_type') not in ('ssh', 'winrm', 'wmi'):
+        return jsonify({
+            'success': False,
+            'error': 'Security checks only run on SSH, WinRM and WMI devices',
+        }), 400
+
+    _get_monitor().check_device(device, force_security=True)
+
+    # Read the row back rather than returning what the check handed over:
+    # the verdict the page should show is the one that was actually stored.
+    updated = db.get_device(device_id) or {}
+    try:
+        checks = json.loads(updated.get('security_checks_json') or '[]')
+    except Exception:
+        checks = []
+    return jsonify({
+        'success': True,
+        'security_state': updated.get('security_state'),
+        'security_score': updated.get('security_score'),
+        'security_pass_count': updated.get('security_pass_count'),
+        'security_warn_count': updated.get('security_warn_count'),
+        'security_fail_count': updated.get('security_fail_count'),
+        'security_checks': checks,
+        'security_checked_at': updated.get('security_checked_at'),
+        'security_error': updated.get('security_error'),
+    })
 
 
 @devices_bp.route('/api/statistics/trend', methods=['GET'])

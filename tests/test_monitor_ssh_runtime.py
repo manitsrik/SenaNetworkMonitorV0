@@ -99,8 +99,18 @@ def test_check_ssh_reconnects_once_for_missing_session(monkeypatch):
 
 
 def test_server_health_does_not_render_null_response_as_zero():
+    # Number(null) is 0, so a response time the collector never recorded would
+    # render as a confident "0.0 ms" without this guard.
+    #
+    # This test used to also cover responseClass() and renderResponseCell().
+    # Those drew a Response column the fleet table no longer has, so nothing
+    # called them any more and they were removed; the assertions went with
+    # them. The figure itself is still shown -- by the Collection Time card
+    # and the top-response card -- and both go through formatMs, which is what
+    # is guarded here.
     template = Path('templates/server_health.html').read_text(encoding='utf-8')
+    format_ms = template.split('function formatMs(', 1)[1].split('\nfunction ', 1)[0]
 
-    assert "if (value === null || value === undefined || value === '') return '-';" in template
-    assert "return 'response-unknown';" in template
-    assert ": 'No response'" in template
+    assert "if (value === null || value === undefined || value === '') return '-';" in format_ms
+    assert "Number.isFinite(num) ? `${num.toFixed(num >= 100 ? 0 : 1)} ms` : '-'" in format_ms
+    assert 'formatMs(row.median)' in template
